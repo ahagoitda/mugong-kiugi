@@ -25,7 +25,7 @@ import { getBackgroundForWave, type BackgroundTheme } from '../data/characters';
 
 const GAME_W = 360;
 const BATTLE_H = 384;
-const GROUND_Y = BATTLE_H - 48;
+const GROUND_Y = BATTLE_H - 80;
 const SCROLL_SPEED = 40;
 const MAX_ENEMIES = 6;
 const SPAWN_DISTANCE = 300;
@@ -344,7 +344,7 @@ export class BattleScene extends Phaser.Scene {
     const spawnY = GROUND_Y;
 
     enemy.activate(scaledBossData, spawnX, spawnY);
-    enemy.setScale(0.7);
+    enemy.setScale(1.0);
 
     this.bossEnemy = enemy;
     this.enemies.push(enemy);
@@ -554,11 +554,13 @@ export class BattleScene extends Phaser.Scene {
     const theme = getBackgroundForWave(this.waveNumber);
     this.currentBgTheme = theme;
 
-    this.bgMountains = this.add.tileSprite(0, 0, GAME_W, BATTLE_H - 48, theme.mountainsKey)
+    // 배경 산 레이어: 상단을 잘라내고 아래쪽만 보여줌 (하늘 비율 축소)
+    this.bgMountains = this.add.tileSprite(0, -120, GAME_W, BATTLE_H + 60, theme.mountainsKey)
       .setOrigin(0, 0)
       .setScrollFactor(0);
 
-    this.bgGround = this.add.tileSprite(0, BATTLE_H - 96, GAME_W, 96, theme.groundKey)
+    // 바닥 레이어: 더 넓게 표시
+    this.bgGround = this.add.tileSprite(0, BATTLE_H - 140, GAME_W, 140, theme.groundKey)
       .setOrigin(0, 0)
       .setScrollFactor(0);
   }

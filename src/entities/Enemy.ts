@@ -30,12 +30,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    // 128x128 스프라이트를 0.5배로 축소
-    this.setScale(0.5);
+    // 128x128 스프라이트를 0.75배로 표시 (화면에서 ~96x96 크기)
+    this.setScale(0.75);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(40, 80);
-    body.setOffset(44, 44);
+    body.setSize(50, 90);
+    body.setOffset(39, 34);
     body.setCollideWorldBounds(true);
 
     this.setActive(false);

@@ -74,14 +74,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
 
-    // 128x128 스프라이트를 0.5배로 축소 (화면에서 64x64 크기)
-    this.setScale(0.5);
+    // 128x128 스프라이트를 0.8배로 표시 (화면에서 ~102x102 크기)
+    this.setScale(0.8);
 
-    // 물리 바디 설정 (128x128 스프라이트, 0.5배 스케일 기준)
+    // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
-    body.setSize(40, 80);
-    body.setOffset(44, 44);
+    body.setSize(50, 90);
+    body.setOffset(39, 34);
 
     // 초기 애니메이션 재생
     this.playAnim('idle');

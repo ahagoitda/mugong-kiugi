@@ -6,6 +6,9 @@ import type { EnemyData } from './types';
  * 3종 일반 적 + 1종 보스로 구성합니다.
  * dropTable의 chance 합이 1.0을 넘지 않도록 설계합니다.
  * (나머지 확률은 "드랍 없음"에 해당)
+ *
+ * spriteKey는 BootScene에서 로드한 스프라이트시트 키와 일치해야 합니다.
+ * 적 애니메이션은 BootScene.createAnimations()에서 등록됩니다.
  */
 export const ENEMY_DATABASE: ReadonlyMap<string, EnemyData> = new Map([
   ['bandit', {
@@ -52,15 +55,15 @@ export const ENEMY_DATABASE: ReadonlyMap<string, EnemyData> = new Map([
     ],
   }],
 
-  ['boss_dark_swordmaster', {
-    id: 'boss_dark_swordmaster',
-    name: '흑검마',
+  ['boss_beopwang', {
+    id: 'boss_beopwang',
+    name: '마교 법왕',
     hp: 300,
     damage: 25,
     speed: 35,
     attackRange: 48,
     attackCooldown: 2000,
-    spriteKey: 'enemy_boss',
+    spriteKey: 'boss_beopwang',
     dropTable: [
       { skillId: 'maehwa', chance: 0.15 },
       { skillId: 'cheongpung', chance: 0.15 },

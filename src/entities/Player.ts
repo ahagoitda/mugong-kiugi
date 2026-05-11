@@ -55,11 +55,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
 
-    // 물리 바디 설정
+    // 128x128 스프라이트를 0.5배로 축소 (화면에서 64x64 크기)
+    this.setScale(0.5);
+
+    // 물리 바디 설정 (128x128 스프라이트, 0.5배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
-    body.setSize(16, 24);
-    body.setOffset(8, 8);
+    body.setSize(40, 80);
+    body.setOffset(44, 44);
+
+    // 초기 애니메이션 재생
+    this.play('player-idle');
 
     // 초기 스탯
     this._hp = 100;
@@ -132,6 +138,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (dx === 0 && dy === 0) {
       body.setVelocity(0, 0);
+      if (this.currentState !== 'IDLE') {
+        this.play('player-idle', true);
+      }
       this.changeState('IDLE');
       return;
     }
@@ -144,6 +153,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setVelocity(nx * this.moveSpeed, ny * this.moveSpeed);
     this.facingRight = dx >= 0;
     this.setFlipX(!this.facingRight);
+    if (this.currentState !== 'RUN') {
+      this.play('player-run', true);
+    }
     this.changeState('RUN');
   }
 
@@ -180,7 +192,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setVelocity(0, 0);
 
     this.changeState('ATTACK');
-    this.setTexture(skill.animKey, 0);
+    this.play('player-attack');
 
     return true;
   }
@@ -323,7 +335,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.stateTimer = 0;
       this.currentFrame = 0;
       this.hitFrameIndex = 0;
-      this.setTexture('player_idle');
+      this.play('player-idle');
       this.changeState('IDLE');
     }
   }
@@ -350,7 +362,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer = 0;
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
-    this.setTexture('player_idle');
+    this.play('player-idle');
     this.changeState('IDLE');
   }
 
@@ -358,7 +370,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer -= delta;
     if (this.stateTimer <= 0) {
       this.clearTint();
-      this.setTexture('player_idle');
+      this.play('player-idle');
       this.changeState('IDLE');
     }
   }

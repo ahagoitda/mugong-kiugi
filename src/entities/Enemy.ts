@@ -30,9 +30,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
+    // 128x128 스프라이트를 0.5배로 축소
+    this.setScale(0.5);
+
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(16, 24);
-    body.setOffset(8, 8);
+    body.setSize(40, 80);
+    body.setOffset(44, 44);
     body.setCollideWorldBounds(true);
 
     this.setActive(false);
@@ -69,6 +72,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setVisible(true);
     this.clearTint();
     this.setAlpha(1);
+
+    // 적 애니메이션 재생 (spriteKey에서 'enemy_' 제거 후 애니메이션 키 생성)
+    const animKey = `enemy-${data.id}-idle`;
+    if (this.scene.anims.exists(animKey)) {
+      this.play(animKey);
+    }
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;

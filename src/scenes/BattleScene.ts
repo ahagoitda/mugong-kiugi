@@ -10,7 +10,7 @@ import { loadGame, saveGame } from '../systems/SaveSystem';
  * BattleScene - 상단 횡스크롤 자동전투 씬
  *
  * 화면 상단 60% (360 x 384)를 차지합니다.
- * 카메라가 플레이어를 따라 오른쪽으로 스크롤합니다.
+ * AI 생성 도트 스프라이트를 사용합니다.
  *
  * 전투 흐름:
  * 1. 플레이어가 자동으로 오른쪽으로 이동합니다.
@@ -57,9 +57,8 @@ export class BattleScene extends Phaser.Scene {
   private slashPool: Phaser.GameObjects.Sprite[] = [];
 
   // 배경 레이어 (패럴랙스)
-  private bgLayer1: Phaser.GameObjects.TileSprite | null = null;
-  private bgLayer2: Phaser.GameObjects.TileSprite | null = null;
-  private groundLayer: Phaser.GameObjects.TileSprite | null = null;
+  private bgMountains: Phaser.GameObjects.TileSprite | null = null;
+  private bgGround: Phaser.GameObjects.TileSprite | null = null;
 
   constructor() {
     super({ key: 'BattleScene' });
@@ -68,7 +67,7 @@ export class BattleScene extends Phaser.Scene {
   create(): void {
     // 카메라를 상단 영역으로 제한
     this.cameras.main.setViewport(0, 0, GAME_W, BATTLE_H);
-    this.cameras.main.setBackgroundColor('#2d1b4e');
+    this.cameras.main.setBackgroundColor('#1a0a2e');
 
     // 배경 생성 (패럴랙스 스크롤)
     this.createBackground();
@@ -100,6 +99,8 @@ export class BattleScene extends Phaser.Scene {
     // UIScene에서 오는 이벤트
     this.events.on('toggle-battle-mode', this.toggleBattleMode, this);
     this.events.on('equip-changed', this.applySaveData, this);
+    this.events.on('use-skill', this.onUseSkill, this);
+    this.events.on('use-dash', this.onUseDash, this);
 
     // 초기 웨이브 시작
     this.startWave(1);
@@ -179,6 +180,18 @@ export class BattleScene extends Phaser.Scene {
         return;
       }
     }
+  }
+
+  // ─── 수동 조작 이벤트 ───
+
+  private onUseSkill(slotIndex: number): void {
+    if (this.battleMode === 'MANUAL') {
+      this.player.handleAttack(slotIndex);
+    }
+  }
+
+  private onUseDash(): void {
+    this.player.handleDash();
   }
 
   // ─── 적 업데이트 ───
@@ -288,7 +301,7 @@ export class BattleScene extends Phaser.Scene {
       if (!enemy.active) continue;
 
       const enemyRect = new Phaser.Geom.Rectangle(
-        enemy.x - 8, enemy.y - 12, 16, 24,
+        enemy.x - 16, enemy.y - 24, 32, 48,
       );
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
@@ -315,30 +328,20 @@ export class BattleScene extends Phaser.Scene {
 
   private createBackground(): void {
     // 패럴랙스 배경 (TileSprite로 무한 스크롤)
-    // 레이어 1: 먼 산 (느리게 스크롤)
-    this.bgLayer1 = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, 'tile_ground')
+    // 레이어 1: 먼 산 + 달 (느리게 스크롤)
+    this.bgMountains = this.add.tileSprite(0, 0, GAME_W, BATTLE_H - 48, 'bg_mountains')
       .setOrigin(0, 0)
-      .setTint(0x1a2a1a)
-      .setAlpha(0.5)
       .setScrollFactor(0);
 
-    // 레이어 2: 나무/구조물 (중간 속도)
-    this.bgLayer2 = this.add.tileSprite(0, BATTLE_H - 120, GAME_W, 120, 'tile_ground')
-      .setOrigin(0, 0)
-      .setTint(0x2d4a2d)
-      .setAlpha(0.7)
-      .setScrollFactor(0);
-
-    // 바닥
-    this.groundLayer = this.add.tileSprite(0, BATTLE_H - 48, GAME_W, 48, 'tile_path')
+    // 바닥 (돌길 + 풀)
+    this.bgGround = this.add.tileSprite(0, BATTLE_H - 96, GAME_W, 96, 'bg_ground')
       .setOrigin(0, 0)
       .setScrollFactor(0);
   }
 
   private updateBackground(): void {
-    if (this.bgLayer1) this.bgLayer1.tilePositionX = this.scrollX * 0.2;
-    if (this.bgLayer2) this.bgLayer2.tilePositionX = this.scrollX * 0.5;
-    if (this.groundLayer) this.groundLayer.tilePositionX = this.scrollX * 1.0;
+    if (this.bgMountains) this.bgMountains.tilePositionX = this.scrollX * 0.2;
+    if (this.bgGround) this.bgGround.tilePositionX = this.scrollX * 1.0;
   }
 
   // ─── 이펙트 ───

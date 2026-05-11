@@ -1,0 +1,28 @@
+{
+  "name": "mugong-kiugi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahagoitda/puzzle-game.git"
+  },
+  "author": "ahagoitda",
+  "license": "MIT",
+  "description": "무공키우기 - 2D 도트 액션 무협 RPG",
+  "dependencies": {
+    "@capacitor/core": "^8.3.3",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.3",
+    "@types/node": "^25.6.2",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.11"
+  }
+}

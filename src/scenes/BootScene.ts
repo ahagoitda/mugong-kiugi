@@ -1,18 +1,16 @@
 import Phaser from 'phaser';
+import { CHARACTER_LIST } from '../data/characters';
 
 /**
  * BootScene - 게임 부팅 및 에셋 로딩 씬
  *
- * AI로 생성된 도트 스프라이트를 로드합니다.
- * 스프라이트시트는 수평으로 프레임이 나열된 형태입니다.
+ * 모든 캐릭터(8종), 적(3종+보스), 배경(5종), 이펙트를 로드합니다.
+ * 로드 완료 후 CharacterSelectScene으로 전환합니다.
  *
- * 에셋 목록:
- * - 플레이어: idle(4f, 64x64), run(6f, 64x64), attack(4f, 80x64)
- * - 적: bandit(4f), swordsman(4f), assassin(4f) - 각 64x64
- * - 보스: beopwang(4f, 96x96)
- * - 배경: mountains(720x384), ground(720x96)
- * - 이펙트: slash 4종 (48x48 단일)
- * - NPC: jeomsoyi (64x64 단일)
+ * 에셋 로딩 전략:
+ * - 캐릭터 스프라이트는 CHARACTER_LIST에서 동적으로 생성
+ *   → 캐릭터 추가 시 데이터만 추가하면 자동 로드
+ * - 128x128 프레임 (캐릭터), 160x160 프레임 (보스)
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -37,19 +35,41 @@ export class BootScene extends Phaser.Scene {
       fontFamily: 'monospace',
     }).setOrigin(0.5);
 
+    const percentText = this.add.text(width / 2, barY + 20, '0%', {
+      fontSize: '10px',
+      color: '#aaaaaa',
+      fontFamily: 'monospace',
+    }).setOrigin(0.5);
+
     this.load.on('progress', (value: number) => {
       fill.width = (barW - 2) * value;
+      percentText.setText(`${Math.round(value * 100)}%`);
     });
 
     this.load.on('complete', () => {
       bg.destroy();
       fill.destroy();
       label.destroy();
+      percentText.destroy();
     });
 
     const P = 'sprites/processed';
 
-    // ─── 플레이어 스프라이트시트 (128x128 프레임) ───
+    // ─── 8캐릭터 스프라이트 동적 로드 ───
+    for (const char of CHARACTER_LIST) {
+      const prefix = char.spritePrefix;
+      this.load.spritesheet(`${prefix}_idle`, `${P}/${prefix}_idle.png`, {
+        frameWidth: 128, frameHeight: 128,
+      });
+      this.load.spritesheet(`${prefix}_run`, `${P}/${prefix}_run.png`, {
+        frameWidth: 128, frameHeight: 128,
+      });
+      this.load.spritesheet(`${prefix}_attack`, `${P}/${prefix}_attack.png`, {
+        frameWidth: 128, frameHeight: 128,
+      });
+    }
+
+    // ─── 기존 플레이어 (하위 호환, 필요 시 제거 가능) ───
     this.load.spritesheet('player_idle', `${P}/player_idle.png`, {
       frameWidth: 128, frameHeight: 128,
     });
@@ -76,9 +96,22 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 160, frameHeight: 160,
     });
 
-    // ─── 배경 이미지 ───
+    // ─── 배경 이미지 (5종) ───
+    // 산림 (기본)
     this.load.image('bg_mountains', `${P}/bg_mountains.png`);
     this.load.image('bg_ground', `${P}/bg_ground.png`);
+    // 대나무숲
+    this.load.image('bg_bamboo_mountains', `${P}/bg_bamboo_mountains.png`);
+    this.load.image('bg_bamboo_ground', `${P}/bg_bamboo_ground.png`);
+    // 설산
+    this.load.image('bg_snow_mountains', `${P}/bg_snow_mountains.png`);
+    this.load.image('bg_snow_ground', `${P}/bg_snow_ground.png`);
+    // 사막
+    this.load.image('bg_desert_mountains', `${P}/bg_desert_mountains.png`);
+    this.load.image('bg_desert_ground', `${P}/bg_desert_ground.png`);
+    // 화산
+    this.load.image('bg_volcano_mountains', `${P}/bg_volcano_mountains.png`);
+    this.load.image('bg_volcano_ground', `${P}/bg_volcano_ground.png`);
 
     // ─── 이펙트 (단일 이미지) ───
     this.load.image('fx_slash_white', `${P}/fx_slash_white.png`);
@@ -94,33 +127,57 @@ export class BootScene extends Phaser.Scene {
     // ─── 애니메이션 등록 ───
     this.createAnimations();
 
-    // BattleScene과 UIScene을 동시에 실행 (UIScene은 오버레이)
-    this.scene.start('BattleScene');
-    this.scene.start('UIScene');
+    // CharacterSelectScene으로 전환
+    this.scene.start('CharacterSelectScene');
   }
 
   /**
-   * 스프라이트시트 기반 애니메이션을 등록합니다.
+   * 모든 캐릭터 + 적 + 보스 애니메이션을 등록합니다.
    *
-   * Phaser의 AnimationManager는 글로벌이므로
-   * 한 번만 등록하면 모든 씬에서 사용 가능합니다.
+   * 캐릭터 애니메이션은 CHARACTER_LIST에서 동적으로 생성됩니다.
+   * 키 네이밍 규칙: '{spritePrefix}-{action}'
+   *   예: 'sword_male-idle', 'fist_female-attack'
    */
   private createAnimations(): void {
-    // 플레이어 애니메이션
+    // ─── 8캐릭터 애니메이션 동적 등록 ───
+    for (const char of CHARACTER_LIST) {
+      const prefix = char.spritePrefix;
+
+      this.anims.create({
+        key: `${prefix}-idle`,
+        frames: this.anims.generateFrameNumbers(`${prefix}_idle`, { start: 0, end: 3 }),
+        frameRate: 6,
+        repeat: -1,
+      });
+
+      this.anims.create({
+        key: `${prefix}-run`,
+        frames: this.anims.generateFrameNumbers(`${prefix}_run`, { start: 0, end: 5 }),
+        frameRate: 10,
+        repeat: -1,
+      });
+
+      this.anims.create({
+        key: `${prefix}-attack`,
+        frames: this.anims.generateFrameNumbers(`${prefix}_attack`, { start: 0, end: 3 }),
+        frameRate: 12,
+        repeat: 0,
+      });
+    }
+
+    // ─── 기존 플레이어 애니메이션 (하위 호환) ───
     this.anims.create({
       key: 'player-idle',
       frames: this.anims.generateFrameNumbers('player_idle', { start: 0, end: 3 }),
       frameRate: 6,
       repeat: -1,
     });
-
     this.anims.create({
       key: 'player-run',
       frames: this.anims.generateFrameNumbers('player_run', { start: 0, end: 5 }),
       frameRate: 10,
       repeat: -1,
     });
-
     this.anims.create({
       key: 'player-attack',
       frames: this.anims.generateFrameNumbers('player_attack', { start: 0, end: 3 }),
@@ -128,7 +185,7 @@ export class BootScene extends Phaser.Scene {
       repeat: 0,
     });
 
-    // 적 애니메이션 (각 적마다 idle 애니메이션)
+    // ─── 적 애니메이션 ───
     const enemies = ['bandit', 'swordsman', 'assassin'] as const;
     for (const name of enemies) {
       this.anims.create({
@@ -139,7 +196,7 @@ export class BootScene extends Phaser.Scene {
       });
     }
 
-    // 보스 애니메이션
+    // ─── 보스 애니메이션 ───
     this.anims.create({
       key: 'boss-beopwang-idle',
       frames: this.anims.generateFrameNumbers('boss_beopwang', { start: 0, end: 3 }),

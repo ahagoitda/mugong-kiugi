@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
+import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { BattleScene } from './scenes/BattleScene';
 import { UIScene } from './scenes/UIScene';
 
@@ -47,7 +48,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, BattleScene, UIScene],
+  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene],
 };
 
 // Phaser 인스턴스 생성

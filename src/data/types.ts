@@ -45,7 +45,6 @@ export interface SkillData {
   readonly cooldown: number;
   readonly damageMultiplier: number;
   readonly staminaCost: number;
-
   // 애니메이션 & 판정
   readonly animKey: string;
   readonly totalFrames: number;
@@ -53,7 +52,6 @@ export interface SkillData {
   readonly hitFrames: readonly number[];
   readonly hitboxSize: { readonly w: number; readonly h: number };
   readonly moveOffset: { readonly x: number; readonly y: number };
-
   // 부가 효과 (선택)
   readonly effect?: StatusEffect;
   readonly effectDuration?: number;
@@ -92,6 +90,8 @@ export interface SaveData {
   unlockedSkills: string[];
   stageCleared: number;
   totalPlayTime: number;
+  /** 선택한 캐릭터 ID (characters.ts의 CharacterDef.id) */
+  selectedCharacter?: string;
 }
 
 /**

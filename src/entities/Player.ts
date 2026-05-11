@@ -1,11 +1,17 @@
 import Phaser from 'phaser';
 import type { CharacterState, SkillData } from '../data/types';
 import { SKILL_DATABASE } from '../data/skills';
+import { CHARACTER_MAP } from '../data/characters';
 
 /**
  * Player - 플레이어 캐릭터 엔티티
  *
  * 상태머신(State Machine) 패턴으로 캐릭터 행동을 관리합니다.
+ *
+ * 캐릭터 선택 시스템 연동:
+ * - 생성자에서 characterId를 받아 해당 캐릭터의 스프라이트 프리픽스를 사용
+ * - 애니메이션 키: '{spritePrefix}-idle', '{spritePrefix}-run', '{spritePrefix}-attack'
+ * - 스탯 보정: CharacterDef.stats의 배율을 기본 스탯에 적용
  *
  * 상태 전이 규칙:
  *   IDLE ↔ RUN (이동 입력)
@@ -16,13 +22,11 @@ import { SKILL_DATABASE } from '../data/skills';
  *   * → HIT (피격 시)
  *   HIT → IDLE (경직 시간 경과)
  *   * → DEAD (HP ≤ 0)
- *
- * 왜 상태머신인가?
- * - 각 상태에서 허용되는 행동을 명확히 제한합니다.
- * - "공격 중에 이동 불가", "대시 중 무적" 같은 규칙을 깔끔하게 구현합니다.
- * - 상태 전이가 명시적이므로 버그 추적이 쉽습니다.
  */
 export class Player extends Phaser.Physics.Arcade.Sprite {
+  // ─── 캐릭터 설정 ───
+  private readonly spritePrefix: string;
+
   // ─── 상태 ───
   private currentState: CharacterState = 'IDLE';
   private stateTimer = 0;
@@ -33,7 +37,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private _maxHp: number;
   private _stamina: number;
   private _maxStamina: number;
-  private moveSpeed = 100;
+  private moveSpeed: number;
+  private damageMul: number;
 
   // ─── 무공 장착 ───
   private equippedSkills: SkillData[] = [];
@@ -49,8 +54,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // ─── 콜백 ───
   private onHitCallback: ((x: number, y: number, skill: SkillData) => void) | null = null;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'player_idle');
+  /**
+   * @param scene - Phaser Scene
+   * @param x - 초기 X 좌표
+   * @param y - 초기 Y 좌표
+   * @param characterId - 선택한 캐릭터 ID (characters.ts에서 정의)
+   *                       미지정 시 기존 player_idle 사용 (하위 호환)
+   */
+  constructor(scene: Phaser.Scene, x: number, y: number, characterId?: string) {
+    // 캐릭터 ID로 스프라이트 프리픽스 결정
+    const charDef = characterId ? CHARACTER_MAP.get(characterId) ?? null : null;
+    const prefix = charDef ? charDef.spritePrefix : 'player';
+    const idleTexture = `${prefix}_idle`;
+
+    super(scene, x, y, idleTexture);
+
+    this.spritePrefix = prefix;
 
     scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
@@ -65,13 +84,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setOffset(44, 44);
 
     // 초기 애니메이션 재생
-    this.play('player-idle');
+    this.playAnim('idle');
 
-    // 초기 스탯
-    this._hp = 100;
-    this._maxHp = 100;
-    this._stamina = 50;
-    this._maxStamina = 50;
+    // 스탯 계산 (캐릭터 보정 적용)
+    const stats = charDef?.stats ?? { hpMul: 1, staminaMul: 1, speedMul: 1, damageMul: 1 };
+    this._maxHp = Math.round(100 * stats.hpMul);
+    this._hp = this._maxHp;
+    this._maxStamina = Math.round(50 * stats.staminaMul);
+    this._stamina = this._maxStamina;
+    this.moveSpeed = Math.round(100 * stats.speedMul);
+    this.damageMul = stats.damageMul;
 
     // 기본 무공 장착
     const samjae = SKILL_DATABASE.get('samjae');
@@ -89,6 +111,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   get currentCharState(): CharacterState { return this.currentState; }
   get isFacingRight(): boolean { return this.facingRight; }
   get skills(): readonly SkillData[] { return this.equippedSkills; }
+  get characterDamageMul(): number { return this.damageMul; }
+
+  /**
+   * 캐릭터 프리픽스 기반 애니메이션 재생 헬퍼
+   *
+   * 왜 이 방식인가?
+   * - 기존 하드코딩된 'player-idle' 대신 '{prefix}-idle' 형태로
+   *   캐릭터마다 다른 애니메이션을 재생합니다.
+   * - 중앙 집중식으로 관리하여 오타/불일치를 방지합니다.
+   */
+  private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
+    const key = `${this.spritePrefix}-${action}`;
+    if (this.anims.exists(key)) {
+      this.play(key, ignoreIfPlaying);
+    }
+  }
 
   /**
    * 히트 콜백 등록
@@ -124,10 +162,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   // ─── 입력 처리 ───
 
-  /**
-   * 이동 입력을 처리합니다.
-   * IDLE 또는 RUN 상태에서만 이동 가능합니다.
-   */
   handleMove(dx: number, dy: number): void {
     if (this.currentState === 'ATTACK' || this.currentState === 'DASH' ||
         this.currentState === 'HIT' || this.currentState === 'DEAD') {
@@ -139,7 +173,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (dx === 0 && dy === 0) {
       body.setVelocity(0, 0);
       if (this.currentState !== 'IDLE') {
-        this.play('player-idle', true);
+        this.playAnim('idle', true);
       }
       this.changeState('IDLE');
       return;
@@ -154,16 +188,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.facingRight = dx >= 0;
     this.setFlipX(!this.facingRight);
     if (this.currentState !== 'RUN') {
-      this.play('player-run', true);
+      this.playAnim('run', true);
     }
     this.changeState('RUN');
   }
 
-  /**
-   * 공격 입력을 처리합니다.
-   * @param slotIndex - 사용할 무공 슬롯 (0, 1, 2)
-   * @returns 공격 성공 여부
-   */
   handleAttack(slotIndex: number): boolean {
     if (this.currentState === 'ATTACK' || this.currentState === 'DASH' ||
         this.currentState === 'HIT' || this.currentState === 'DEAD') {
@@ -192,14 +221,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setVelocity(0, 0);
 
     this.changeState('ATTACK');
-    this.play('player-attack');
+    this.playAnim('attack');
 
     return true;
   }
 
-  /**
-   * 대시(회피) 입력을 처리합니다.
-   */
   handleDash(): boolean {
     if (this.currentState === 'ATTACK' || this.currentState === 'DASH' ||
         this.currentState === 'HIT' || this.currentState === 'DEAD') {
@@ -230,9 +256,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return true;
   }
 
-  /**
-   * 피격 처리
-   */
   takeDamage(amount: number): void {
     if (this.invincible || this.currentState === 'DEAD') return;
 
@@ -255,17 +278,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setVelocity(0, 0);
   }
 
-  /**
-   * HP/기력 회복 (스테이지 클리어 시 등)
-   */
   heal(hpAmount: number, staminaAmount: number): void {
     this._hp = Math.min(this._maxHp, this._hp + hpAmount);
     this._stamina = Math.min(this._maxStamina, this._stamina + staminaAmount);
   }
 
-  /**
-   * 스킬 쿨타임 잔여 시간 (ms)
-   */
   getSkillCooldownRemaining(skillId: string): number {
     const skill = SKILL_DATABASE.get(skillId);
     if (!skill) return 0;
@@ -301,7 +318,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   private updateAttack(delta: number): void {
     if (!this.currentSkill) {
-      this.setState('IDLE');
+      this.changeState('IDLE');
+      this.playAnim('idle');
       return;
     }
 
@@ -335,7 +353,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.stateTimer = 0;
       this.currentFrame = 0;
       this.hitFrameIndex = 0;
-      this.play('player-idle');
+      this.playAnim('idle');
       this.changeState('IDLE');
     }
   }
@@ -362,7 +380,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer = 0;
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
-    this.play('player-idle');
+    this.playAnim('idle');
     this.changeState('IDLE');
   }
 
@@ -370,15 +388,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer -= delta;
     if (this.stateTimer <= 0) {
       this.clearTint();
-      this.play('player-idle');
+      this.playAnim('idle');
       this.changeState('IDLE');
     }
   }
 
-  /**
-   * 히트 판정 이벤트를 발생시킵니다.
-   * BattleScene에서 등록한 콜백을 통해 적과의 충돌을 검사합니다.
-   */
   private emitHit(skill: SkillData): void {
     if (!this.onHitCallback) return;
 
@@ -389,9 +403,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.onHitCallback(hitX, hitY, skill);
   }
 
-  /**
-   * 상태 전이 (내부용)
-   */
   private changeState(newState: CharacterState): void {
     if (this.currentState === newState) return;
     this.currentState = newState;

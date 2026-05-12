@@ -79,6 +79,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.play(animKey);
     }
 
+    // 적은 스폰 즉시 왼쪽(플레이어 방향)을 바라봐야 함
+    // update()에서도 설정하지만, 첫 프레임 렌더링 전에 확실히 적용
+    this.setFlipX(true);
+
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
     body.setVelocity(0, 0);

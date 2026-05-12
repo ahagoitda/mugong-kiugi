@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SKILL_DATABASE, SYNTHESIS_RECIPES, GRADE_COLORS } from '../data/skills';
+import { soundSystem } from '../systems/SoundSystem';
 import { loadGame, saveGame } from '../systems/SaveSystem';
 
 /**
@@ -465,6 +466,7 @@ export class UIScene extends Phaser.Scene {
       save.unlockedSkills.push(resultId);
     }
     saveGame(save);
+    soundSystem.play('synth_ok');
 
     const result = SKILL_DATABASE.get(resultId);
     this.showNotif(`합성 성공! ${result?.nameKo ?? resultId} 획득`);
@@ -487,6 +489,7 @@ export class UIScene extends Phaser.Scene {
       skills[2] = skillId; // 마지막 슬롯 교체
     }
     saveGame(save);
+    soundSystem.play('equip');
 
     const battleScene = this.scene.get('BattleScene');
     battleScene.events.emit('equip-changed');

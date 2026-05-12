@@ -3,6 +3,7 @@ import { BootScene } from './scenes/BootScene';
 import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { BattleScene } from './scenes/BattleScene';
 import { UIScene } from './scenes/UIScene';
+import { GameOverScene } from './scenes/GameOverScene';
 
 /**
  * 무공키우기 - 메인 엔트리
@@ -48,7 +49,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene],
+  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene, GameOverScene],
 };
 
 // Phaser 인스턴스 생성

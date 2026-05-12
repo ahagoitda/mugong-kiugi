@@ -92,6 +92,8 @@ export interface SaveData {
   totalPlayTime: number;
   /** 선택한 캐릭터 ID (characters.ts의 CharacterDef.id) */
   selectedCharacter?: string;
+  /** 누적 사망 횟수 (부활 비용 계산용) */
+  deathCount?: number;
 }
 
 /**
@@ -106,6 +108,8 @@ export interface EnemyData {
   readonly attackRange: number;
   readonly attackCooldown: number;
   readonly spriteKey: string;
+  /** 색조 변형 (0xRRGGBB). undefined면 원본 색상 유지 */
+  readonly tint?: number;
   readonly dropTable: readonly DropEntry[];
 }
 

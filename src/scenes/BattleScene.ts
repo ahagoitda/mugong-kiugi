@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
-import { ENEMY_DATABASE } from '../data/enemies';
+import { ENEMY_DATABASE, getEnemyPoolForWave, getBossForWave } from '../data/enemies';
 import { SKILL_DATABASE } from '../data/skills';
 import type { SkillData, BattleMode } from '../data/types';
 import { loadGame, saveGame } from '../systems/SaveSystem';
 import { getBackgroundForWave, type BackgroundTheme } from '../data/characters';
+import { soundSystem } from '../systems/SoundSystem';
 
 /**
  * BattleScene - 상단 횡스크롤 자동전투 씬
@@ -31,7 +32,6 @@ const MAX_ENEMIES = 6;
 const SPAWN_DISTANCE = 300;
 const BOSS_WAVE_INTERVAL = 5;
 
-const SPAWN_TABLE = ['bandit', 'swordsman', 'assassin'] as const;
 
 export class BattleScene extends Phaser.Scene {
   private player!: Player;
@@ -59,6 +59,7 @@ export class BattleScene extends Phaser.Scene {
   // 횡스크롤 상태
   private scrollX = 0;
   private isMoving = true;
+  private _isRevive = false;
 
   // 이펙트 풀
   private slashPool: Phaser.GameObjects.Sprite[] = [];
@@ -76,9 +77,17 @@ export class BattleScene extends Phaser.Scene {
    * init은 scene.start()에서 전달된 데이터를 받습니다.
    * CharacterSelectScene에서 { characterId: string }을 전달합니다.
    */
-  init(data: { characterId?: string }): void {
+  init(data: { characterId?: string; startWave?: number; isRevive?: boolean }): void {
+    this._gameOverTriggered = false;
     if (data.characterId) {
       this.characterId = data.characterId;
+    }
+    if (data.startWave) {
+      this.waveNumber = data.startWave;
+    }
+    if (data.isRevive) {
+      // 부활 시 HP 50% 회복 표시를 위한 플래그 (create 이후 처리)
+      this._isRevive = true;
     }
   }
 
@@ -123,11 +132,37 @@ export class BattleScene extends Phaser.Scene {
     this.events.on('use-skill', this.onUseSkill, this);
     this.events.on('use-dash', this.onUseDash, this);
 
-    // 초기 웨이브 시작
-    this.startWave(1);
+    // 초기 웨이브 시작 (부활 시 저장된 waveNumber 사용)
+    this.startWave(this.waveNumber);
+
+    // 부활 시 HP 50% 회복 연출
+    if (this._isRevive) {
+      this._isRevive = false;
+      this.time.delayedCall(300, () => {
+        soundSystem.play('revive');
+        this.player.heal(this.player.maxHp * 0.5, this.player.maxStamina);
+        this.cameras.main.flash(400, 100, 200, 255);
+        const reviveText = this.add.text(GAME_W / 2, BATTLE_H / 2, '✦ 부활 ✦', {
+          fontSize: '20px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
+          stroke: '#000000', strokeThickness: 3,
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+        this.tweens.add({
+          targets: reviveText, alpha: 0, y: reviveText.y - 30,
+          duration: 1500, onComplete: () => reviveText.destroy(),
+        });
+      });
+    }
   }
 
   update(time: number, delta: number): void {
+    // 플레이어 사망 감지 → GameOverScene 전환
+    if (this.player.currentCharState === 'DEAD') {
+      if (!this._gameOverTriggered) {
+        this._gameOverTriggered = true;
+        this.triggerGameOver();
+      }
+      return;
+    }
     this.player.update(time, delta);
     this.updateScroll(delta);
     this.updateBattleAI(delta);
@@ -136,6 +171,25 @@ export class BattleScene extends Phaser.Scene {
     this.updateBackground();
     this.updateBossHpBar();
     this.emitState();
+  }
+
+  private _gameOverTriggered = false;
+
+  private triggerGameOver(): void {
+    soundSystem.play('game_over');
+    // 화면 흔들림 + 페이드아웃
+    this.cameras.main.shake(500, 0.015);
+    this.time.delayedCall(600, () => {
+      this.cameras.main.fadeOut(500, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.stop('UIScene');
+        this.scene.start('GameOverScene', {
+          waveNumber: this.waveNumber,
+          killCount: this.killCount,
+          characterId: this.characterId,
+        });
+      });
+    });
   }
 
   // ─── 보스 HP바 UI ───
@@ -314,7 +368,8 @@ export class BattleScene extends Phaser.Scene {
     const enemy = this.enemyPool.pop();
     if (!enemy) return;
 
-    const enemyId = SPAWN_TABLE[Math.floor(Math.random() * SPAWN_TABLE.length)];
+    const pool = getEnemyPoolForWave(this.waveNumber);
+    const enemyId = pool[Math.floor(Math.random() * pool.length)];
     const data = ENEMY_DATABASE.get(enemyId);
     if (!data) return;
 
@@ -322,6 +377,11 @@ export class BattleScene extends Phaser.Scene {
     const spawnY = GROUND_Y + (Math.random() - 0.5) * 16;
 
     enemy.activate(data, spawnX, spawnY);
+    if (data.tint !== undefined) {
+      enemy.setTint(data.tint);
+    } else {
+      enemy.clearTint();
+    }
     this.enemies.push(enemy);
     this.waveSpawned++;
   }
@@ -330,21 +390,29 @@ export class BattleScene extends Phaser.Scene {
     const enemy = this.enemyPool.pop();
     if (!enemy) return;
 
-    const bossData = ENEMY_DATABASE.get('boss_beopwang');
+    const bossId = getBossForWave(this.waveNumber) ?? 'boss_beopwang';
+    const bossData = ENEMY_DATABASE.get(bossId);
     if (!bossData) return;
 
-    const hpMultiplier = 1 + (this.waveNumber / BOSS_WAVE_INTERVAL - 1) * 0.5;
+    const tier = Math.floor(this.waveNumber / BOSS_WAVE_INTERVAL);
+    const hpMultiplier = 1 + (tier - 1) * 0.5;
     const scaledBossData = {
       ...bossData,
       hp: Math.round(bossData.hp * hpMultiplier),
-      damage: Math.round(bossData.damage * (1 + (this.waveNumber / BOSS_WAVE_INTERVAL - 1) * 0.3)),
+      damage: Math.round(bossData.damage * (1 + (tier - 1) * 0.3)),
     };
 
     const spawnX = this.player.x + SPAWN_DISTANCE + 40;
     const spawnY = GROUND_Y;
 
     enemy.activate(scaledBossData, spawnX, spawnY);
-    enemy.setScale(1.0);
+    const bossScale = bossId === 'boss_cheonma' ? 1.2 : 1.0;
+    enemy.setScale(bossScale);
+    if (bossData.tint !== undefined) {
+      enemy.setTint(bossData.tint);
+    } else {
+      enemy.clearTint();
+    }
 
     this.bossEnemy = enemy;
     this.enemies.push(enemy);
@@ -459,6 +527,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private onBossDefeated(): void {
+    soundSystem.play('boss_die');
     this.hideBossHpUI();
     this.isBossWave = false;
     this.bossEnemy = null;
@@ -500,6 +569,12 @@ export class BattleScene extends Phaser.Scene {
   // ─── 히트 판정 ───
 
   private onPlayerHit(hitX: number, hitY: number, skill: SkillData): void {
+    // 타격 사운드 (등급에 따라 다른 사운드)
+    if (skill.grade === 'ULTIMATE' || skill.grade === 'HIGH') {
+      soundSystem.play('hit_heavy');
+    } else {
+      soundSystem.play('hit_light');
+    }
     const hitRect = new Phaser.Geom.Rectangle(
       hitX - skill.hitboxSize.w / 2,
       hitY - skill.hitboxSize.h / 2,
@@ -546,6 +621,7 @@ export class BattleScene extends Phaser.Scene {
 
   private onEnemyAttack(_enemy: Enemy, damage: number): void {
     this.player.takeDamage(damage);
+    soundSystem.play('player_hurt');
   }
 
   // ─── 배경 ───

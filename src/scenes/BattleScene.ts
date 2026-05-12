@@ -29,7 +29,6 @@ const BATTLE_H = 384;
 const GROUND_Y = BATTLE_H - 80;
 const SCROLL_SPEED = 40;
 const MAX_ENEMIES = 6;
-const SPAWN_DISTANCE = 300;
 const BOSS_WAVE_INTERVAL = 5;
 
 
@@ -58,6 +57,7 @@ export class BattleScene extends Phaser.Scene {
 
   // 횡스크롤 상태
   private scrollX = 0;
+  private worldOffsetX = 0;
   private isMoving = true;
   private _isRevive = false;
 
@@ -272,9 +272,11 @@ export class BattleScene extends Phaser.Scene {
 
     if (!hasNearbyEnemy && this.player.currentCharState !== 'ATTACK') {
       this.scrollX += SCROLL_SPEED * (delta / 1000);
-      this.player.handleMove(1, 0);
+      this.worldOffsetX += SCROLL_SPEED * (delta / 1000);
+      // 플레이어는 고정 위치 유지, 달리기 애니메이션만 재생
+      this.player.playRunAnim();
     } else {
-      this.player.handleMove(0, 0);
+      this.player.playIdleAnim();
     }
   }
 
@@ -326,6 +328,15 @@ export class BattleScene extends Phaser.Scene {
 
     for (const enemy of this.enemies) {
       if (enemy.active) {
+        // 세계가 왼쪽으로 흐르므로 적도 같이 왼쪽으로 밀림
+        if (this.isMoving) {
+          const hasNearby = this.enemies.some(e =>
+            e.active && Math.abs(e.x - this.player.x) < 120
+          );
+          if (!hasNearby) {
+            enemy.x -= SCROLL_SPEED * (delta / 1000);
+          }
+        }
         enemy.setTarget(this.player.x, this.player.y);
         enemy.update(time, delta);
         activeEnemies.push(enemy);
@@ -373,7 +384,7 @@ export class BattleScene extends Phaser.Scene {
     const data = ENEMY_DATABASE.get(enemyId);
     if (!data) return;
 
-    const spawnX = this.player.x + SPAWN_DISTANCE + Math.random() * 60;
+    const spawnX = GAME_W + 60 + Math.random() * 80;
     const spawnY = GROUND_Y + (Math.random() - 0.5) * 16;
 
     enemy.activate(data, spawnX, spawnY);
@@ -402,7 +413,7 @@ export class BattleScene extends Phaser.Scene {
       damage: Math.round(bossData.damage * (1 + (tier - 1) * 0.3)),
     };
 
-    const spawnX = this.player.x + SPAWN_DISTANCE + 40;
+    const spawnX = GAME_W + 80;
     const spawnY = GROUND_Y;
 
     enemy.activate(scaledBossData, spawnX, spawnY);

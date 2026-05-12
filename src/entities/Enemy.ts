@@ -163,8 +163,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const dy = this.targetY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // 방향 설정
-    this.setFlipX(dx < 0);
+    // 적은 항상 왼쪽(플레이어 방향)을 바라봄
+    // 오른쪽에서 왼쪽으로 다가오므로 flipX = true 고정
+    this.setFlipX(true);
 
     if (dist > data.attackRange) {
       // 추적 이동

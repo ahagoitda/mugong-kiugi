@@ -121,6 +121,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    *   캐릭터마다 다른 애니메이션을 재생합니다.
    * - 중앙 집중식으로 관리하여 오타/불일치를 방지합니다.
    */
+  /** 플레이어 고정 횡스크롤: 달리기 애니메이션 재생 (BattleScene에서 호출) */
+  playRunAnim(): void {
+    if (this.currentState === 'ATTACK' || this.currentState === 'DASH' ||
+        this.currentState === 'HIT' || this.currentState === 'DEAD') return;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    if (this.currentState !== 'RUN') {
+      this.playAnim('run', true);
+      this.changeState('RUN');
+    }
+  }
+  /** 플레이어 고정 횡스크롤: 대기 애니메이션 재생 (BattleScene에서 호출) */
+  playIdleAnim(): void {
+    if (this.currentState === 'ATTACK' || this.currentState === 'DASH' ||
+        this.currentState === 'HIT' || this.currentState === 'DEAD') return;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    if (this.currentState !== 'IDLE') {
+      this.playAnim('idle', true);
+      this.changeState('IDLE');
+    }
+  }
   private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
     const key = `${this.spritePrefix}-${action}`;
     if (this.anims.exists(key)) {

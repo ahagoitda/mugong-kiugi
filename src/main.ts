@@ -52,5 +52,6 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, CharacterSelectScene, BattleScene, UIScene, GameOverScene],
 };
 
-// Phaser 인스턴스 생성
-new Phaser.Game(config);
+// Phaser 인스턴스 생성 (디버깅용으로 window에 노출)
+const game = new Phaser.Game(config);
+(window as unknown as Record<string, unknown>).__GAME__ = game;

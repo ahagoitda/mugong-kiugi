@@ -24,6 +24,29 @@ export type CharacterState = 'IDLE' | 'RUN' | 'ATTACK' | 'DASH' | 'HIT' | 'DEAD'
 export type BattleMode = 'AUTO' | 'MANUAL';
 
 /**
+ * 보스 등급 - 혈교(血敎) 위계 구조 기반
+ *
+ * 천마신교/혈교의 수직적 조직 체계를 게임 보스 등급에 매핑합니다.
+ * 하위 → 상위 순서:
+ *   대주(隊主) → 단주(團主) → 각주(閣主) → 마군(魔君) →
+ *   호법(護法) → 사자(使者) → 부교주(副敎主) → 혈마(血魔)
+ */
+export type BossRank =
+  | 'DAEJU'      // 대주 - 10인 부대장, 하위 보스
+  | 'DANJU'      // 단주 - 100인 부대장, 중하위 보스
+  | 'GAKJU'      // 각주 - 특수 조직 수장, 중위 보스
+  | 'MAGUN'      // 마군 - 야전 사령관, 고위 보스
+  | 'HOBUP'      // 호법 - 교단 근위대, 최고위 보스
+  | 'SAJA'       // 사자 - 교주 직속 심복, 준최종 보스
+  | 'BUGYOJU'    // 부교주 - 교단 2인자, 최종 직전 보스
+  | 'HYEOLMA';   // 혈마 - 교단 절대자, 최종 보스
+
+/**
+ * 적 등급 - 일반 적의 계급
+ */
+export type EnemyRank = 'MINION' | 'ELITE' | 'BOSS';
+
+/**
  * 무공(스킬) 데이터 구조
  *
  * 각 필드의 역할:
@@ -56,6 +79,8 @@ export interface SkillData {
   readonly effect?: StatusEffect;
   readonly effectDuration?: number;
   readonly effectChance?: number;
+  /** 스킬 설명 (도감 표시용) */
+  readonly description?: string;
 }
 
 /**
@@ -68,6 +93,8 @@ export interface SynthesisRecipe {
   readonly material1: string;
   readonly material2: string;
   readonly result: string;
+  /** 합성에 필요한 골드 */
+  readonly goldCost: number;
 }
 
 /**
@@ -80,6 +107,10 @@ export interface SaveData {
   version: number;
   level: number;
   exp: number;
+  /** 다음 레벨까지 필요한 경험치 */
+  expToNext: number;
+  /** 보유 골드 */
+  gold: number;
   hp: number;
   maxHp: number;
   stamina: number;
@@ -94,6 +125,10 @@ export interface SaveData {
   selectedCharacter?: string;
   /** 누적 사망 횟수 (부활 비용 계산용) */
   deathCount?: number;
+  /** 처치한 보스 목록 (보스 ID 배열) */
+  defeatedBosses?: string[];
+  /** 총 처치 수 */
+  totalKills?: number;
 }
 
 /**
@@ -111,6 +146,16 @@ export interface EnemyData {
   /** 색조 변형 (0xRRGGBB). undefined면 원본 색상 유지 */
   readonly tint?: number;
   readonly dropTable: readonly DropEntry[];
+  /** 적 등급 */
+  readonly rank: EnemyRank;
+  /** 보스 등급 (rank가 BOSS일 때만 유효) */
+  readonly bossRank?: BossRank;
+  /** 보스 별호 (예: '냉혈단주', '빙룡마군') */
+  readonly title?: string;
+  /** 처치 시 획득 골드 */
+  readonly goldReward: number;
+  /** 처치 시 획득 경험치 */
+  readonly expReward: number;
 }
 
 /**

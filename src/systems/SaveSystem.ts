@@ -1,4 +1,5 @@
 import type { SaveData } from '../data/types';
+import { getExpToNextLevel } from '../data/skills';
 
 /**
  * SaveSystem - localStorage 기반 오프라인 세이브/로드 시스템
@@ -13,7 +14,7 @@ import type { SaveData } from '../data/types';
  */
 
 const SAVE_KEY = 'mugong_save_v1';
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 /**
  * 기본 세이브 데이터를 생성합니다.
@@ -24,6 +25,8 @@ export function createDefaultSave(): SaveData {
     version: CURRENT_VERSION,
     level: 1,
     exp: 0,
+    expToNext: getExpToNextLevel(1),
+    gold: 0,
     hp: 100,
     maxHp: 100,
     stamina: 50,
@@ -34,6 +37,8 @@ export function createDefaultSave(): SaveData {
     unlockedSkills: ['samjae', 'chosangbi'],
     stageCleared: 0,
     totalPlayTime: 0,
+    defeatedBosses: [],
+    totalKills: 0,
   };
 }
 
@@ -78,7 +83,7 @@ export function loadGame(): SaveData {
       return createDefaultSave();
     }
 
-    // 버전 마이그레이션 (향후 확장)
+    // 버전 마이그레이션 (v1 → v2)
     if (parsed.version < CURRENT_VERSION) {
       return migrateSave(parsed);
     }
@@ -106,6 +111,8 @@ export function deleteSave(): void {
  *
  * 이 함수는 외부에서 주입될 수 있는 악의적인 데이터를 차단하는
  * 방어적 프로그래밍의 핵심입니다.
+ *
+ * v1과 v2 모두 허용 (마이그레이션 대상 포함)
  */
 function isValidSaveData(data: unknown): data is SaveData {
   if (typeof data !== 'object' || data === null) return false;
@@ -131,9 +138,20 @@ function isValidSaveData(data: unknown): data is SaveData {
 }
 
 /**
- * 세이브 데이터 마이그레이션 (향후 버전 업 시 사용)
+ * 세이브 데이터 마이그레이션
+ *
+ * v1 → v2: gold, expToNext, defeatedBosses, totalKills 필드 추가
  */
 function migrateSave(oldData: SaveData): SaveData {
-  // 현재는 v1만 존재하므로 그대로 반환
-  return { ...oldData, version: CURRENT_VERSION };
+  const migrated: SaveData = {
+    ...oldData,
+    version: CURRENT_VERSION,
+    gold: oldData.gold ?? 0,
+    expToNext: oldData.expToNext ?? getExpToNextLevel(oldData.level),
+    defeatedBosses: oldData.defeatedBosses ?? [],
+    totalKills: oldData.totalKills ?? 0,
+  };
+  // 마이그레이션 후 즉시 저장
+  saveGame(migrated);
+  return migrated;
 }

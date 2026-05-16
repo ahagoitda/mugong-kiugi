@@ -9,6 +9,10 @@ import type { EnemyData, DropEntry } from '../data/types';
  * 2. attackRange 밖이면 플레이어를 향해 이동합니다.
  * 3. attackRange 안이면 쿨타임에 따라 공격합니다.
  *
+ * 상태이상 지원:
+ * - STUN: setStunned(true) 시 모든 행동 중지
+ * - SLOW: setSpeedMultiplier(0.5) 시 이동속도 50% 감소
+ *
  * 오브젝트 풀링을 위해 activate/deactivate 패턴을 사용합니다.
  * destroy()를 호출하지 않고 setActive(false) + setVisible(false)로
  * 풀에 반환하여 GC를 방지합니다.
@@ -21,6 +25,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private targetY = 0;
   private knockbackTimer = 0;
 
+  // 상태이상
+  private stunned = false;
+  private speedMultiplier = 1.0;
+
   // 드랍 결과를 외부에서 읽기 위한 필드
   private pendingDrop: DropEntry | null = null;
 
@@ -30,7 +38,6 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    // 128x128 스프라이트를 0.75배로 표시 (화면에서 ~96x96 크기)
     this.setScale(0.75);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -49,6 +56,25 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 적 데이터 (이름 등 UI 표시용) */
   get data_(): EnemyData | null { return this.enemyData; }
 
+  /** 현재 이동 속도 반환 */
+  getSpeed(): number {
+    return (this.enemyData?.speed ?? 0) * this.speedMultiplier;
+  }
+
+  /** 기절 상태 설정 */
+  setStunned(value: boolean): void {
+    this.stunned = value;
+    if (value) {
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0, 0);
+    }
+  }
+
+  /** 이동속도 배율 설정 (SLOW 효과용) */
+  setSpeedMultiplier(mul: number): void {
+    this.speedMultiplier = mul;
+  }
+
   /** 드랍 아이템 소비 (BattleScene에서 호출) */
   consumeDrop(): DropEntry | null {
     const drop = this.pendingDrop;
@@ -65,6 +91,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.lastAttackTime = 0;
     this.knockbackTimer = 0;
     this.pendingDrop = null;
+    this.stunned = false;
+    this.speedMultiplier = 1.0;
 
     this.setTexture(data.spriteKey);
     this.setPosition(x, y);
@@ -73,14 +101,25 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.clearTint();
     this.setAlpha(1);
 
-    // 적 애니메이션 재생 (spriteKey에서 'enemy_' 제거 후 애니메이션 키 생성)
+    // 적 애니메이션 재생
     const animKey = `enemy-${data.id}-idle`;
     if (this.scene.anims.exists(animKey)) {
       this.play(animKey);
+    } else {
+      // 변형 적은 원본 스프라이트의 애니메이션 사용
+      const baseSpriteId = data.spriteKey.replace('enemy_', '').replace('boss_', '');
+      const fallbackKey = `enemy-${baseSpriteId}-idle`;
+      if (this.scene.anims.exists(fallbackKey)) {
+        this.play(fallbackKey);
+      } else if (this.scene.anims.exists('boss-beopwang-idle')) {
+        // 보스는 beopwang 애니메이션 사용
+        if (data.spriteKey === 'boss_beopwang') {
+          this.play('boss-beopwang-idle');
+        }
+      }
     }
 
     // 적은 스폰 즉시 왼쪽(플레이어 방향)을 바라봐야 함
-    // update()에서도 설정하지만, 첫 프레임 렌더링 전에 확실히 적용
     this.setFlipX(true);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -95,6 +134,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setActive(false);
     this.setVisible(false);
     this.enemyData = null;
+    this.stunned = false;
+    this.speedMultiplier = 1.0;
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
@@ -156,6 +197,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   update(_time: number, delta: number): void {
     if (!this.active || !this.enemyData) return;
 
+    // 기절 상태면 모든 행동 중지
+    if (this.stunned) return;
+
     // 넉백 중이면 이동 AI 중지
     if (this.knockbackTimer > 0) {
       this.knockbackTimer -= delta;
@@ -168,15 +212,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     // 적은 항상 왼쪽(플레이어 방향)을 바라봄
-    // 오른쪽에서 왼쪽으로 다가오므로 flipX = true 고정
     this.setFlipX(true);
 
     if (dist > data.attackRange) {
-      // 추적 이동
+      // 추적 이동 (speedMultiplier 적용)
       const nx = dx / dist;
       const ny = dy / dist;
+      const speed = data.speed * this.speedMultiplier;
       const body = this.body as Phaser.Physics.Arcade.Body;
-      body.setVelocity(nx * data.speed, ny * data.speed);
+      body.setVelocity(nx * speed, ny * speed);
     } else {
       // 공격 범위 내 → 정지 후 공격
       const body = this.body as Phaser.Physics.Arcade.Body;
@@ -185,7 +229,6 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       const now = this.scene.time.now;
       if (now - this.lastAttackTime >= data.attackCooldown) {
         this.lastAttackTime = now;
-        // 공격 이벤트 발생 (BattleScene에서 처리)
         this.scene.events.emit('enemy-attack', this, data.damage);
       }
     }
@@ -208,11 +251,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    // 사망 연출 (페이드아웃)
+    // 사망 연출 (빠른 페이드아웃 - 파편 이펙트는 BattleScene에서 처리)
     this.scene.tweens.add({
       targets: this,
       alpha: 0,
-      duration: 300,
+      duration: 200,
       onComplete: () => {
         this.deactivate();
       },

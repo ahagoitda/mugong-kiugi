@@ -37,6 +37,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     hitFrames: [2],
     hitboxSize: { w: 36, h: 24 },
     moveOffset: { x: 4, y: 0 },
+    description: '천하삼재(天·地·人)의 이치를 담은 기본 검법. 빠르고 안정적이다.',
   }],
 
   ['yukhap', {
@@ -59,6 +60,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'KNOCKBACK',
     effectChance: 0.3,
     effectDuration: 200,
+    description: '육합(六合)의 힘으로 적을 밀어내는 검법. 넉백 확률이 있다.',
   }],
 
   // ─── 중급 검법 ───
@@ -82,6 +84,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'BLEED',
     effectChance: 0.4,
     effectDuration: 3000,
+    description: '매화가 흩날리듯 화려한 연속 베기. 출혈을 유발한다.',
   }],
 
   ['cheongpung', {
@@ -101,9 +104,10 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     hitFrames: [1, 3],
     hitboxSize: { w: 40, h: 20 },
     moveOffset: { x: 12, y: 0 },
-    effect: 'BLEED',
+    effect: 'SLOW',
     effectChance: 0.5,
     effectDuration: 2000,
+    description: '청풍처럼 빠른 돌진 검격. 적의 이동 속도를 둔화시킨다.',
   }],
 
   // ─── 상급 검법 ───
@@ -127,6 +131,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'STUN',
     effectChance: 0.6,
     effectDuration: 1000,
+    description: '음양의 조화를 담은 절학. 강력한 기절 효과를 부여한다.',
   }],
 
   // ─── 최상급 검법 ───
@@ -150,6 +155,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'KNOCKBACK',
     effectChance: 1.0,
     effectDuration: 500,
+    description: '하늘을 가르는 무애의 일검. 모든 것을 베어내는 궁극의 검법.',
   }],
 
   // ─── 보법 (회피기) ───
@@ -170,6 +176,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     hitFrames: [],
     hitboxSize: { w: 0, h: 0 },
     moveOffset: { x: 64, y: 0 },
+    description: '풀 위를 스치듯 빠르게 이동하는 경공술.',
   }],
 ]);
 
@@ -178,12 +185,13 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
  *
  * 동일 등급의 비급 2개를 합성하여 상위 비급을 획득합니다.
  * 합성 경로는 선형적이며, 플레이어에게 명확한 성장 목표를 제시합니다.
+ * 상위 합성일수록 더 많은 골드가 필요합니다.
  */
 export const SYNTHESIS_RECIPES: readonly SynthesisRecipe[] = [
-  { material1: 'samjae', material2: 'samjae', result: 'maehwa' },
-  { material1: 'yukhap', material2: 'yukhap', result: 'cheongpung' },
-  { material1: 'maehwa', material2: 'cheongpung', result: 'taegeuk' },
-  { material1: 'taegeuk', material2: 'taegeuk', result: 'changung' },
+  { material1: 'samjae', material2: 'samjae', result: 'maehwa', goldCost: 50 },
+  { material1: 'yukhap', material2: 'yukhap', result: 'cheongpung', goldCost: 50 },
+  { material1: 'maehwa', material2: 'cheongpung', result: 'taegeuk', goldCost: 200 },
+  { material1: 'taegeuk', material2: 'taegeuk', result: 'changung', goldCost: 1000 },
 ];
 
 /**
@@ -195,3 +203,19 @@ export const GRADE_COLORS: Readonly<Record<string, number>> = {
   HIGH: 0xab47bc,
   ULTIMATE: 0xffd740,
 };
+
+/**
+ * 레벨업에 필요한 경험치 계산
+ *
+ * 공식: 50 + (level - 1) * 30 + level^1.5 * 10
+ * - 레벨 1→2: 50 EXP
+ * - 레벨 5→6: 182 EXP
+ * - 레벨 10→11: 586 EXP
+ * - 레벨 20→21: 1,464 EXP
+ *
+ * 이 곡선은 초반에는 빠른 레벨업으로 성취감을 주고,
+ * 후반에는 점진적으로 느려져 장기 플레이를 유도합니다.
+ */
+export function getExpToNextLevel(level: number): number {
+  return Math.round(50 + (level - 1) * 30 + Math.pow(level, 1.5) * 10);
+}

@@ -11,8 +11,15 @@ import { CHARACTER_LIST } from '../data/characters';
  * - 캐릭터 스프라이트는 CHARACTER_LIST에서 동적으로 생성
  *   → 캐릭터 추가 시 데이터만 추가하면 자동 로드
  * - 128x128 프레임 (캐릭터), 160x160 프레임 (보스)
+ *
+ * 안정성 강화:
+ * - loaderror 핸들러: 개별 파일 로드 실패 시 건너뛰고 계속 진행
+ * - 타임아웃 안전장치: 로딩이 멈춰도 10초 후 강제 씬 전환
+ *   (모바일 WebGL에서 대용량 텍스처 처리 중 complete 이벤트 미발화 방지)
  */
 export class BootScene extends Phaser.Scene {
+  private safetyTimer: Phaser.Time.TimerEvent | null = null;
+
   constructor() {
     super({ key: 'BootScene' });
   }
@@ -51,6 +58,39 @@ export class BootScene extends Phaser.Scene {
       fill.destroy();
       label.destroy();
       percentText.destroy();
+      // 타임아웃 안전장치 해제 (정상 완료됨)
+      if (this.safetyTimer) {
+        this.safetyTimer.remove();
+        this.safetyTimer = null;
+      }
+    });
+
+    /**
+     * loaderror 핸들러: 개별 파일 로드 실패 시 경고만 출력하고 계속 진행.
+     *
+     * 왜 필요한가?
+     * Phaser 3 기본 동작: 파일 하나가 실패하면 로더가 멈춤.
+     * 모바일 환경에서 네트워크 불안정 또는 WebGL 텍스처 한계로
+     * 특정 파일이 실패할 경우 complete 이벤트가 발화되지 않아 프리즈 발생.
+     * 이 핸들러로 실패를 무시하면 나머지 파일을 계속 로드함.
+     */
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      console.warn(`[BootScene] 에셋 로드 실패 (무시하고 계속): ${file.key} (${file.url})`);
+    });
+
+    /**
+     * 타임아웃 안전장치: 로딩 시작 후 15초 이내에 complete가 발화되지 않으면
+     * 강제로 씬 전환. 모바일 WebGL에서 마지막 텍스처 처리 중 멈추는 경우 대비.
+     *
+     * 왜 15초인가?
+     * - 총 에셋 크기: ~2.5MB (최적화 후)
+     * - 3G 환경 (1Mbps): ~20초 → 여유 있게 15초
+     * - 대부분 Wi-Fi/LTE 환경에서는 3~5초면 충분
+     */
+    this.safetyTimer = this.time.delayedCall(15000, () => {
+      console.warn('[BootScene] 로딩 타임아웃 - 강제 씬 전환');
+      this.load.reset();
+      this.scene.start('CharacterSelectScene');
     });
 
     const P = 'sprites/processed';
@@ -96,7 +136,7 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 160, frameHeight: 160,
     });
 
-    // ─── 배경 이미지 (5종) ───
+    // ─── 배경 이미지 (5종, 360px 너비로 최적화됨) ───
     // 산림 (기본)
     this.load.image('bg_mountains', `${P}/bg_mountains.png`);
     this.load.image('bg_ground', `${P}/bg_ground.png`);

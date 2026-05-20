@@ -11,6 +11,7 @@ import { CHARACTER_LIST } from '../data/characters';
  * - 캐릭터 스프라이트는 CHARACTER_LIST에서 동적으로 생성
  *   → 캐릭터 추가 시 데이터만 추가하면 자동 로드
  * - 128x128 프레임 (캐릭터), 160x160 프레임 (보스)
+ * - 시트 레이아웃: margin=2, spacing=4 (텍스처 블리딩 방지)
  *
  * 안정성 강화:
  * - loaderror 핸들러: 개별 파일 로드 실패 시 건너뛰고 계속 진행
@@ -96,45 +97,31 @@ export class BootScene extends Phaser.Scene {
     const P = 'sprites/processed';
 
     // ─── 8캐릭터 스프라이트 동적 로드 ───
+    // margin=2, spacing=4: scripts/repack-sprites.py 가 만든 레이아웃.
+    // 프레임 사이에 4px 빈틈을 두어 WebGL 텍스처 필터링으로 인한
+    // 인접 프레임 픽셀 누출(texture bleeding)을 방지한다.
+    const CHAR_FRAME = { frameWidth: 128, frameHeight: 128, margin: 2, spacing: 4 };
+    const BOSS_FRAME = { frameWidth: 160, frameHeight: 160, margin: 2, spacing: 4 };
+
     for (const char of CHARACTER_LIST) {
       const prefix = char.spritePrefix;
-      this.load.spritesheet(`${prefix}_idle`, `${P}/${prefix}_idle.png`, {
-        frameWidth: 128, frameHeight: 128,
-      });
-      this.load.spritesheet(`${prefix}_run`, `${P}/${prefix}_run.png`, {
-        frameWidth: 128, frameHeight: 128,
-      });
-      this.load.spritesheet(`${prefix}_attack`, `${P}/${prefix}_attack.png`, {
-        frameWidth: 128, frameHeight: 128,
-      });
+      this.load.spritesheet(`${prefix}_idle`, `${P}/${prefix}_idle.png`, CHAR_FRAME);
+      this.load.spritesheet(`${prefix}_run`, `${P}/${prefix}_run.png`, CHAR_FRAME);
+      this.load.spritesheet(`${prefix}_attack`, `${P}/${prefix}_attack.png`, CHAR_FRAME);
     }
 
     // ─── 기존 플레이어 (하위 호환, 필요 시 제거 가능) ───
-    this.load.spritesheet('player_idle', `${P}/player_idle.png`, {
-      frameWidth: 128, frameHeight: 128,
-    });
-    this.load.spritesheet('player_run', `${P}/player_run.png`, {
-      frameWidth: 128, frameHeight: 128,
-    });
-    this.load.spritesheet('player_attack', `${P}/player_attack.png`, {
-      frameWidth: 128, frameHeight: 128,
-    });
+    this.load.spritesheet('player_idle', `${P}/player_idle.png`, CHAR_FRAME);
+    this.load.spritesheet('player_run', `${P}/player_run.png`, CHAR_FRAME);
+    this.load.spritesheet('player_attack', `${P}/player_attack.png`, CHAR_FRAME);
 
-    // ─── 적 스프라이트시트 (128x128 프레임) ───
-    this.load.spritesheet('enemy_bandit', `${P}/enemy_bandit.png`, {
-      frameWidth: 128, frameHeight: 128,
-    });
-    this.load.spritesheet('enemy_swordsman', `${P}/enemy_swordsman.png`, {
-      frameWidth: 128, frameHeight: 128,
-    });
-    this.load.spritesheet('enemy_assassin', `${P}/enemy_assassin.png`, {
-      frameWidth: 128, frameHeight: 128,
-    });
+    // ─── 적 스프라이트시트 ───
+    this.load.spritesheet('enemy_bandit', `${P}/enemy_bandit.png`, CHAR_FRAME);
+    this.load.spritesheet('enemy_swordsman', `${P}/enemy_swordsman.png`, CHAR_FRAME);
+    this.load.spritesheet('enemy_assassin', `${P}/enemy_assassin.png`, CHAR_FRAME);
 
-    // ─── 보스 스프라이트시트 (160x160 프레임) ───
-    this.load.spritesheet('boss_beopwang', `${P}/boss_beopwang.png`, {
-      frameWidth: 160, frameHeight: 160,
-    });
+    // ─── 보스 스프라이트시트 ───
+    this.load.spritesheet('boss_beopwang', `${P}/boss_beopwang.png`, BOSS_FRAME);
 
     // ─── 배경 이미지 (5종, 360px 너비로 최적화됨) ───
     // 산림 (기본)

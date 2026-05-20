@@ -30,7 +30,9 @@ from scipy import ndimage
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "public" / "sprites" / "processed"
+# originals/ = repack 이전의 깨끗한 원본 시트 (128x128 셀, margin/spacing 없음).
+# processed/ 는 repack-sprites.py 가 덮어쓰므로 source 로 쓰면 안 됨.
+SRC_DIR = ROOT / "public" / "sprites" / "originals"
 OUT_DIR = ROOT / "public" / "sprites" / "frames"
 
 
@@ -75,8 +77,73 @@ SHEETS: list[tuple[str, int, int, int]] = [
 ]
 
 
+def _bbox_gap(box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int]) -> int:
+    """두 bbox 사이 최소 거리(축별). 겹치면 0."""
+    ax0, ay0, ax1, ay1 = box_a
+    bx0, by0, bx1, by1 = box_b
+    dx = max(0, ax0 - bx1, bx0 - ax1)
+    dy = max(0, ay0 - by1, by0 - ay1)
+    return max(dx, dy)
+
+
+# 떠다니는 누출 조각 필터 임계값
+# - 슬롯 내 메인(최대) 컴포넌트와 떨어진 작은 조각을 제거
+MIN_SIZE = 8        # 이보다 작은 조각은 노이즈로 간주, gap 무관 제거
+LOOSE_SIZE = 60     # 이보다 작고 ↓ 거리 임계 초과면 제거
+LOOSE_GAP = 8       # 메인 bbox 와 이만큼 이상 떨어진 조각은 의심
+
+
+def filter_slot_components(
+    labeled: np.ndarray,
+    component_ids: list[int],
+) -> tuple[np.ndarray, int]:
+    """슬롯의 컴포넌트들 중 누출 조각을 걸러내고 (유효 픽셀 마스크, 폐기 픽셀 수) 반환."""
+    if not component_ids:
+        return np.zeros_like(labeled, dtype=bool)
+
+    # 사이즈 순 정렬 (최대 = 메인 몸체)
+    sized: list[tuple[int, int]] = []
+    for lid in component_ids:
+        size = int((labeled == lid).sum())
+        sized.append((size, lid))
+    sized.sort(reverse=True)
+
+    main_size, main_id = sized[0]
+    main_mask = labeled == main_id
+    main_ys, main_xs = np.where(main_mask)
+    main_bbox = (
+        int(main_xs.min()), int(main_ys.min()),
+        int(main_xs.max()), int(main_ys.max()),
+    )
+
+    keep = main_mask.copy()
+    dropped = 0
+    for size, lid in sized[1:]:
+        comp_mask = labeled == lid
+        comp_ys, comp_xs = np.where(comp_mask)
+        comp_bbox = (
+            int(comp_xs.min()), int(comp_ys.min()),
+            int(comp_xs.max()), int(comp_ys.max()),
+        )
+        gap = _bbox_gap(comp_bbox, main_bbox)
+        # 필터 규칙
+        is_tiny = size < MIN_SIZE
+        is_loose = size < LOOSE_SIZE and gap > LOOSE_GAP
+        if is_tiny or is_loose:
+            dropped += size
+            continue
+        keep |= comp_mask
+    return keep, dropped
+
+
 def extract_sheet(src_path: Path, out_dir: Path, base: str, fw: int, fh: int, expected: int) -> None:
-    """단일 시트를 슬롯 기반 연결 요소 분리로 프레임 단위 PNG 로 추출."""
+    """단일 시트를 슬롯 기반 연결 요소 분리로 프레임 단위 PNG 로 추출.
+
+    각 슬롯에서:
+    1) 무게중심으로 컴포넌트 → 슬롯 할당
+    2) 슬롯 내 최대 컴포넌트를 메인 몸체로 간주
+    3) MIN_SIZE 미만이거나 (LOOSE_SIZE 미만 & 메인과 LOOSE_GAP 초과) 조각은 누출로 폐기
+    """
     img = Image.open(src_path).convert("RGBA")
     sw, sh = img.size
     if sh != fh:
@@ -95,49 +162,41 @@ def extract_sheet(src_path: Path, out_dir: Path, base: str, fw: int, fh: int, ex
     labeled, n_components = ndimage.label(alpha, structure=structure)
 
     # 컴포넌트별 무게중심 x → 슬롯 i 결정
-    # slot_mask[i] = i 슬롯에 속하는 모든 픽셀의 boolean mask (시트 전체 크기)
-    slot_mask: list[np.ndarray] = [
-        np.zeros_like(alpha, dtype=bool) for _ in range(n_frames)
-    ]
-
+    slot_components: list[list[int]] = [[] for _ in range(n_frames)]
     for label_id in range(1, n_components + 1):
         comp_mask = labeled == label_id
         ys, xs = np.where(comp_mask)
         if len(xs) == 0:
             continue
         cx_mean = float(xs.mean())
-        slot = int(cx_mean // fw)
-        # 범위 안전
-        slot = max(0, min(n_frames - 1, slot))
-        # 이 컴포넌트의 모든 픽셀을 해당 슬롯에 추가
-        # (픽셀이 이웃 슬롯 x 범위로 흘러가더라도, 슬롯의 [i*fw, (i+1)*fw) 크롭에서
-        #  자동으로 잘려나가도록 시트 전체 마스크에 표시만 해둔다)
-        slot_mask[slot] |= comp_mask
+        slot = max(0, min(n_frames - 1, int(cx_mean // fw)))
+        slot_components[slot].append(label_id)
+
+    # 각 슬롯 → 누출 필터링 후 마스크 생성
+    slot_masks: list[np.ndarray] = []
+    total_dropped = 0
+    for i in range(n_frames):
+        mask, dropped = filter_slot_components(labeled, slot_components[i])
+        slot_masks.append(mask)
+        total_dropped += dropped
 
     # 각 슬롯 → 128x128 (또는 boss 160x160) 캔버스로 크롭/저장
     out_dir.mkdir(parents=True, exist_ok=True)
     for i in range(n_frames):
-        # 해당 슬롯의 픽셀만 남긴 시트 (전체 크기)
         masked_rgba = arr.copy()
-        keep = slot_mask[i]
-        # mask 가 False 인 자리는 알파 0 으로
+        keep = slot_masks[i]
         masked_rgba[~keep] = [0, 0, 0, 0]
-
-        # 슬롯 i 의 x 범위로 크롭
         x0 = i * fw
         x1 = x0 + fw
         frame_arr = masked_rgba[:, x0:x1]
-        # 보스의 경우 fh != 128 일 수 있음. 이미 sh == fh 보장됨
-        # 출력은 항상 (fh, fw) 크기
         out = Image.fromarray(frame_arr, mode="RGBA")
         out_path = out_dir / f"{base}_{i}.png"
         out.save(out_path)
 
-    # 요약
-    total_kept = sum(int(m.sum()) for m in slot_mask)
+    total_kept = sum(int(m.sum()) for m in slot_masks)
     total_orig = int(alpha.sum())
-    excluded = total_orig - total_kept
-    print(f"  {base}: {n_components} comps → {n_frames} frames, kept {total_kept}px, excluded {excluded}px")
+    print(f"  {base}: {n_components} comps → {n_frames} frames, "
+          f"kept {total_kept}px, dropped {total_dropped}px (leak fragments)")
 
 
 def main() -> int:

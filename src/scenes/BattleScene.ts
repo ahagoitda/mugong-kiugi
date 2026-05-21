@@ -35,6 +35,56 @@ const GROUND_Y = BATTLE_H - 80;
 const SCROLL_SPEED = 40;
 const MAX_ENEMIES = 8;
 
+// ─── 난이도 조정(하향) 전역 배율 ───
+// 방치형 게임에 맞춰 적 위협을 낮춰 편하게 진행되도록 한다.
+const ENEMY_HP_MUL = 0.85;   // 적 체력 (빨리 처치)
+const ENEMY_DMG_MUL = 0.5;   // 적 공격력 (안전)
+const BOSS_HP_MUL = 0.8;     // 보스 체력
+const BOSS_DMG_MUL = 0.5;    // 보스 공격력
+
+/**
+ * 보스 등급별 고유 스킬 정의.
+ *
+ * type 별 연출:
+ * - projectiles: 보스 → 플레이어 방향으로 투사체 N발 (부채꼴)
+ * - shockwave:   지면을 따라 밀려오는 충격파 (회피기로 회피 가능)
+ * - rain:        하늘에서 떨어지는 낙하물 N개
+ * - burst:       사방 투사체 + 화면 섬광 + 지면 충격파 (광역)
+ */
+interface BossSkillDef {
+  readonly type: 'projectiles' | 'shockwave' | 'rain' | 'burst';
+  readonly color: number;
+  readonly count: number;
+  readonly dmgMul: number;
+  readonly nameKo: string;
+}
+
+const BOSS_SKILLS: Readonly<Record<string, BossSkillDef>> = {
+  DAEJU:   { type: 'shockwave',   color: 0xcc8844, count: 1, dmgMul: 1.1, nameKo: '진각(震脚)' },
+  DANJU:   { type: 'projectiles', color: 0xff5522, count: 3, dmgMul: 1.0, nameKo: '혈풍참(血風斬)' },
+  GAKJU:   { type: 'projectiles', color: 0x9966dd, count: 5, dmgMul: 1.0, nameKo: '단혼격(斷魂擊)' },
+  MAGUN:   { type: 'rain',        color: 0x44bbff, count: 6, dmgMul: 1.1, nameKo: '빙룡강림(氷龍降臨)' },
+  HOBUP:   { type: 'shockwave',   color: 0xffcc33, count: 2, dmgMul: 1.2, nameKo: '금강진(金剛震)' },
+  SAJA:    { type: 'projectiles', color: 0x8855cc, count: 6, dmgMul: 1.15, nameKo: '흑운탄(黑雲彈)' },
+  BUGYOJU: { type: 'rain',        color: 0xff3366, count: 8, dmgMul: 1.15, nameKo: '혈우(血雨)' },
+  HYEOLMA: { type: 'burst',       color: 0xff2222, count: 8, dmgMul: 1.3, nameKo: '혈마강세(血魔降世)' },
+};
+
+/**
+ * 캐릭터별 공격 이펙트(슬래시) 색상.
+ * 선택한 캐릭터마다 전투 이펙트 색이 달라진다.
+ */
+const CHAR_SLASH_COLORS: Readonly<Record<string, number>> = {
+  sword_male:   0x66ccff, // 검객(남) - 청
+  sword_female: 0x66ffee, // 여검객 - 청록
+  dao_male:     0xff7733, // 도객(남) - 주황
+  dao_female:   0xff5599, // 여도객 - 분홍
+  fist_male:    0xffcc33, // 권사(남) - 금
+  fist_female:  0xffe866, // 여권사 - 연금
+  spear_male:   0x66ff88, // 창객(남) - 녹
+  spear_female: 0x99ffbb, // 여창객 - 연녹
+};
+
 /** 상태이상이 적용된 적 추적 */
 interface StatusInstance {
   enemy: Enemy;
@@ -63,6 +113,9 @@ export class BattleScene extends Phaser.Scene {
   // 보스전 상태
   private isBossWave = false;
   private bossEnemy: Enemy | null = null;
+  private bossAura: Phaser.GameObjects.Ellipse | null = null;
+  private bossSkillTimer = 0;
+  private bossSkillInterval = 3600;
   private bossHpBar: Phaser.GameObjects.Graphics | null = null;
   private bossHpBg: Phaser.GameObjects.Graphics | null = null;
   private bossNameText: Phaser.GameObjects.Text | null = null;
@@ -89,6 +142,9 @@ export class BattleScene extends Phaser.Scene {
   // 골드/경험치 세션 누적
   private sessionGold = 0;
   private sessionExp = 0;
+
+  // 선택 캐릭터별 공격 이펙트 색
+  private slashColor = 0xffffff;
 
   constructor() {
     super({ key: 'BattleScene' });
@@ -118,6 +174,9 @@ export class BattleScene extends Phaser.Scene {
     // 플레이어 생성 (선택한 캐릭터 ID 전달)
     this.player = new Player(this, 80, GROUND_Y, this.characterId);
     this.player.setOnHitCallback(this.onPlayerHit.bind(this));
+
+    // 선택 캐릭터별 공격 이펙트 색 결정
+    this.slashColor = CHAR_SLASH_COLORS[this.characterId] ?? 0xffffff;
 
     // 세이브 데이터 적용
     this.applySaveData();
@@ -193,6 +252,7 @@ export class BattleScene extends Phaser.Scene {
     this.updateSpawning(delta);
     this.updateBackground();
     this.updateBossHpBar();
+    this.updateBossSkill(delta);
     this.updateStatusEffects(delta);
     this.emitState();
   }
@@ -297,6 +357,186 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  // ─── 보스 특수 스킬 ───
+
+  /** 보스 오라를 보스 위치에 따라가게 하고, 주기적으로 특수 스킬을 시전 */
+  private updateBossSkill(delta: number): void {
+    if (!this.isBossWave || !this.bossEnemy || !this.bossEnemy.active) return;
+
+    // 오라를 보스 발밑에 고정
+    if (this.bossAura) {
+      this.bossAura.x = this.bossEnemy.x;
+      this.bossAura.y = this.bossEnemy.y + 26;
+    }
+
+    if (this.player.currentCharState === 'DEAD') return;
+
+    this.bossSkillTimer += delta;
+    if (this.bossSkillTimer >= this.bossSkillInterval) {
+      this.bossSkillTimer = 0;
+      const rank = this.bossEnemy.data_?.bossRank ?? 'DAEJU';
+      this.executeBossSkill(rank);
+    }
+  }
+
+  /** 보스 등급별 고유 스킬 실행 */
+  private executeBossSkill(rank: string): void {
+    const boss = this.bossEnemy;
+    if (!boss || !boss.active) return;
+    const def = BOSS_SKILLS[rank] ?? BOSS_SKILLS.DAEJU;
+    const baseDmg = Math.max(2, Math.round((boss.data_?.damage ?? 10) * def.dmgMul));
+
+    boss.playCastMotion();
+    this.cameras.main.shake(140, 0.004);
+    this.showBossSkillName(def.nameKo, def.color);
+    soundSystem.play('boss_appear');
+
+    const bx = boss.x;
+    const by = boss.y - 12;
+    const px = this.player.x;
+    const py = this.player.y - 8;
+
+    switch (def.type) {
+      case 'projectiles': {
+        for (let i = 0; i < def.count; i++) {
+          const spread = (i - (def.count - 1) / 2) * 16;
+          this.time.delayedCall(i * 90, () => {
+            if (boss.active) this.spawnBossProjectile(bx, by, px, py + spread, def.color, baseDmg);
+          });
+        }
+        break;
+      }
+      case 'shockwave': {
+        for (let r = 0; r < def.count; r++) {
+          this.time.delayedCall(r * 380, () => {
+            if (boss.active) this.spawnGroundWave(boss.x, def.color, baseDmg);
+          });
+        }
+        break;
+      }
+      case 'rain': {
+        for (let i = 0; i < def.count; i++) {
+          const tx = px + (Math.random() - 0.5) * 140;
+          this.time.delayedCall(i * 110, () => {
+            if (boss.active) this.spawnRainShard(tx, def.color, baseDmg);
+          });
+        }
+        break;
+      }
+      case 'burst': {
+        const r = (def.color >> 16) & 0xff;
+        const g = (def.color >> 8) & 0xff;
+        const b = def.color & 0xff;
+        this.cameras.main.flash(220, r, g, b);
+        for (let i = 0; i < def.count; i++) {
+          const ang = (i / def.count) * Math.PI * 2;
+          const tx = bx + Math.cos(ang) * 220;
+          const ty = by + Math.sin(ang) * 140;
+          this.spawnBossProjectile(bx, by, tx, ty, def.color, baseDmg);
+        }
+        this.time.delayedCall(450, () => {
+          if (boss.active) this.spawnGroundWave(boss.x, def.color, baseDmg);
+        });
+        break;
+      }
+    }
+  }
+
+  /** 보스 투사체: 시작점 → 목표점으로 날아가 착탄 시 광역 판정 */
+  private spawnBossProjectile(
+    fromX: number, fromY: number, toX: number, toY: number, color: number, dmg: number,
+  ): void {
+    const proj = this.add.circle(fromX, fromY, 7, color, 0.95).setDepth(140);
+    proj.setStrokeStyle(2, 0xffffff, 0.7);
+    this.tweens.add({
+      targets: proj,
+      x: toX, y: toY,
+      duration: 620,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        this.bossSkillImpact(proj.x, proj.y, color, dmg, 34);
+        proj.destroy();
+      },
+    });
+  }
+
+  /** 지면 충격파: 보스 발밑에서 플레이어 쪽으로 밀려오는 파동 (회피 가능) */
+  private spawnGroundWave(fromX: number, color: number, dmg: number): void {
+    const wave = this.add.ellipse(fromX, GROUND_Y + 18, 26, 16, color, 0.7).setDepth(139);
+    wave.setStrokeStyle(2, 0xffffff, 0.5);
+    const dir = this.player.x < fromX ? -1 : 1;
+    this.tweens.add({
+      targets: wave,
+      x: this.player.x + dir * 4,
+      scaleX: 2.2, scaleY: 1.4,
+      duration: 700,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        this.bossSkillImpact(wave.x, this.player.y, color, dmg, 40);
+        wave.destroy();
+      },
+    });
+  }
+
+  /** 낙하물: 하늘에서 떨어져 지면 착탄 시 광역 판정 */
+  private spawnRainShard(targetX: number, color: number, dmg: number): void {
+    const shard = this.add.circle(targetX, 0, 6, color, 0.95).setDepth(140);
+    shard.setStrokeStyle(2, 0xffffff, 0.6);
+    // 착탄 지점 텔레그래프
+    const marker = this.add.ellipse(targetX, GROUND_Y + 16, 28, 10, color, 0.3).setDepth(138);
+    this.tweens.add({
+      targets: shard,
+      y: GROUND_Y,
+      duration: 520,
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        this.bossSkillImpact(targetX, GROUND_Y, color, dmg, 30);
+        shard.destroy();
+        marker.destroy();
+      },
+    });
+  }
+
+  /**
+   * 보스 스킬 착탄 처리: 폭발 이펙트 + 범위 내 플레이어 피격.
+   * 플레이어 피격은 evade/무적 판정을 거치는 applyPlayerHit 사용.
+   */
+  private bossSkillImpact(x: number, y: number, color: number, dmg: number, radius: number): void {
+    const burst = this.add.circle(x, y, radius * 0.4, color, 0.8).setDepth(141);
+    this.tweens.add({
+      targets: burst, scaleX: 2.4, scaleY: 2.4, alpha: 0,
+      duration: 240, onComplete: () => burst.destroy(),
+    });
+    const dx = x - this.player.x;
+    const dy = y - this.player.y;
+    if (Math.sqrt(dx * dx + dy * dy) <= radius) {
+      const hit = this.applyPlayerHit(dmg);
+      if (hit) this.showEnemyHitImpact(this.player.x, this.player.y - 6);
+    }
+  }
+
+  /** 보스 오라 제거 (트윈 정리 포함) */
+  private destroyBossAura(): void {
+    if (this.bossAura) {
+      this.tweens.killTweensOf(this.bossAura);
+      this.bossAura.destroy();
+      this.bossAura = null;
+    }
+  }
+
+  /** 보스 스킬명 표시 (화면 상단) */
+  private showBossSkillName(nameKo: string, color: number): void {
+    const colorStr = `#${color.toString(16).padStart(6, '0')}`;
+    const text = this.add.text(GAME_W / 2, 52, nameKo, {
+      fontSize: '13px', color: colorStr, fontFamily: 'monospace', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    this.tweens.add({
+      targets: text, alpha: 0, y: text.y - 14,
+      duration: 1100, ease: 'Power2', onComplete: () => text.destroy(),
+    });
+  }
+
   // ─── 횡스크롤 ───
 
   private updateScroll(delta: number): void {
@@ -337,11 +577,23 @@ export class BattleScene extends Phaser.Scene {
 
     if (!closest) return;
 
+    // 자동 회피: HP가 35% 미만이고 적이 매우 가까우면 회피기 사용 (가능할 때)
+    const hpRatio = this.player.hp / this.player.maxHp;
+    if (hpRatio < 0.35 && closestDist < 70) {
+      if (this.player.handleDash()) return;
+    }
+
+    // 사거리 안의 적에게 "가장 강한" 스킬부터 자동 시전.
+    // handleAttack 내부에서 쿨타임/기력을 검사하므로, 시전 가능한
+    // 첫 스킬이 발동될 때까지 강→약 순으로 시도한다. (방치형 자동 플레이)
     const skills = this.player.skills;
-    for (let i = 0; i < skills.length; i++) {
+    const order = skills
+      .map((_, i) => i)
+      .sort((a, b) => skills[b].damageMultiplier - skills[a].damageMultiplier);
+
+    for (const i of order) {
       if (closestDist <= skills[i].range + 20) {
-        this.player.handleAttack(i);
-        return;
+        if (this.player.handleAttack(i)) return;
       }
     }
   }
@@ -435,12 +687,12 @@ export class BattleScene extends Phaser.Scene {
     const data = ENEMY_DATABASE.get(enemyId);
     if (!data) return;
 
-    // 웨이브 스케일링: 웨이브가 높아질수록 적이 조금씩 강해짐
-    const waveScale = 1 + (this.waveNumber - 1) * 0.03;
+    // 웨이브 스케일링: 웨이브가 높아질수록 적이 조금씩 강해짐 (난이도 배율 적용)
+    const waveScale = 1 + (this.waveNumber - 1) * 0.02;
     const scaledData = {
       ...data,
-      hp: Math.round(data.hp * waveScale),
-      damage: Math.round(data.damage * (1 + (this.waveNumber - 1) * 0.02)),
+      hp: Math.max(1, Math.round(data.hp * waveScale * ENEMY_HP_MUL)),
+      damage: Math.max(1, Math.round(data.damage * (1 + (this.waveNumber - 1) * 0.012) * ENEMY_DMG_MUL)),
     };
 
     const spawnX = GAME_W + 60 + Math.random() * 80;
@@ -475,8 +727,8 @@ export class BattleScene extends Phaser.Scene {
 
     const scaledBossData = {
       ...bossData,
-      hp: Math.round(bossData.hp * hpMultiplier),
-      damage: Math.round(bossData.damage * dmgMultiplier),
+      hp: Math.round(bossData.hp * hpMultiplier * BOSS_HP_MUL),
+      damage: Math.round(bossData.damage * dmgMultiplier * BOSS_DMG_MUL),
     };
 
     const spawnX = GAME_W + 80;
@@ -491,6 +743,7 @@ export class BattleScene extends Phaser.Scene {
     };
     const bossScale = rankScales[bossData.bossRank ?? 'DAEJU'] ?? 1.0;
     enemy.setScale(bossScale);
+    enemy.setDepth(20); // 오라 위에 보스가 표시되도록
 
     if (bossData.tint !== undefined) {
       enemy.setTint(bossData.tint);
@@ -498,6 +751,17 @@ export class BattleScene extends Phaser.Scene {
       enemy.clearTint();
     }
 
+    // 보스 오라(등급 색상): 발밑에서 맥동하는 글로우로 시각 차별화
+    const auraColor = BOSS_RANK_COLORS[bossData.bossRank ?? ''] ?? 0xff2222;
+    this.bossAura = this.add.ellipse(spawnX, spawnY + 26, 90, 28, auraColor, 0.4)
+      .setDepth(19);
+    this.tweens.add({
+      targets: this.bossAura,
+      scaleX: 1.25, scaleY: 1.25, alpha: 0.18,
+      duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+
+    this.bossSkillTimer = 0;
     this.bossEnemy = enemy;
     this.enemies.push(enemy);
 
@@ -570,10 +834,10 @@ export class BattleScene extends Phaser.Scene {
         this.spawnBoss();
       });
     } else {
-      // 웨이브 적 수: 초반 적게, 점진적 증가, 최대 15
-      this.waveEnemyTotal = Math.min(15, 3 + Math.floor(wave * 1.5));
-      // 스폰 간격: 웨이브 높아질수록 빨라짐
-      this.spawnInterval = Math.max(600, 1500 - wave * 30);
+      // 웨이브 적 수: 초반 적게, 점진적 증가, 최대 10 (난이도 하향)
+      this.waveEnemyTotal = Math.min(10, 2 + Math.floor(wave * 1.0));
+      // 스폰 간격: 웨이브 높아질수록 빨라짐 (하한 700ms)
+      this.spawnInterval = Math.max(700, 1500 - wave * 25);
     }
   }
 
@@ -631,6 +895,7 @@ export class BattleScene extends Phaser.Scene {
   private onBossDefeated(): void {
     soundSystem.play('boss_die');
     this.hideBossHpUI();
+    this.destroyBossAura();
 
     const bossData = this.bossEnemy?.data_;
     this.isBossWave = false;
@@ -882,11 +1147,45 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private onEnemyAttack(enemy: Enemy, damage: number): void {
+    const hit = this.applyPlayerHit(damage);
+    if (hit) {
+      // 타격 임팩트 이펙트 (적 → 플레이어 사이 충돌 지점)
+      const impactX = (this.player.x + enemy.x) / 2;
+      this.showEnemyHitImpact(impactX, this.player.y - 6);
+    }
+  }
+
+  /**
+   * 플레이어 피격 공통 처리 (자동 회피 확률 포함).
+   *
+   * 방치형 자동 사냥 중, 레벨에 비례하는 확률로 공격을 자동 회피한다.
+   *   회피 확률 = 12% + (레벨-1) × 2%, 최대 60%
+   * 회피 성공 시 무피해 + "회피!" 연출, 실패 시에만 데미지.
+   *
+   * @returns 실제 피격 여부 (회피했으면 false)
+   */
+  private applyPlayerHit(damage: number): boolean {
+    if (this.player.currentCharState === 'DEAD') return false;
+
+    const save = loadGame();
+    const evadeChance = Math.min(0.6, 0.12 + (save.level - 1) * 0.02);
+    if (Math.random() < evadeChance) {
+      this.player.playEvade();
+      soundSystem.play('dash');
+      const t = this.add.text(this.player.x, this.player.y - 34, '회피!', {
+        fontSize: '11px', color: '#88ddff', fontFamily: 'monospace', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(160);
+      this.tweens.add({
+        targets: t, y: t.y - 18, alpha: 0, duration: 600,
+        onComplete: () => t.destroy(),
+      });
+      return false;
+    }
+
     this.player.takeDamage(damage);
     soundSystem.play('player_hurt');
-    // 타격 임팩트 이펙트 (적 → 플레이어 사이 충돌 지점)
-    const impactX = (this.player.x + enemy.x) / 2;
-    this.showEnemyHitImpact(impactX, this.player.y - 6);
+    return true;
   }
 
   /**
@@ -1007,18 +1306,21 @@ export class BattleScene extends Phaser.Scene {
     const fx = this.slashPool.pop();
     if (!fx) return;
 
-    let textureKey = 'fx_slash_white';
-    if (skill.grade === 'MID') textureKey = 'fx_slash_pink';
-    if (skill.grade === 'HIGH') textureKey = 'fx_slash_blue';
-    if (skill.grade === 'ULTIMATE') textureKey = 'fx_slash_gold';
-
-    fx.setTexture(textureKey);
+    // 흰색 슬래시를 캐릭터별 색으로 틴트 (캐릭터마다 전투 이펙트 색이 다름).
+    // 상급/최상급은 살짝 밝게 보정해 등급감을 준다.
+    fx.setTexture('fx_slash_white');
+    let tint = this.slashColor;
+    if (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
+      tint = Phaser.Display.Color.IntegerToColor(tint).brighten(20).color;
+    }
+    fx.setTint(tint);
     fx.setPosition(x, y);
     fx.setActive(true);
     fx.setVisible(true);
     fx.setAlpha(1);
     fx.setScale(skill.hitboxSize.w / 32);
-    fx.setFlipX(!this.player.isFacingRight);
+    // 슬래시 원본은 왼쪽을 향하므로, 오른쪽을 보고 공격할 때 flipX=true.
+    fx.setFlipX(this.player.isFacingRight);
 
     this.tweens.add({
       targets: fx,

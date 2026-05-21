@@ -163,6 +163,23 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   /**
+   * 보스 특수 스킬 시전 모션 (BattleScene에서 호출).
+   * 공격 애니메이션 + 잠깐 커졌다 돌아오는 윈드업으로 시전감을 준다.
+   * 위치 이동은 없음(원거리 스킬). 이동 AI와 충돌하지 않도록 attacking 사용 안 함.
+   */
+  playCastMotion(): void {
+    if (!this.active) return;
+    this.playAttackAnim();
+    const s = this.scaleX;
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: s * 1.12, scaleY: s * 1.12,
+      duration: 160, yoyo: true, ease: 'Sine.easeOut',
+      onComplete: () => { if (this.active) { this.setScale(s); this.playIdleAnim(); } },
+    });
+  }
+
+  /**
    * 풀에서 꺼내어 활성화합니다.
    */
   activate(data: EnemyData, x: number, y: number): void {
@@ -181,6 +198,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);
+    this.setDepth(0); // 보스는 spawnBoss에서 더 높게 재설정됨 (오라 위에 표시)
     this.clearTint();
     this.setAlpha(1);
 

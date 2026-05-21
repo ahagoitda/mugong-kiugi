@@ -52,6 +52,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private invincible = false;
   // 회피 시작 위치 — 회피 완료 시 정확히 이 좌표로 복귀
   private dashOriginX = 0;
+  // 자동(확률) 회피 연출 중복 방지
+  private autoEvading = false;
 
   // ─── 콜백 ───
   private onHitCallback: ((x: number, y: number, skill: SkillData) => void) | null = null;
@@ -295,6 +297,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     return true;
+  }
+
+  /**
+   * 자동(확률) 회피 시각 연출.
+   * 데미지/쿨다운/기력 소모 없이 짧게 옆으로 비키며 반투명 깜빡임만 준다.
+   * (실제 무피해 처리는 BattleScene.applyPlayerHit 에서 수행)
+   */
+  playEvade(): void {
+    if (this.currentState === 'DEAD' || this.autoEvading) return;
+    this.autoEvading = true;
+    const originX = this.x;
+    this.setAlpha(0.45);
+    this.scene.tweens.add({
+      targets: this,
+      x: originX - 12,
+      duration: 90,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.x = originX;
+        if (this.currentState !== 'DEAD') this.setAlpha(1);
+        this.autoEvading = false;
+      },
+    });
   }
 
   takeDamage(amount: number): void {

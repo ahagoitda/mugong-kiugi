@@ -264,7 +264,9 @@ export class CharacterSelectScene extends Phaser.Scene {
     if (this.statsText) {
       const s = char.stats;
       const bar = (val: number): string => {
-        const filled = Math.round(val * 5);
+        // 스탯 배율이 1.0을 초과(예: 1.3)하면 filled가 5를 넘어
+        // '░'.repeat(음수)로 RangeError가 발생하므로 0~5로 클램프한다.
+        const filled = Math.max(0, Math.min(5, Math.round(val * 5)));
         return '█'.repeat(filled) + '░'.repeat(5 - filled);
       };
       this.statsText.setText(

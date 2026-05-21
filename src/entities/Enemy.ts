@@ -2,6 +2,28 @@ import Phaser from 'phaser';
 import type { EnemyData, DropEntry } from '../data/types';
 
 /**
+ * 원본 스프라이트시트가 왼쪽을 보고 그려졌는지 여부.
+ *
+ * 적은 항상 왼쪽(플레이어 방향)을 바라봐야 한다.
+ * - 원본이 왼쪽을 보면(true) → flipX=false (그대로)
+ * - 원본이 오른쪽을 보면(false) → flipX=true (뒤집어서 왼쪽)
+ * 즉 flipX = !facesLeft.
+ *
+ * 산적/검객 계열은 원본이 왼쪽, 자객/보스 계열은 원본이 오른쪽을 본다.
+ */
+const SPRITE_FACES_LEFT: Readonly<Record<string, boolean>> = {
+  enemy_bandit: true,
+  enemy_swordsman: true,
+  enemy_assassin: false,
+  boss_beopwang: false,
+};
+
+function shouldFlipX(spriteKey: string | undefined): boolean {
+  const facesLeft = SPRITE_FACES_LEFT[spriteKey ?? ''] ?? false;
+  return !facesLeft;
+}
+
+/**
  * Enemy - 적 엔티티
  *
  * 간단한 추적 AI를 가지고 있습니다:
@@ -120,7 +142,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
 
     // 적은 스폰 즉시 왼쪽(플레이어 방향)을 바라봐야 함
-    this.setFlipX(true);
+    // (스프라이트 원본 방향에 따라 flip 여부 결정)
+    this.setFlipX(shouldFlipX(data.spriteKey));
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
@@ -211,8 +234,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const dy = this.targetY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // 적은 항상 왼쪽(플레이어 방향)을 바라봄
-    this.setFlipX(true);
+    // 적은 항상 왼쪽(플레이어 방향)을 바라봄 (스프라이트 원본 방향 보정)
+    this.setFlipX(shouldFlipX(data.spriteKey));
 
     if (dist > data.attackRange) {
       // 추적 이동 (speedMultiplier 적용)

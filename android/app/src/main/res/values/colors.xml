@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- styles.xml의 base AppTheme이 참조하는 색상 (정의가 없으면 빌드 실패) -->
+    <color name="colorPrimary">#1a1a2e</color>
+    <color name="colorPrimaryDark">#12121f</color>
+    <color name="colorAccent">#4fc3f7</color>
+    <!-- 게임 배경/스플래시 (시작 시 흰 화면 깜빡임 방지) -->
+    <color name="splashBg">#1a1a2e</color>
+</resources>

@@ -20,12 +20,22 @@ import { CHARACTER_LIST } from '../data/characters';
  */
 export class BootScene extends Phaser.Scene {
   private safetyTimer: Phaser.Time.TimerEvent | null = null;
+  // 벽시계 백스톱: Phaser 게임 루프가 멈춰도(메인스레드 블록) 작동하도록
+  // window.setTimeout 으로 강제 전환. complete 시 해제.
+  private wallClockTimer: number | null = null;
+  // 중복 전환 방지
+  private transitioned = false;
 
   constructor() {
     super({ key: 'BootScene' });
   }
 
   preload(): void {
+    // 모바일에서 동시에 너무 많은 이미지를 디코딩하면 일부 onload 이벤트가
+    // 누락되어 complete 가 영영 발화되지 않는 사례가 있다. 동시 다운로드 수를
+    // 제한해 이 현상을 완화한다. (기본값 32 → 6)
+    this.load.maxParallelDownloads = 6;
+
     // 로딩 바 UI
     const { width, height } = this.scale;
     const barW = width * 0.6;
@@ -59,11 +69,7 @@ export class BootScene extends Phaser.Scene {
       fill.destroy();
       label.destroy();
       percentText.destroy();
-      // 타임아웃 안전장치 해제 (정상 완료됨)
-      if (this.safetyTimer) {
-        this.safetyTimer.remove();
-        this.safetyTimer = null;
-      }
+      this.clearSafetyTimers();
     });
 
     /**
@@ -80,19 +86,23 @@ export class BootScene extends Phaser.Scene {
     });
 
     /**
-     * 타임아웃 안전장치: 로딩 시작 후 15초 이내에 complete가 발화되지 않으면
-     * 강제로 씬 전환. 모바일 WebGL에서 마지막 텍스처 처리 중 멈추는 경우 대비.
+     * 타임아웃 안전장치 (이중).
      *
-     * 왜 15초인가?
-     * - 총 에셋 크기: ~2.5MB (최적화 후)
-     * - 3G 환경 (1Mbps): ~20초 → 여유 있게 15초
-     * - 대부분 Wi-Fi/LTE 환경에서는 3~5초면 충분
+     * 1) Phaser 타이머(this.time): 게임 루프가 도는 정상 상황에서 동작.
+     * 2) 벽시계 백스톱(window.setTimeout): 모바일 WebGL 텍스처 처리가
+     *    메인스레드를 막아 게임 루프(=Phaser 타이머)가 멈추는 경우,
+     *    메인스레드가 풀리는 순간 매크로태스크 큐에서 강제 전환.
+     *
+     * 두 경로 모두 goToSelect() 로 수렴(중복 전환은 transitioned 플래그로 방지).
      */
-    this.safetyTimer = this.time.delayedCall(15000, () => {
-      console.warn('[BootScene] 로딩 타임아웃 - 강제 씬 전환');
-      this.load.reset();
-      this.scene.start('CharacterSelectScene');
+    this.safetyTimer = this.time.delayedCall(14000, () => {
+      console.warn('[BootScene] 로딩 타임아웃(Phaser) - 강제 전환');
+      this.goToSelect();
     });
+    this.wallClockTimer = window.setTimeout(() => {
+      console.warn('[BootScene] 로딩 타임아웃(벽시계) - 강제 전환');
+      this.goToSelect();
+    }, 15000);
 
     const P = 'sprites/processed';
 
@@ -157,10 +167,39 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    // ─── 애니메이션 등록 ───
-    this.createAnimations();
+    // 정상 로딩 완료 경로
+    this.goToSelect();
+  }
 
-    // CharacterSelectScene으로 전환
+  /** Phaser/벽시계 타이머 모두 해제 */
+  private clearSafetyTimers(): void {
+    if (this.safetyTimer) {
+      this.safetyTimer.remove();
+      this.safetyTimer = null;
+    }
+    if (this.wallClockTimer !== null) {
+      window.clearTimeout(this.wallClockTimer);
+      this.wallClockTimer = null;
+    }
+  }
+
+  /**
+   * 애니메이션을 등록하고 CharacterSelectScene 으로 전환.
+   * 정상 완료(create)·타임아웃(둘 중 하나) 모두 이 메서드로 수렴하며,
+   * transitioned 플래그로 단 한 번만 실행된다.
+   *
+   * 타임아웃 경로에서는 create() 가 호출되지 않으므로 여기서 직접
+   * 애니메이션을 생성한다. (로드된 텍스처에 대해서만 — 방어적)
+   */
+  private goToSelect(): void {
+    if (this.transitioned) return;
+    this.transitioned = true;
+    this.clearSafetyTimers();
+    try {
+      this.createAnimations();
+    } catch (e) {
+      console.warn('[BootScene] 애니메이션 생성 중 오류 (무시하고 진행):', e);
+    }
     this.scene.start('CharacterSelectScene');
   }
 
@@ -175,72 +214,47 @@ export class BootScene extends Phaser.Scene {
     // ─── 8캐릭터 애니메이션 동적 등록 ───
     for (const char of CHARACTER_LIST) {
       const prefix = char.spritePrefix;
-
-      this.anims.create({
-        key: `${prefix}-idle`,
-        frames: this.anims.generateFrameNumbers(`${prefix}_idle`, { start: 0, end: 3 }),
-        frameRate: 6,
-        repeat: -1,
-      });
-
-      this.anims.create({
-        key: `${prefix}-run`,
-        frames: this.anims.generateFrameNumbers(`${prefix}_run`, { start: 0, end: 5 }),
-        frameRate: 10,
-        repeat: -1,
-      });
-
-      this.anims.create({
-        key: `${prefix}-attack`,
-        frames: this.anims.generateFrameNumbers(`${prefix}_attack`, { start: 0, end: 3 }),
-        frameRate: 12,
-        repeat: 0,
-      });
+      this.makeAnim(`${prefix}-idle`, `${prefix}_idle`, 0, 3, 6, -1);
+      this.makeAnim(`${prefix}-run`, `${prefix}_run`, 0, 5, 10, -1);
+      this.makeAnim(`${prefix}-attack`, `${prefix}_attack`, 0, 3, 12, 0);
     }
 
     // ─── 기존 플레이어 애니메이션 (하위 호환) ───
-    this.anims.create({
-      key: 'player-idle',
-      frames: this.anims.generateFrameNumbers('player_idle', { start: 0, end: 3 }),
-      frameRate: 6,
-      repeat: -1,
-    });
-    this.anims.create({
-      key: 'player-run',
-      frames: this.anims.generateFrameNumbers('player_run', { start: 0, end: 5 }),
-      frameRate: 10,
-      repeat: -1,
-    });
-    this.anims.create({
-      key: 'player-attack',
-      frames: this.anims.generateFrameNumbers('player_attack', { start: 0, end: 3 }),
-      frameRate: 12,
-      repeat: 0,
-    });
+    this.makeAnim('player-idle', 'player_idle', 0, 3, 6, -1);
+    this.makeAnim('player-run', 'player_run', 0, 5, 10, -1);
+    this.makeAnim('player-attack', 'player_attack', 0, 3, 12, 0);
 
     // ─── 적 애니메이션 (idle + attack) ───
     const enemies = ['bandit', 'swordsman', 'assassin'] as const;
     for (const name of enemies) {
-      this.anims.create({
-        key: `enemy-${name}-idle`,
-        frames: this.anims.generateFrameNumbers(`enemy_${name}`, { start: 0, end: 3 }),
-        frameRate: 6,
-        repeat: -1,
-      });
-      this.anims.create({
-        key: `enemy-${name}-attack`,
-        frames: this.anims.generateFrameNumbers(`enemy_${name}_attack`, { start: 0, end: 3 }),
-        frameRate: 14,
-        repeat: 0,
-      });
+      this.makeAnim(`enemy-${name}-idle`, `enemy_${name}`, 0, 3, 6, -1);
+      this.makeAnim(`enemy-${name}-attack`, `enemy_${name}_attack`, 0, 3, 14, 0);
     }
 
     // ─── 보스 애니메이션 (idle + attack) ───
+    this.makeAnim('boss-beopwang-idle', 'boss_beopwang', 0, 3, 5, -1);
+    this.makeAnim('boss-beopwang-attack', 'boss_beopwang_attack', 0, 3, 10, 0);
+  }
+
+  /**
+   * 애니메이션 생성 헬퍼 (방어적).
+   * - 텍스처가 로드되지 않았으면(타임아웃 등) 건너뜀
+   * - 이미 같은 키가 있으면 중복 생성 방지
+   */
+  private makeAnim(
+    key: string, textureKey: string,
+    start: number, end: number, frameRate: number, repeat: number,
+  ): void {
+    if (this.anims.exists(key)) return;
+    if (!this.textures.exists(textureKey)) {
+      console.warn(`[BootScene] 텍스처 없음, 애니메이션 생략: ${textureKey}`);
+      return;
+    }
     this.anims.create({
-      key: 'boss-beopwang-idle',
-      frames: this.anims.generateFrameNumbers('boss_beopwang', { start: 0, end: 3 }),
-      frameRate: 5,
-      repeat: -1,
+      key,
+      frames: this.anims.generateFrameNumbers(textureKey, { start, end }),
+      frameRate,
+      repeat,
     });
     this.anims.create({
       key: 'boss-beopwang-attack',

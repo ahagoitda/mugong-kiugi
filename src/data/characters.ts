@@ -195,14 +195,12 @@ export const BACKGROUND_THEMES: readonly BackgroundTheme[] = [
 
 /**
  * 현재 웨이브에 맞는 배경 테마를 반환합니다.
- * 가장 높은 unlockWave를 만족하는 테마를 선택합니다.
+ *
+ * 10스테이지마다 테마가 전환되며, 5종 테마를 무한 순환합니다.
+ *   1~10: 산림, 11~20: 대나무숲, 21~30: 설산, 31~40: 사막, 41~50: 화산,
+ *   51~60: 산림(순환) ...
  */
 export function getBackgroundForWave(wave: number): BackgroundTheme {
-  let selected = BACKGROUND_THEMES[0];
-  for (const theme of BACKGROUND_THEMES) {
-    if (wave >= theme.unlockWave) {
-      selected = theme;
-    }
-  }
-  return selected;
+  const idx = Math.floor((Math.max(1, wave) - 1) / 10) % BACKGROUND_THEMES.length;
+  return BACKGROUND_THEMES[idx];
 }

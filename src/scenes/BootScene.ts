@@ -19,12 +19,18 @@ import { CHARACTER_LIST } from '../data/characters';
  *   (모바일 WebGL에서 대용량 텍스처 처리 중 complete 이벤트 미발화 방지)
  */
 export class BootScene extends Phaser.Scene {
-  private safetyTimer: Phaser.Time.TimerEvent | null = null;
-  // 벽시계 백스톱: Phaser 게임 루프가 멈춰도(메인스레드 블록) 작동하도록
-  // window.setTimeout 으로 강제 전환. complete 시 해제.
-  private wallClockTimer: number | null = null;
+  // 정체 감시자(벽시계 setInterval): 진행률이 일정 시간 멈추면 강제 전환.
+  // Phaser 게임 루프/타이머와 무관하게 동작.
+  private stallWatchdog: number | null = null;
+  private lastProgressAt = 0;
+  private loadStartedAt = 0;
   // 중복 전환 방지
   private transitioned = false;
+
+  // 진행이 이만큼(ms) 멈추면 정체로 간주하고 강제 전환
+  private static readonly STALL_MS = 5000;
+  // 진행 여부와 무관하게 이 시간(ms)을 넘기면 강제 전환 (절대 상한)
+  private static readonly MAX_LOAD_MS = 20000;
 
   constructor() {
     super({ key: 'BootScene' });
@@ -33,8 +39,8 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     // 모바일에서 동시에 너무 많은 이미지를 디코딩하면 일부 onload 이벤트가
     // 누락되어 complete 가 영영 발화되지 않는 사례가 있다. 동시 다운로드 수를
-    // 제한해 이 현상을 완화한다. (기본값 32 → 6)
-    this.load.maxParallelDownloads = 6;
+    // 제한해 이 현상을 완화한다. (기본값 32 → 4)
+    this.load.maxParallelDownloads = 4;
 
     // 로딩 바 UI
     const { width, height } = this.scale;
@@ -62,6 +68,8 @@ export class BootScene extends Phaser.Scene {
     this.load.on('progress', (value: number) => {
       fill.width = (barW - 2) * value;
       percentText.setText(`${Math.round(value * 100)}%`);
+      // 진행이 있을 때마다 시각 갱신 (정체 감시 기준)
+      this.lastProgressAt = Date.now();
     });
 
     this.load.on('complete', () => {
@@ -86,23 +94,30 @@ export class BootScene extends Phaser.Scene {
     });
 
     /**
-     * 타임아웃 안전장치 (이중).
+     * 정체 감시자 (벽시계 기반 setInterval).
      *
-     * 1) Phaser 타이머(this.time): 게임 루프가 도는 정상 상황에서 동작.
-     * 2) 벽시계 백스톱(window.setTimeout): 모바일 WebGL 텍스처 처리가
-     *    메인스레드를 막아 게임 루프(=Phaser 타이머)가 멈추는 경우,
-     *    메인스레드가 풀리는 순간 매크로태스크 큐에서 강제 전환.
+     * 왜 고정 타임아웃이 아니라 정체 감시인가?
+     * - 고정 타임아웃은 "느리지만 진행 중인" 로딩을 잘라버리거나(너무 짧으면),
+     *   "이미 멈춘" 로딩을 너무 오래 기다린다(너무 길면).
+     * - 정체 감시는 진행률이 STALL_MS 동안 변하지 않을 때만 전환하므로,
+     *   느린 연결은 끝까지 기다리고 진짜 멈춤만 빠르게(5초) 잡는다.
+     * - setInterval 은 매크로태스크 큐에서 도므로 Phaser 게임 루프가
+     *   막혀도(모바일 WebGL) 메인스레드가 풀리는 즉시 동작한다.
      *
-     * 두 경로 모두 goToSelect() 로 수렴(중복 전환은 transitioned 플래그로 방지).
+     * MAX_LOAD_MS 는 진행 여부와 무관한 절대 상한(20초).
      */
-    this.safetyTimer = this.time.delayedCall(14000, () => {
-      console.warn('[BootScene] 로딩 타임아웃(Phaser) - 강제 전환');
-      this.goToSelect();
-    });
-    this.wallClockTimer = window.setTimeout(() => {
-      console.warn('[BootScene] 로딩 타임아웃(벽시계) - 강제 전환');
-      this.goToSelect();
-    }, 15000);
+    const now0 = Date.now();
+    this.loadStartedAt = now0;
+    this.lastProgressAt = now0;
+    this.stallWatchdog = window.setInterval(() => {
+      const now = Date.now();
+      const stalled = now - this.lastProgressAt > BootScene.STALL_MS;
+      const overMax = now - this.loadStartedAt > BootScene.MAX_LOAD_MS;
+      if (stalled || overMax) {
+        console.warn(`[BootScene] 로딩 ${overMax ? '상한 초과' : '정체'} 감지 - 강제 전환`);
+        this.goToSelect();
+      }
+    }, 1000);
 
     const P = 'sprites/processed';
 
@@ -171,15 +186,11 @@ export class BootScene extends Phaser.Scene {
     this.goToSelect();
   }
 
-  /** Phaser/벽시계 타이머 모두 해제 */
+  /** 정체 감시자 해제 */
   private clearSafetyTimers(): void {
-    if (this.safetyTimer) {
-      this.safetyTimer.remove();
-      this.safetyTimer = null;
-    }
-    if (this.wallClockTimer !== null) {
-      window.clearTimeout(this.wallClockTimer);
-      this.wallClockTimer = null;
+    if (this.stallWatchdog !== null) {
+      window.clearInterval(this.stallWatchdog);
+      this.stallWatchdog = null;
     }
   }
 

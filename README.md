@@ -38,16 +38,35 @@ npm run dev
 npm run build
 ```
 
-## Android APK 빌드
+## Android APK 빌드 (Kotlin 셸 + Capacitor)
+
+네이티브 안드로이드 프로젝트(`android/`, MainActivity는 Kotlin)는 이미 저장소에 포함돼 있습니다.
+에셋은 앱에 **로컬 번들**되므로 네트워크 로딩이 없어 모바일 웹에서 발생하던 로딩 멈춤이 사라집니다.
+
+**사전 요구**: JDK 21, Android Studio(또는 Android SDK).
 
 ```bash
-npm run build
-npx cap add android
-npx cap sync
-npx cap open android
+# 1) 의존성 설치
+npm install
+
+# 2) 웹 빌드 + 안드로이드 동기화 (dist → android/app/src/main/assets/public)
+npm run android:sync          # = npm run build && npx cap sync android
+
+# 3) Android Studio 열기
+npm run android:open          # = npx cap open android
 ```
 
-Android Studio에서 빌드 → APK 생성
+Android Studio에서 기기/에뮬레이터로 Run 하거나, APK 빌드:
+
+```bash
+cd android
+./gradlew assembleDebug       # 산출물: android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+> 참고: `android/app/src/main/assets/public/`(번들된 웹 자산)와
+> `capacitor-cordova-android-plugins/`(생성 모듈)는 `.gitignore` 대상이라,
+> 클론 직후 반드시 `npm run android:sync`로 재생성해야 합니다.
+> 게임 코드를 수정한 뒤에도 `npm run android:sync`로 자산을 갱신하세요.
 
 ## 프로젝트 구조
 

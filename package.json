@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android"
   },
   "repository": {
     "type": "git",
@@ -16,6 +18,7 @@
   "license": "MIT",
   "description": "무공키우기 - 2D 도트 액션 무협 RPG",
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.3",
     "phaser": "^3.90.0"
   },

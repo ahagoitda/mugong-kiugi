@@ -24,6 +24,37 @@ function shouldFlipX(spriteKey: string | undefined): boolean {
 }
 
 /**
+ * 적 공격 모션 파라미터 (스프라이트별).
+ *
+ * 적 스프라이트는 idle 4프레임뿐이라 별도 공격 프레임이 없다.
+ * 대신 "윈드업(뒤로) → 돌진(앞으로) → 복귀" 위치 트윈으로 공격감을 연출한다.
+ * - windup: 타격 전 뒤로 빼는 거리(px)
+ * - lunge:  타격 시 앞으로 돌진하는 거리(px)
+ * - hopY:   타격 시 살짝 떠오르는 높이(px, 도끼 내려치기 등)
+ * - windupMs/strikeMs/recoverMs: 각 단계 지속시간
+ */
+interface AttackMotion {
+  windup: number;
+  lunge: number;
+  hopY: number;
+  windupMs: number;
+  strikeMs: number;
+  recoverMs: number;
+}
+
+const ATTACK_MOTION: Readonly<Record<string, AttackMotion>> = {
+  // 산적 (도끼): 큰 동작 + 내려치는 느낌의 hop
+  enemy_bandit:    { windup: 6, lunge: 16, hopY: 5, windupMs: 130, strikeMs: 80, recoverMs: 160 },
+  // 검객 (검): 길게 찌르기
+  enemy_swordsman: { windup: 7, lunge: 20, hopY: 2, windupMs: 120, strikeMs: 75, recoverMs: 150 },
+  // 자객 (단검): 짧고 빠른 연속 찌르기 느낌
+  enemy_assassin:  { windup: 3, lunge: 12, hopY: 0, windupMs: 70,  strikeMs: 55, recoverMs: 90 },
+  // 보스: 묵직한 큰 동작
+  boss_beopwang:   { windup: 8, lunge: 18, hopY: 6, windupMs: 200, strikeMs: 110, recoverMs: 240 },
+  default:         { windup: 5, lunge: 14, hopY: 2, windupMs: 110, strikeMs: 80, recoverMs: 140 },
+};
+
+/**
  * Enemy - 적 엔티티
  *
  * 간단한 추적 AI를 가지고 있습니다:
@@ -50,6 +81,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   // 상태이상
   private stunned = false;
   private speedMultiplier = 1.0;
+
+  // 공격 모션 진행 중 여부 (true 동안 이동 AI 정지, tween 이 위치 제어)
+  private attacking = false;
+  private baseY = 0;
 
   // 드랍 결과를 외부에서 읽기 위한 필드
   private pendingDrop: DropEntry | null = null;
@@ -115,6 +150,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.pendingDrop = null;
     this.stunned = false;
     this.speedMultiplier = 1.0;
+    this.attacking = false;
+    this.setAngle(0);
+    this.scene.tweens.killTweensOf(this);
 
     this.setTexture(data.spriteKey);
     this.setPosition(x, y);
@@ -154,6 +192,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    * 풀에 반환합니다 (destroy 대신 사용).
    */
   deactivate(): void {
+    this.scene.tweens.killTweensOf(this);
+    this.attacking = false;
     this.setActive(false);
     this.setVisible(false);
     this.enemyData = null;
@@ -197,6 +237,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    * 넉백 적용
    */
   applyKnockback(fromX: number, fromY: number, force: number): void {
+    // 공격 모션 중이면 중단하고 넉백이 우선
+    if (this.attacking) {
+      this.scene.tweens.killTweensOf(this);
+      this.attacking = false;
+      this.setAngle(0);
+      this.y = this.baseY || this.y;
+    }
+
     const dx = this.x - fromX;
     const dy = this.y - fromY;
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -223,19 +271,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 기절 상태면 모든 행동 중지
     if (this.stunned) return;
 
+    const data = this.enemyData;
+
+    // 적은 항상 왼쪽(플레이어 방향)을 바라봄 (스프라이트 원본 방향 보정)
+    this.setFlipX(shouldFlipX(data.spriteKey));
+
+    // 공격 모션 중에는 tween 이 위치를 제어하므로 이동 AI 정지
+    if (this.attacking) {
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0, 0);
+      return;
+    }
+
     // 넉백 중이면 이동 AI 중지
     if (this.knockbackTimer > 0) {
       this.knockbackTimer -= delta;
       return;
     }
 
-    const data = this.enemyData;
     const dx = this.targetX - this.x;
     const dy = this.targetY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-
-    // 적은 항상 왼쪽(플레이어 방향)을 바라봄 (스프라이트 원본 방향 보정)
-    this.setFlipX(shouldFlipX(data.spriteKey));
 
     if (dist > data.attackRange) {
       // 추적 이동 (speedMultiplier 적용)
@@ -252,9 +308,60 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       const now = this.scene.time.now;
       if (now - this.lastAttackTime >= data.attackCooldown) {
         this.lastAttackTime = now;
-        this.scene.events.emit('enemy-attack', this, data.damage);
+        this.performAttack(data);
       }
     }
+  }
+
+  /**
+   * 공격 모션 실행: 윈드업(뒤로) → 돌진(앞으로) → 복귀.
+   * 돌진 정점에서 'enemy-attack' 이벤트를 발생시켜 데미지를 입힌다.
+   *
+   * 적 스프라이트에 공격 프레임이 없으므로 위치/높이 트윈으로 연출한다.
+   */
+  private performAttack(data: EnemyData): void {
+    if (this.attacking || !this.active) return;
+    this.attacking = true;
+
+    const dir = this.targetX < this.x ? -1 : 1; // 플레이어 방향
+    const startX = this.x;
+    this.baseY = this.y;
+    const m = ATTACK_MOTION[data.spriteKey] ?? ATTACK_MOTION.default;
+
+    this.scene.tweens.chain({
+      targets: this,
+      onComplete: () => {
+        this.attacking = false;
+        this.y = this.baseY;
+      },
+      tweens: [
+        // 1) 윈드업: 살짝 뒤로 빼기
+        {
+          x: startX - dir * m.windup,
+          duration: m.windupMs,
+          ease: 'Sine.easeOut',
+        },
+        // 2) 돌진: 앞으로 + 살짝 떠오르기, 정점에서 타격
+        {
+          x: startX + dir * m.lunge,
+          y: this.baseY - m.hopY,
+          duration: m.strikeMs,
+          ease: 'Power2',
+          onComplete: () => {
+            if (this.active && this.enemyData) {
+              this.scene.events.emit('enemy-attack', this, data.damage);
+            }
+          },
+        },
+        // 3) 복귀: 원위치
+        {
+          x: startX,
+          y: this.baseY,
+          duration: m.recoverMs,
+          ease: 'Sine.easeInOut',
+        },
+      ],
+    });
   }
 
   /**
@@ -262,6 +369,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    */
   private onDeath(): void {
     if (!this.enemyData) return;
+
+    // 공격 모션 중 사망 시 위치 트윈 중단 (시체가 계속 돌진하지 않도록)
+    this.scene.tweens.killTweensOf(this);
+    this.attacking = false;
+    this.setAngle(0);
 
     // 드랍 테이블 롤링
     const roll = Math.random();

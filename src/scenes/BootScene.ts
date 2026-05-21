@@ -256,5 +256,11 @@ export class BootScene extends Phaser.Scene {
       frameRate,
       repeat,
     });
+    this.anims.create({
+      key: 'boss-beopwang-attack',
+      frames: this.anims.generateFrameNumbers('boss_beopwang_attack', { start: 0, end: 3 }),
+      frameRate: 10,
+      repeat: 0,
+    });
   }
 }

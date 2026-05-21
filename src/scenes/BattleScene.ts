@@ -881,9 +881,43 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private onEnemyAttack(_enemy: Enemy, damage: number): void {
+  private onEnemyAttack(enemy: Enemy, damage: number): void {
     this.player.takeDamage(damage);
     soundSystem.play('player_hurt');
+    // 타격 임팩트 이펙트 (적 → 플레이어 사이 충돌 지점)
+    const impactX = (this.player.x + enemy.x) / 2;
+    this.showEnemyHitImpact(impactX, this.player.y - 6);
+  }
+
+  /**
+   * 적 공격 타격 시 충격 이펙트.
+   * 붉은 파편이 사방으로 튀고 짧은 섬광이 번쩍인다.
+   */
+  private showEnemyHitImpact(x: number, y: number): void {
+    // 섬광
+    const flash = this.add.circle(x, y, 10, 0xffdddd, 0.9).setDepth(135);
+    this.tweens.add({
+      targets: flash,
+      scaleX: 1.8, scaleY: 1.8, alpha: 0,
+      duration: 160,
+      onComplete: () => flash.destroy(),
+    });
+    // 붉은 파편
+    const count = 5;
+    for (let i = 0; i < count; i++) {
+      const p = this.add.rectangle(x, y, 3, 3, 0xff4444).setDepth(136);
+      const ang = Math.PI * (0.15 + Math.random() * 0.7); // 위쪽 반원
+      const spd = 35 + Math.random() * 45;
+      this.tweens.add({
+        targets: p,
+        x: x - Math.cos(ang) * spd,
+        y: y - Math.sin(ang) * spd,
+        alpha: 0,
+        duration: 220 + Math.random() * 120,
+        ease: 'Power2',
+        onComplete: () => p.destroy(),
+      });
+    }
   }
 
   // ─── 골드/경험치 보상 ───

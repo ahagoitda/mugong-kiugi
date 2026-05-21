@@ -347,9 +347,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private onUseSkill(slotIndex: number): void {
-    if (this.battleMode === 'MANUAL') {
-      this.player.handleAttack(slotIndex);
-    }
+    // AUTO/MANUAL 모드와 무관하게 사용자 입력은 항상 받음.
+    // (AUTO 모드는 추가로 가장 가까운 적을 향해 자동 발동)
+    this.player.handleAttack(slotIndex);
   }
 
   private onUseDash(): void {
@@ -1112,6 +1112,7 @@ export class BattleScene extends Phaser.Scene {
 
   private emitState(): void {
     const save = loadGame();
+    const dashSkill = this.player.dashSkill;
     this.events.emit('player-state', {
       hp: this.player.hp,
       maxHp: this.player.maxHp,
@@ -1123,6 +1124,8 @@ export class BattleScene extends Phaser.Scene {
         cooldownRemaining: this.player.getSkillCooldownRemaining(s.id),
         cooldown: s.cooldown,
       })),
+      dashCooldownRemaining: dashSkill ? this.player.getSkillCooldownRemaining(dashSkill.id) : 0,
+      dashCooldown: dashSkill ? dashSkill.cooldown : 0,
       killCount: this.killCount,
       waveNumber: this.waveNumber,
       battleMode: this.battleMode,

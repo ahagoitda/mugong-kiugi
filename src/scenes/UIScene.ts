@@ -27,9 +27,9 @@ const BATTLE_H = 384;
 const UI_H = GAME_H - BATTLE_H; // 256
 const UI_Y = BATTLE_H;
 
-const BAR_W = 100;
-const BAR_H = 6;
-const BTN_SIZE = 40;
+const BAR_W = 110;
+const BAR_H = 8;
+const BTN_SIZE = 52;
 
 interface PlayerStatePayload {
   hp: number;
@@ -37,6 +37,8 @@ interface PlayerStatePayload {
   stamina: number;
   maxStamina: number;
   skills: { id: string; nameKo: string; cooldownRemaining: number; cooldown: number }[];
+  dashCooldownRemaining: number;
+  dashCooldown: number;
   killCount: number;
   waveNumber: number;
   battleMode: string;
@@ -65,7 +67,13 @@ export class UIScene extends Phaser.Scene {
   // 스킬 슬롯
   private skillSlots: Phaser.GameObjects.Container[] = [];
   private skillLabels: Phaser.GameObjects.Text[] = [];
-  private cooldownBars: Phaser.GameObjects.Rectangle[] = [];
+  private skillBgs: Phaser.GameObjects.Rectangle[] = [];
+  private cooldownOverlays: Phaser.GameObjects.Rectangle[] = [];
+  private cooldownTexts: Phaser.GameObjects.Text[] = [];
+  // 회피 버튼
+  private dashBg: Phaser.GameObjects.Rectangle | null = null;
+  private dashCooldownOverlay: Phaser.GameObjects.Rectangle | null = null;
+  private dashCooldownText: Phaser.GameObjects.Text | null = null;
 
   // 탭 시스템
   private currentTab: TabType = 'NONE';
@@ -165,57 +173,100 @@ export class UIScene extends Phaser.Scene {
     });
   }
 
-  // ─── 무공 장착 슬롯 (y=424~472) ───
+  // ─── 무공 장착 슬롯 ───
+  //
+  // 슬롯 디자인 (52x52):
+  // ┌──────────┐
+  // │1         │  ← 좌상단: 슬롯 번호
+  // │  이름     │  ← 중앙: 스킬명 (한글 2~4자)
+  // │ -SP      │  ← 하단: 기력 비용
+  // └──────────┘
+  // 쿨다운 중: 검은 반투명 오버레이가 위→아래로 줄어들고, 중앙에 남은 초 표시.
+  // 클릭 시: 짧은 스케일 트윈으로 탭 피드백.
 
   private createSkillSlots(): void {
-    const slotY = UI_Y + 52;
-    const startX = 30;
-    const gap = BTN_SIZE + 12;
+    const slotY = UI_Y + 56;
+    // 4개 버튼(스킬3 + 회피1)을 화면 폭에 골고루 배치
+    const totalBtns = 4;
+    const slotGap = 14;
+    const totalW = totalBtns * BTN_SIZE + (totalBtns - 1) * slotGap;
+    const startX = (GAME_W - totalW) / 2 + BTN_SIZE / 2;
 
     for (let i = 0; i < 3; i++) {
-      const x = startX + i * gap;
+      const x = startX + i * (BTN_SIZE + slotGap);
 
       const bg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x1a1a3a)
-        .setStrokeStyle(1, 0x4466aa);
-      const label = this.add.text(0, -2, `${i + 1}`, {
-        fontSize: '8px', color: '#aaaaaa', fontFamily: 'monospace',
+        .setStrokeStyle(2, 0x4466aa);
+      const slotNum = this.add.text(-BTN_SIZE / 2 + 3, -BTN_SIZE / 2 + 2, `${i + 1}`, {
+        fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
+      }).setOrigin(0);
+      const nameLabel = this.add.text(0, -2, '-', {
+        fontSize: '10px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+        align: 'center', wordWrap: { width: BTN_SIZE - 6 },
       }).setOrigin(0.5);
-      const nameLabel = this.add.text(0, 10, '-', {
-        fontSize: '7px', color: '#ffffff', fontFamily: 'monospace',
-      }).setOrigin(0.5);
-      const coolBar = this.add.rectangle(0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, 3, 0x4fc3f7)
-        .setOrigin(0.5, 0.5).setVisible(false);
 
-      const container = this.add.container(x, slotY, [bg, label, nameLabel, coolBar]);
+      // 쿨다운 오버레이: 위에서 아래로 줄어들도록 origin (0.5, 1) — bottom anchor
+      const coolOverlay = this.add.rectangle(
+        0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, BTN_SIZE - 4, 0x000000, 0.65,
+      ).setOrigin(0.5, 1).setVisible(false);
+      const coolText = this.add.text(0, 0, '', {
+        fontSize: '13px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
+      }).setOrigin(0.5).setVisible(false);
+
+      const container = this.add.container(x, slotY, [bg, slotNum, nameLabel, coolOverlay, coolText]);
       container.setSize(BTN_SIZE, BTN_SIZE);
       container.setInteractive();
 
       const slotIndex = i;
       container.on('pointerdown', () => {
+        this.tweens.add({
+          targets: container, scaleX: 0.92, scaleY: 0.92,
+          duration: 60, yoyo: true, ease: 'Power2',
+        });
         const battleScene = this.scene.get('BattleScene');
         battleScene.events.emit('use-skill', slotIndex);
       });
 
       this.skillSlots.push(container);
+      this.skillBgs.push(bg);
       this.skillLabels.push(nameLabel);
-      this.cooldownBars.push(coolBar);
+      this.cooldownOverlays.push(coolOverlay);
+      this.cooldownTexts.push(coolText);
     }
 
-    // 회피 버튼
-    const dashX = startX + 3 * gap + 10;
-    const dashBg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x2a1a1a)
-      .setStrokeStyle(1, 0xaa4444);
-    const dashLabel = this.add.text(0, 0, '회피', {
-      fontSize: '8px', color: '#ff8888', fontFamily: 'monospace',
+    // ─── 회피 버튼 ───
+    const dashX = startX + 3 * (BTN_SIZE + slotGap);
+    const dashBg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x3a1a1a)
+      .setStrokeStyle(2, 0xaa4444);
+    const dashLabel = this.add.text(0, -2, '회피', {
+      fontSize: '11px', color: '#ff9988', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0.5);
+    const dashHint = this.add.text(0, BTN_SIZE / 2 - 9, '←옆구르기', {
+      fontSize: '6px', color: '#aa7777', fontFamily: 'monospace',
+    }).setOrigin(0.5);
+    const dashCoolOverlay = this.add.rectangle(
+      0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, BTN_SIZE - 4, 0x000000, 0.65,
+    ).setOrigin(0.5, 1).setVisible(false);
+    const dashCoolText = this.add.text(0, 0, '', {
+      fontSize: '13px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
+    }).setOrigin(0.5).setVisible(false);
 
-    const dashContainer = this.add.container(dashX, slotY, [dashBg, dashLabel]);
+    const dashContainer = this.add.container(dashX, slotY,
+      [dashBg, dashLabel, dashHint, dashCoolOverlay, dashCoolText]);
     dashContainer.setSize(BTN_SIZE, BTN_SIZE);
     dashContainer.setInteractive();
     dashContainer.on('pointerdown', () => {
+      this.tweens.add({
+        targets: dashContainer, scaleX: 0.92, scaleY: 0.92,
+        duration: 60, yoyo: true, ease: 'Power2',
+      });
       const battleScene = this.scene.get('BattleScene');
       battleScene.events.emit('use-dash');
     });
+
+    this.dashBg = dashBg;
+    this.dashCooldownOverlay = dashCoolOverlay;
+    this.dashCooldownText = dashCoolText;
   }
 
   // ─── 메뉴 탭 (y=472~640) ───
@@ -294,19 +345,42 @@ export class UIScene extends Phaser.Scene {
 
     // 스킬 슬롯
     state.skills.forEach((skill, i) => {
-      if (i < this.skillLabels.length) {
-        this.skillLabels[i].setText(skill.nameKo.substring(0, 3));
+      if (i >= this.skillLabels.length) return;
+      this.skillLabels[i].setText(skill.nameKo);
 
-        const coolBar = this.cooldownBars[i];
-        if (skill.cooldownRemaining > 0) {
-          coolBar.setVisible(true);
-          const ratio = 1 - (skill.cooldownRemaining / skill.cooldown);
-          coolBar.width = (BTN_SIZE - 4) * ratio;
-        } else {
-          coolBar.setVisible(false);
-        }
+      const overlay = this.cooldownOverlays[i];
+      const coolText = this.cooldownTexts[i];
+      const bg = this.skillBgs[i];
+
+      if (skill.cooldownRemaining > 0 && skill.cooldown > 0) {
+        const ratio = Math.min(1, skill.cooldownRemaining / skill.cooldown);
+        overlay.setVisible(true);
+        overlay.height = (BTN_SIZE - 4) * ratio;
+        coolText.setVisible(true);
+        coolText.setText((skill.cooldownRemaining / 1000).toFixed(1));
+        bg.setStrokeStyle(2, 0x666666);
+      } else {
+        overlay.setVisible(false);
+        coolText.setVisible(false);
+        bg.setStrokeStyle(2, 0x4466aa);
       }
     });
+
+    // 회피 쿨다운
+    if (this.dashCooldownOverlay && this.dashCooldownText && this.dashBg) {
+      if (state.dashCooldownRemaining > 0 && state.dashCooldown > 0) {
+        const ratio = Math.min(1, state.dashCooldownRemaining / state.dashCooldown);
+        this.dashCooldownOverlay.setVisible(true);
+        this.dashCooldownOverlay.height = (BTN_SIZE - 4) * ratio;
+        this.dashCooldownText.setVisible(true);
+        this.dashCooldownText.setText((state.dashCooldownRemaining / 1000).toFixed(1));
+        this.dashBg.setStrokeStyle(2, 0x666666);
+      } else {
+        this.dashCooldownOverlay.setVisible(false);
+        this.dashCooldownText.setVisible(false);
+        this.dashBg.setStrokeStyle(2, 0xaa4444);
+      }
+    }
   }
 
   // ─── 탭 콘텐츠 ───

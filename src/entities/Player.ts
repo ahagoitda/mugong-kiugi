@@ -50,6 +50,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private currentFrame = 0;
   private hitFrameIndex = 0;
   private invincible = false;
+  // 회피 시작 위치 — 회피 완료 시 정확히 이 좌표로 복귀
+  private dashOriginX = 0;
 
   // ─── 콜백 ───
   private onHitCallback: ((x: number, y: number, skill: SkillData) => void) | null = null;
@@ -111,6 +113,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   get currentCharState(): CharacterState { return this.currentState; }
   get isFacingRight(): boolean { return this.facingRight; }
   get skills(): readonly SkillData[] { return this.equippedSkills; }
+  get dashSkill(): SkillData | null { return this.equippedDash; }
   get characterDamageMul(): number { return this.damageMul; }
 
   /**
@@ -264,16 +267,32 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this._stamina -= dash.staminaCost;
     this.skillCooldowns.set(dash.id, now);
     this.currentSkill = dash;
+    this.stateTimer = 0;
     this.currentFrame = 0;
 
-    // 대시 방향으로 이동
+    // 회피 = facing 반대 방향으로 옆구르기 + 원위치 복귀
     const dir = this.facingRight ? 1 : -1;
+    const dashDistance = Math.abs(dash.moveOffset.x) * 0.5; // 기존 거리의 절반
+    this.dashOriginX = this.x;
+    const targetX = this.x - dir * dashDistance;
+
+    // velocity 대신 tween 으로 정확히 제어 (yoyo 로 자동 복귀)
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setVelocityX(dir * dash.moveOffset.x * 10);
+    body.setVelocity(0, 0);
 
     this.invincible = true;
     this.setAlpha(0.5);
     this.changeState('DASH');
+    this.playAnim('run', true);
+
+    const halfDur = (dash.totalFrames / dash.frameRate) * 500;
+    this.scene.tweens.add({
+      targets: this,
+      x: targetX,
+      duration: halfDur,
+      yoyo: true,
+      ease: 'Power2',
+    });
 
     return true;
   }
@@ -391,6 +410,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer += delta;
 
     if (this.stateTimer >= totalDuration) {
+      // tween 의 yoyo 가 이미 원위치로 돌려놓지만, 부동소수점 오차 방지로 강제 보정
+      this.x = this.dashOriginX;
       this.finishDash();
     }
   }

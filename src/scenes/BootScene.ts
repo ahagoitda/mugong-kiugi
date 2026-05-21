@@ -120,8 +120,14 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet('enemy_swordsman', `${P}/enemy_swordsman.png`, CHAR_FRAME);
     this.load.spritesheet('enemy_assassin', `${P}/enemy_assassin.png`, CHAR_FRAME);
 
+    // ─── 적 공격 스프라이트시트 (idle 변형으로 생성) ───
+    this.load.spritesheet('enemy_bandit_attack', `${P}/enemy_bandit_attack.png`, CHAR_FRAME);
+    this.load.spritesheet('enemy_swordsman_attack', `${P}/enemy_swordsman_attack.png`, CHAR_FRAME);
+    this.load.spritesheet('enemy_assassin_attack', `${P}/enemy_assassin_attack.png`, CHAR_FRAME);
+
     // ─── 보스 스프라이트시트 ───
     this.load.spritesheet('boss_beopwang', `${P}/boss_beopwang.png`, BOSS_FRAME);
+    this.load.spritesheet('boss_beopwang_attack', `${P}/boss_beopwang_attack.png`, BOSS_FRAME);
 
     // ─── 배경 이미지 (5종, 360px 너비로 최적화됨) ───
     // 산림 (기본)
@@ -212,7 +218,7 @@ export class BootScene extends Phaser.Scene {
       repeat: 0,
     });
 
-    // ─── 적 애니메이션 ───
+    // ─── 적 애니메이션 (idle + attack) ───
     const enemies = ['bandit', 'swordsman', 'assassin'] as const;
     for (const name of enemies) {
       this.anims.create({
@@ -221,14 +227,26 @@ export class BootScene extends Phaser.Scene {
         frameRate: 6,
         repeat: -1,
       });
+      this.anims.create({
+        key: `enemy-${name}-attack`,
+        frames: this.anims.generateFrameNumbers(`enemy_${name}_attack`, { start: 0, end: 3 }),
+        frameRate: 14,
+        repeat: 0,
+      });
     }
 
-    // ─── 보스 애니메이션 ───
+    // ─── 보스 애니메이션 (idle + attack) ───
     this.anims.create({
       key: 'boss-beopwang-idle',
       frames: this.anims.generateFrameNumbers('boss_beopwang', { start: 0, end: 3 }),
       frameRate: 5,
       repeat: -1,
+    });
+    this.anims.create({
+      key: 'boss-beopwang-attack',
+      frames: this.anims.generateFrameNumbers('boss_beopwang_attack', { start: 0, end: 3 }),
+      frameRate: 10,
+      repeat: 0,
     });
   }
 }

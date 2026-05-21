@@ -140,6 +140,29 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   /**
+   * 애니메이션 키 베이스. 스프라이트 키 기준이라 변형 적(militia 등)도 동작.
+   * 'enemy_bandit' -> 'enemy-bandit', 'boss_beopwang' -> 'boss-beopwang'
+   */
+  private animBase(): string {
+    return (this.enemyData?.spriteKey ?? '').replace(/_/g, '-');
+  }
+
+  private playIdleAnim(): void {
+    const key = `${this.animBase()}-idle`;
+    if (this.scene.anims.exists(key)) this.play(key, true);
+  }
+
+  private playAttackAnim(): void {
+    const key = `${this.animBase()}-attack`;
+    if (this.scene.anims.exists(key)) {
+      this.play(key);
+    } else {
+      // 공격 애니메이션이 없으면 idle 유지 (위치 트윈만으로 연출)
+      this.playIdleAnim();
+    }
+  }
+
+  /**
    * 풀에서 꺼내어 활성화합니다.
    */
   activate(data: EnemyData, x: number, y: number): void {
@@ -161,23 +184,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.clearTint();
     this.setAlpha(1);
 
-    // 적 애니메이션 재생
-    const animKey = `enemy-${data.id}-idle`;
-    if (this.scene.anims.exists(animKey)) {
-      this.play(animKey);
-    } else {
-      // 변형 적은 원본 스프라이트의 애니메이션 사용
-      const baseSpriteId = data.spriteKey.replace('enemy_', '').replace('boss_', '');
-      const fallbackKey = `enemy-${baseSpriteId}-idle`;
-      if (this.scene.anims.exists(fallbackKey)) {
-        this.play(fallbackKey);
-      } else if (this.scene.anims.exists('boss-beopwang-idle')) {
-        // 보스는 beopwang 애니메이션 사용
-        if (data.spriteKey === 'boss_beopwang') {
-          this.play('boss-beopwang-idle');
-        }
-      }
-    }
+    // 적 애니메이션 재생 (idle)
+    this.playIdleAnim();
 
     // 적은 스폰 즉시 왼쪽(플레이어 방향)을 바라봐야 함
     // (스프라이트 원본 방향에 따라 flip 여부 결정)
@@ -328,11 +336,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.baseY = this.y;
     const m = ATTACK_MOTION[data.spriteKey] ?? ATTACK_MOTION.default;
 
+    // 공격 프레임 애니메이션 재생 (위치 트윈과 함께 연출)
+    this.playAttackAnim();
+
     this.scene.tweens.chain({
       targets: this,
       onComplete: () => {
         this.attacking = false;
         this.y = this.baseY;
+        this.playIdleAnim();
       },
       tweens: [
         // 1) 윈드업: 살짝 뒤로 빼기

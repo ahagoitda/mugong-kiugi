@@ -75,6 +75,11 @@ SHEETS: list[tuple[str, int, int, int]] = [
     ("enemy_bandit",       128, 128, 4),
     ("enemy_swordsman",    128, 128, 4),
     ("enemy_assassin",     128, 128, 4),
+    # 적 공격 프레임 (make-enemy-attack.py 로 생성)
+    ("enemy_bandit_attack",    128, 128, 4),
+    ("enemy_swordsman_attack", 128, 128, 4),
+    ("enemy_assassin_attack",  128, 128, 4),
+    ("boss_beopwang_attack",   160, 160, 4),
     ("boss_beopwang",      160, 160, 4),
 ]
 

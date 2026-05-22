@@ -38,6 +38,8 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     hitFrames: [2],
     hitboxSize: { w: 36, h: 24 },
     moveOffset: { x: 4, y: 0 },
+    attackMotion: 'standard',
+    effectType: 'slash',
     description: '천하삼재(天·地·人)의 이치를 담은 기본 검법. 빠르고 안정적이다.',
   }],
 
@@ -61,6 +63,8 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'KNOCKBACK',
     effectChance: 0.3,
     effectDuration: 200,
+    attackMotion: 'quick',
+    effectType: 'multi',
     description: '육합(六合)의 힘으로 적을 밀어내는 검법. 넉백 확률이 있다.',
   }],
 
@@ -85,6 +89,8 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'BLEED',
     effectChance: 0.4,
     effectDuration: 3000,
+    attackMotion: 'quick',
+    effectType: 'multi',
     description: '매화가 흩날리듯 화려한 연속 베기. 출혈을 유발한다.',
   }],
 
@@ -108,6 +114,8 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'SLOW',
     effectChance: 0.5,
     effectDuration: 2000,
+    attackMotion: 'quick',
+    effectType: 'wave',
     description: '청풍처럼 빠른 돌진 검격. 적의 이동 속도를 둔화시킨다.',
   }],
 
@@ -132,6 +140,8 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'STUN',
     effectChance: 0.6,
     effectDuration: 1000,
+    attackMotion: 'heavy',
+    effectType: 'wave',
     description: '음양의 조화를 담은 절학. 강력한 기절 효과를 부여한다.',
   }],
 
@@ -156,6 +166,8 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'KNOCKBACK',
     effectChance: 1.0,
     effectDuration: 500,
+    attackMotion: 'heavy',
+    effectType: 'burst',
     description: '하늘을 가르는 무애의 일검. 모든 것을 베어내는 궁극의 검법.',
   }],
 
@@ -167,6 +179,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     category: 'BLADE', range: 42, cooldown: 900, damageMultiplier: 1.2, staminaCost: 6,
     animKey: 'player_attack', totalFrames: 4, frameRate: 12, hitFrames: [2],
     hitboxSize: { w: 40, h: 26 }, moveOffset: { x: 6, y: 0 },
+    attackMotion: 'thrust', effectType: 'slash',
     description: '단숨에 도를 뽑아 베는 기본 도법. 한 방이 묵직하다.',
   }],
   ['hoengso', {
@@ -175,6 +188,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 10, hitFrames: [2, 3],
     hitboxSize: { w: 40, h: 34 }, moveOffset: { x: 0, y: 0 },
     effect: 'KNOCKBACK', effectChance: 0.35, effectDuration: 250,
+    attackMotion: 'heavy', effectType: 'wave',
     description: '하늘을 쓸어버리는 횡베기. 적을 밀어낸다.',
   }],
   ['gwangpung', {
@@ -183,6 +197,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 14, hitFrames: [1, 3],
     hitboxSize: { w: 52, h: 38 }, moveOffset: { x: 8, y: 0 },
     effect: 'BLEED', effectChance: 0.45, effectDuration: 3000,
+    attackMotion: 'quick', effectType: 'multi',
     description: '광풍처럼 몰아치는 연속 도격. 출혈을 유발한다.',
   }],
   ['byeokryeokdo', {
@@ -191,6 +206,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 14, hitFrames: [1, 3],
     hitboxSize: { w: 46, h: 34 }, moveOffset: { x: 6, y: 0 },
     effect: 'STUN', effectChance: 0.3, effectDuration: 700,
+    attackMotion: 'heavy', effectType: 'slash',
     description: '벼락처럼 내려치는 일격. 적을 잠시 기절시킨다.',
   }],
   ['paewang', {
@@ -199,6 +215,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 8, hitFrames: [2, 3],
     hitboxSize: { w: 66, h: 50 }, moveOffset: { x: 4, y: 0 },
     effect: 'STUN', effectChance: 0.6, effectDuration: 1000,
+    attackMotion: 'heavy', effectType: 'burst',
     description: '패왕의 기세로 적을 짓누르는 절학. 강력한 기절.',
   }],
   ['cheonma', {
@@ -207,6 +224,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 6, hitFrames: [1, 2, 3],
     hitboxSize: { w: 120, h: 84 }, moveOffset: { x: 16, y: 0 },
     effect: 'KNOCKBACK', effectChance: 1.0, effectDuration: 500,
+    attackMotion: 'heavy', effectType: 'burst',
     description: '천마가 군림하는 도의 극의. 모든 것을 쓸어버린다.',
   }],
 
@@ -218,6 +236,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     category: 'FIST', range: 28, cooldown: 650, damageMultiplier: 0.85, staminaCost: 4,
     animKey: 'player_attack', totalFrames: 4, frameRate: 12, hitFrames: [2],
     hitboxSize: { w: 30, h: 24 }, moveOffset: { x: 6, y: 0 },
+    attackMotion: 'quick', effectType: 'slash',
     description: '태조의 기본 권법. 빠르고 가볍게 연타한다.',
   }],
   ['bunggwon', {
@@ -226,6 +245,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 12, hitFrames: [1, 3],
     hitboxSize: { w: 28, h: 26 }, moveOffset: { x: 4, y: 0 },
     effect: 'KNOCKBACK', effectChance: 0.25, effectDuration: 200,
+    attackMotion: 'heavy', effectType: 'slash',
     description: '폭발하듯 내지르는 주먹. 적을 밀어낸다.',
   }],
   ['yeonhwante', {
@@ -234,6 +254,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 16, hitFrames: [1, 2, 3],
     hitboxSize: { w: 36, h: 30 }, moveOffset: { x: 6, y: 0 },
     effect: 'SLOW', effectChance: 0.4, effectDuration: 1500,
+    attackMotion: 'quick', effectType: 'multi',
     description: '쉴 새 없는 연환 발차기. 다단 히트로 적을 둔화시킨다.',
   }],
   ['baekbo', {
@@ -242,6 +263,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 14, hitFrames: [1, 3],
     hitboxSize: { w: 44, h: 28 }, moveOffset: { x: 10, y: 0 },
     effect: 'BLEED', effectChance: 0.35, effectDuration: 2500,
+    attackMotion: 'thrust', effectType: 'wave',
     description: '백 보 밖의 적도 꿰뚫는 권풍. 출혈을 유발한다.',
   }],
   ['hangryong', {
@@ -250,6 +272,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 10, hitFrames: [2, 3],
     hitboxSize: { w: 60, h: 44 }, moveOffset: { x: 8, y: 0 },
     effect: 'STUN', effectChance: 0.6, effectDuration: 1000,
+    attackMotion: 'heavy', effectType: 'wave',
     description: '용을 항복시키는 열여덟 장법. 강력한 기절.',
   }],
   ['yeorae', {
@@ -258,6 +281,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 8, hitFrames: [1, 2, 3],
     hitboxSize: { w: 104, h: 72 }, moveOffset: { x: 14, y: 0 },
     effect: 'KNOCKBACK', effectChance: 1.0, effectDuration: 500,
+    attackMotion: 'heavy', effectType: 'burst',
     description: '여래의 신장. 거대한 장력이 전장을 휩쓴다.',
   }],
 
@@ -269,6 +293,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     category: 'SPEAR', range: 56, cooldown: 900, damageMultiplier: 1.0, staminaCost: 6,
     animKey: 'player_attack', totalFrames: 4, frameRate: 12, hitFrames: [2],
     hitboxSize: { w: 48, h: 20 }, moveOffset: { x: 10, y: 0 },
+    attackMotion: 'thrust', effectType: 'slash',
     description: '내려앉는 기러기처럼 부드럽게 찌르는 기본 창법.',
   }],
   ['iljeom', {
@@ -277,6 +302,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 12, hitFrames: [2],
     hitboxSize: { w: 52, h: 18 }, moveOffset: { x: 12, y: 0 },
     effect: 'SLOW', effectChance: 0.3, effectDuration: 1500,
+    attackMotion: 'thrust', effectType: 'multi',
     description: '한 점을 꿰뚫는 직선 찌르기. 적을 둔화시킨다.',
   }],
   ['hoeseon', {
@@ -285,6 +311,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 14, hitFrames: [1, 3],
     hitboxSize: { w: 56, h: 40 }, moveOffset: { x: 6, y: 0 },
     effect: 'KNOCKBACK', effectChance: 0.4, effectDuration: 250,
+    attackMotion: 'quick', effectType: 'wave',
     description: '창을 회전시켜 주변을 휩쓰는 광역기. 적을 밀어낸다.',
   }],
   ['gwansan', {
@@ -293,6 +320,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 14, hitFrames: [1, 3],
     hitboxSize: { w: 60, h: 28 }, moveOffset: { x: 12, y: 0 },
     effect: 'BLEED', effectChance: 0.35, effectDuration: 2500,
+    attackMotion: 'thrust', effectType: 'slash',
     description: '산을 꿰뚫는 강맹한 일격. 출혈을 유발한다.',
   }],
   ['yongchang', {
@@ -301,6 +329,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 8, hitFrames: [2, 3],
     hitboxSize: { w: 80, h: 46 }, moveOffset: { x: 10, y: 0 },
     effect: 'STUN', effectChance: 0.55, effectDuration: 1000,
+    attackMotion: 'heavy', effectType: 'burst',
     description: '용의 아홉 가지 창식. 긴 사거리에서 적을 제압한다.',
   }],
   ['cheonha', {
@@ -309,6 +338,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 6, hitFrames: [1, 2, 3],
     hitboxSize: { w: 130, h: 80 }, moveOffset: { x: 16, y: 0 },
     effect: 'KNOCKBACK', effectChance: 1.0, effectDuration: 500,
+    attackMotion: 'thrust', effectType: 'burst',
     description: '천하에 짝이 없는 창의 극의. 전장을 관통한다.',
   }],
 

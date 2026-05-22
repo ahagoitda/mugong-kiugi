@@ -133,6 +133,10 @@ export class BootScene extends Phaser.Scene {
       this.load.spritesheet(`${prefix}_idle`, `${P}/${prefix}_idle.png`, CHAR_FRAME);
       this.load.spritesheet(`${prefix}_run`, `${P}/${prefix}_run.png`, CHAR_FRAME);
       this.load.spritesheet(`${prefix}_attack`, `${P}/${prefix}_attack.png`, CHAR_FRAME);
+      // 스킬 모션 변형 (make-skill-variants.py 로 생성)
+      this.load.spritesheet(`${prefix}_attack_heavy`, `${P}/${prefix}_attack_heavy.png`, CHAR_FRAME);
+      this.load.spritesheet(`${prefix}_attack_quick`, `${P}/${prefix}_attack_quick.png`, CHAR_FRAME);
+      this.load.spritesheet(`${prefix}_attack_thrust`, `${P}/${prefix}_attack_thrust.png`, CHAR_FRAME);
     }
 
     // ─── 기존 플레이어 (하위 호환, 필요 시 제거 가능) ───
@@ -228,6 +232,10 @@ export class BootScene extends Phaser.Scene {
       this.makeAnim(`${prefix}-idle`, `${prefix}_idle`, 0, 3, 6, -1);
       this.makeAnim(`${prefix}-run`, `${prefix}_run`, 0, 5, 10, -1);
       this.makeAnim(`${prefix}-attack`, `${prefix}_attack`, 0, 3, 12, 0);
+      // 스킬 모션 변형: heavy(묵직), quick(연타), thrust(찌르기)
+      this.makeAnim(`${prefix}-attack-heavy`, `${prefix}_attack_heavy`, 0, 3, 10, 0);
+      this.makeAnim(`${prefix}-attack-quick`, `${prefix}_attack_quick`, 0, 3, 18, 0);
+      this.makeAnim(`${prefix}-attack-thrust`, `${prefix}_attack_thrust`, 0, 3, 14, 0);
     }
 
     // ─── 기존 플레이어 애니메이션 (하위 호환) ───

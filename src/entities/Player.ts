@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { CharacterState, SkillData } from '../data/types';
-import { SKILL_DATABASE } from '../data/skills';
-import { CHARACTER_MAP } from '../data/characters';
+import { SKILL_DATABASE, getStarterSkill } from '../data/skills';
+import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 
 /**
  * Player - 플레이어 캐릭터 엔티티
@@ -26,6 +26,7 @@ import { CHARACTER_MAP } from '../data/characters';
 export class Player extends Phaser.Physics.Arcade.Sprite {
   // ─── 캐릭터 설정 ───
   private readonly spritePrefix: string;
+  private readonly charClass: CharacterClass;
 
   // ─── 상태 ───
   private currentState: CharacterState = 'IDLE';
@@ -74,6 +75,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     super(scene, x, y, idleTexture);
 
     this.spritePrefix = prefix;
+    this.charClass = charDef?.charClass ?? 'SWORD';
 
     scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
@@ -99,10 +101,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.moveSpeed = Math.round(100 * stats.speedMul);
     this.damageMul = stats.damageMul;
 
-    // 기본 무공 장착
-    const samjae = SKILL_DATABASE.get('samjae');
+    // 기본 무공 장착 (계열 시작 스킬)
+    const starter = SKILL_DATABASE.get(getStarterSkill(this.charClass));
     const dash = SKILL_DATABASE.get('chosangbi');
-    if (samjae) this.equippedSkills.push(samjae);
+    if (starter) this.equippedSkills.push(starter);
     if (dash) this.equippedDash = dash;
   }
 
@@ -171,10 +173,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (!skill || skill.type !== 'ACTIVE') return false;
     if (slotIndex < 0 || slotIndex > 2) return false;
 
-    // 배열 크기 보장
+    // 배열 크기 보장 (계열 시작 스킬로 채움)
     while (this.equippedSkills.length <= slotIndex) {
-      const defaultSkill = SKILL_DATABASE.get('samjae');
+      const defaultSkill = SKILL_DATABASE.get(getStarterSkill(this.charClass));
       if (defaultSkill) this.equippedSkills.push(defaultSkill);
+      else break;
     }
     this.equippedSkills[slotIndex] = skill;
     return true;
@@ -365,6 +368,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // 기력 자연 회복 (초당 3)
     this._stamina = Math.min(this._maxStamina, this._stamina + 3 * (delta / 1000));
+    // 체력 소량 패시브 재생 (방치형 생존력) — 초당 maxHp의 0.4%
+    this._hp = Math.min(this._maxHp, this._hp + this._maxHp * 0.004 * (delta / 1000));
 
     switch (this.currentState) {
       case 'ATTACK':

@@ -5,10 +5,14 @@ import {
   ENEMY_DATABASE, getEnemyPoolForWave, getBossForWave,
   BOSS_RANK_NAMES, BOSS_RANK_COLORS,
 } from '../data/enemies';
-import { SKILL_DATABASE, getExpToNextLevel } from '../data/skills';
+import {
+  SKILL_DATABASE, getExpToNextLevel, getStarterSkill, getClassSkillByGrade,
+} from '../data/skills';
 import type { SkillData, BattleMode, StatusEffect } from '../data/types';
 import { loadGame, saveGame } from '../systems/SaveSystem';
-import { getBackgroundForWave, type BackgroundTheme } from '../data/characters';
+import {
+  getBackgroundForWave, CHARACTER_MAP, type BackgroundTheme, type CharacterClass,
+} from '../data/characters';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
 
@@ -37,10 +41,10 @@ const MAX_ENEMIES = 8;
 
 // ─── 난이도 조정(하향) 전역 배율 ───
 // 방치형 게임에 맞춰 적 위협을 낮춰 편하게 진행되도록 한다.
-const ENEMY_HP_MUL = 0.85;   // 적 체력 (빨리 처치)
-const ENEMY_DMG_MUL = 0.5;   // 적 공격력 (안전)
-const BOSS_HP_MUL = 0.8;     // 보스 체력
-const BOSS_DMG_MUL = 0.5;    // 보스 공격력
+const ENEMY_HP_MUL = 0.7;    // 적 체력 (빨리 처치)
+const ENEMY_DMG_MUL = 0.32;  // 적 공격력 (매우 안전)
+const BOSS_HP_MUL = 0.65;    // 보스 체력
+const BOSS_DMG_MUL = 0.38;   // 보스 공격력
 
 /**
  * 보스 등급별 고유 스킬 정의.
@@ -688,7 +692,7 @@ export class BattleScene extends Phaser.Scene {
     if (!data) return;
 
     // 웨이브 스케일링: 웨이브가 높아질수록 적이 조금씩 강해짐 (난이도 배율 적용)
-    const waveScale = 1 + (this.waveNumber - 1) * 0.02;
+    const waveScale = 1 + (this.waveNumber - 1) * 0.015;
     const scaledData = {
       ...data,
       hp: Math.max(1, Math.round(data.hp * waveScale * ENEMY_HP_MUL)),
@@ -834,8 +838,8 @@ export class BattleScene extends Phaser.Scene {
         this.spawnBoss();
       });
     } else {
-      // 웨이브 적 수: 초반 적게, 점진적 증가, 최대 10 (난이도 하향)
-      this.waveEnemyTotal = Math.min(10, 2 + Math.floor(wave * 1.0));
+      // 웨이브 적 수: 초반 적게, 점진적 증가, 최대 8 (난이도 추가 하향)
+      this.waveEnemyTotal = Math.min(8, 2 + Math.floor(wave * 0.7));
       // 스폰 간격: 웨이브 높아질수록 빨라짐 (하한 700ms)
       this.spawnInterval = Math.max(700, 1500 - wave * 25);
     }
@@ -878,7 +882,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private onWaveClear(): void {
-    this.player.heal(30, 20);
+    this.player.heal(45, 30);
     soundSystem.play('level_up');
 
     const save = loadGame();
@@ -1168,7 +1172,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.player.currentCharState === 'DEAD') return false;
 
     const save = loadGame();
-    const evadeChance = Math.min(0.6, 0.12 + (save.level - 1) * 0.02);
+    const evadeChance = Math.min(0.7, 0.18 + (save.level - 1) * 0.025);
     if (Math.random() < evadeChance) {
       this.player.playEvade();
       soundSystem.play('dash');
@@ -1394,7 +1398,13 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private handleDrop(skillId: string, x: number, y: number): void {
+  private handleDrop(dropSkillId: string, x: number, y: number): void {
+    const dropped = SKILL_DATABASE.get(dropSkillId);
+    if (!dropped) return;
+
+    // 적 드랍 테이블은 검법 id를 등급별로 참조하므로, 드랍 등급을
+    // 현재 캐릭터 계열의 동급 스킬로 환산해 지급한다 (권사는 권법 비급 획득).
+    const skillId = getClassSkillByGrade(this.playerClass, dropped.grade);
     const skill = SKILL_DATABASE.get(skillId);
     if (!skill) return;
 
@@ -1432,9 +1442,24 @@ export class BattleScene extends Phaser.Scene {
 
   // ─── 유틸 ───
 
+  /** 현재 플레이어 캐릭터의 계열 */
+  private get playerClass(): CharacterClass {
+    return CHARACTER_MAP.get(this.characterId)?.charClass ?? 'SWORD';
+  }
+
   private applySaveData(): void {
     const save = loadGame();
-    save.equippedSkills.forEach((skillId, index) => {
+    const cls = this.playerClass;
+
+    // 안전망: 장착 스킬 중 현재 계열과 다른 ACTIVE 스킬은 제외(구버전 세이브 교정).
+    // MOVEMENT(회피기)는 계열 무관이라 유지.
+    const valid = save.equippedSkills.filter(id => {
+      const s = SKILL_DATABASE.get(id);
+      return s && (s.category === cls || s.category === 'MOVEMENT');
+    });
+    if (valid.length === 0) valid.push(getStarterSkill(cls));
+
+    valid.forEach((skillId, index) => {
       this.player.equipSkill(skillId, index);
     });
     if (save.equippedDash) {

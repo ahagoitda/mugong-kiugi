@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CHARACTER_LIST } from '../data/characters';
 import { loadGame, saveGame } from '../systems/SaveSystem';
+import { SKILL_DATABASE, defaultLoadoutFor } from '../data/skills';
 
 /**
  * CharacterSelectScene - 캐릭터 선택 화면
@@ -296,6 +297,22 @@ export class CharacterSelectScene extends Phaser.Scene {
     // 세이브에 선택한 캐릭터 저장
     const save = loadGame();
     save.selectedCharacter = char.id;
+
+    // 장착 무공이 선택 계열과 맞지 않으면 계열 기본 로드아웃으로 정렬.
+    // (예: 권사를 골랐는데 검법이 장착돼 있던 경우 권법 시작 스킬로 교체)
+    const equippedMatchesClass = save.equippedSkills.some(id => {
+      const s = SKILL_DATABASE.get(id);
+      return s && s.category === char.charClass;
+    });
+    if (!equippedMatchesClass) {
+      const loadout = defaultLoadoutFor(char.charClass);
+      save.equippedSkills = loadout.equippedSkills;
+      save.equippedDash = loadout.equippedDash;
+      for (const id of loadout.unlocked) {
+        if (!save.unlockedSkills.includes(id)) save.unlockedSkills.push(id);
+        if (!save.inventory[id]) save.inventory[id] = 1;
+      }
+    }
     saveGame(save);
 
     // BattleScene과 UIScene을 시작하며 선택한 캐릭터 ID를 전달

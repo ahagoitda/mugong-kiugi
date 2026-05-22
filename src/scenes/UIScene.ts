@@ -3,6 +3,7 @@ import { SKILL_DATABASE, SYNTHESIS_RECIPES, GRADE_COLORS } from '../data/skills'
 import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
 import { soundSystem } from '../systems/SoundSystem';
 import { loadGame, saveGame } from '../systems/SaveSystem';
+import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 
 /**
  * UIScene - 하단 무공 관리 UI (화면 하단 40%)
@@ -82,8 +83,17 @@ export class UIScene extends Phaser.Scene {
   // 알림
   private notifText!: Phaser.GameObjects.Text;
 
+  // 선택 캐릭터 계열 (도감/장착/합성 탭 필터용)
+  private charClass: CharacterClass = 'SWORD';
+
   constructor() {
     super({ key: 'UIScene' });
+  }
+
+  init(data: { characterId?: string }): void {
+    if (data?.characterId) {
+      this.charClass = CHARACTER_MAP.get(data.characterId)?.charClass ?? 'SWORD';
+    }
   }
 
   create(): void {
@@ -433,7 +443,9 @@ export class UIScene extends Phaser.Scene {
     save: ReturnType<typeof loadGame>,
   ): void {
     let y = startY;
-    const allSkills = Array.from(SKILL_DATABASE.values()).filter(s => s.type === 'ACTIVE');
+    // 현재 캐릭터 계열의 ACTIVE 스킬만 도감에 표시
+    const allSkills = Array.from(SKILL_DATABASE.values())
+      .filter(s => s.type === 'ACTIVE' && s.category === this.charClass);
 
     for (const skill of allSkills) {
       const count = save.inventory[skill.id] ?? 0;
@@ -515,6 +527,8 @@ export class UIScene extends Phaser.Scene {
       const mat2 = SKILL_DATABASE.get(recipe.material2);
       const result = SKILL_DATABASE.get(recipe.result);
       if (!mat1 || !mat2 || !result) continue;
+      // 현재 캐릭터 계열의 합성만 표시
+      if (result.category !== this.charClass) continue;
 
       const count1 = save.inventory[recipe.material1] ?? 0;
       const count2 = save.inventory[recipe.material2] ?? 0;
@@ -586,10 +600,10 @@ export class UIScene extends Phaser.Scene {
     items.push(equipped);
     y += 16;
 
-    // 장착 가능한 무공 목록
+    // 장착 가능한 무공 목록 (현재 캐릭터 계열만)
     const availableSkills = save.unlockedSkills
       .map(id => SKILL_DATABASE.get(id))
-      .filter(s => s && s.type === 'ACTIVE');
+      .filter(s => s && s.type === 'ACTIVE' && s.category === this.charClass);
 
     for (const skill of availableSkills) {
       if (!skill) continue;

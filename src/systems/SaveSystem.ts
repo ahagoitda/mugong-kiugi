@@ -14,7 +14,7 @@ import { getExpToNextLevel } from '../data/skills';
  */
 
 const SAVE_KEY = 'mugong_save_v1';
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 /**
  * 기본 세이브 데이터를 생성합니다.
@@ -35,10 +35,13 @@ export function createDefaultSave(): SaveData {
     equippedDash: 'chosangbi',
     inventory: { samjae: 1, chosangbi: 1 },
     unlockedSkills: ['samjae', 'chosangbi'],
+    skillLevels: {},
     stageCleared: 0,
     totalPlayTime: 0,
     defeatedBosses: [],
     totalKills: 0,
+    lastSavedAt: Date.now(),
+    lastOfflineRewardAt: Date.now(),
   };
 }
 
@@ -50,6 +53,7 @@ export function createDefaultSave(): SaveData {
  */
 export function saveGame(data: SaveData): boolean {
   try {
+    data.lastSavedAt = Date.now();
     const serialized = JSON.stringify(data);
     localStorage.setItem(SAVE_KEY, serialized);
     return true;
@@ -150,8 +154,40 @@ function migrateSave(oldData: SaveData): SaveData {
     expToNext: oldData.expToNext ?? getExpToNextLevel(oldData.level),
     defeatedBosses: oldData.defeatedBosses ?? [],
     totalKills: oldData.totalKills ?? 0,
+    skillLevels: oldData.skillLevels ?? {},
+    lastSavedAt: oldData.lastSavedAt ?? Date.now(),
+    lastOfflineRewardAt: oldData.lastOfflineRewardAt ?? Date.now(),
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);
   return migrated;
+}
+
+export function claimOfflineReward(): { gold: number; exp: number; minutes: number } {
+  const save = loadGame();
+  const now = Date.now();
+  const last = save.lastOfflineRewardAt ?? save.lastSavedAt ?? now;
+  const minutes = Math.min(480, Math.floor(Math.max(0, now - last) / 60000));
+
+  if (minutes < 3) {
+    save.lastOfflineRewardAt = now;
+    saveGame(save);
+    return { gold: 0, exp: 0, minutes: 0 };
+  }
+
+  const waveFactor = Math.max(1, save.stageCleared + 1);
+  const gold = Math.floor(minutes * (2 + waveFactor * 0.35));
+  const exp = Math.floor(minutes * (3 + waveFactor * 0.45));
+
+  save.gold += gold;
+  save.exp += exp;
+  while (save.exp >= save.expToNext) {
+    save.exp -= save.expToNext;
+    save.level += 1;
+    save.expToNext = getExpToNextLevel(save.level);
+  }
+  save.lastOfflineRewardAt = now;
+  saveGame(save);
+
+  return { gold, exp, minutes };
 }

@@ -334,16 +334,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   takeDamage(amount: number): void {
     if (this.invincible || this.currentState === 'DEAD') return;
 
-    this._hp = Math.max(0, this._hp - amount);
-
-    if (this._hp <= 0) {
-      this.changeState('DEAD');
-      const body = this.body as Phaser.Physics.Arcade.Body;
-      body.setVelocity(0, 0);
-      body.enable = false;
-      this.setTint(0x888888);
-      return;
-    }
+    this._hp = Math.max(1, this._hp - amount);
 
     this.changeState('HIT');
     this.stateTimer = 300; // 300ms 경직

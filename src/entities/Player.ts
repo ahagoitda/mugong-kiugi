@@ -151,7 +151,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
   private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
-    const key = `${this.spritePrefix}-${action}`;
+    let key = `${this.spritePrefix}-${action}`;
+    // 공격 모션이면 스킬의 attackMotion 으로 변형 키를 선택
+    if (action === 'attack' && this.currentSkill?.attackMotion && this.currentSkill.attackMotion !== 'standard') {
+      const variantKey = `${this.spritePrefix}-attack-${this.currentSkill.attackMotion}`;
+      if (this.anims.exists(variantKey)) key = variantKey;
+    }
     if (this.anims.exists(key)) {
       this.play(key, ignoreIfPlaying);
     }

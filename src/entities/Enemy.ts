@@ -318,17 +318,29 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const dx = this.targetX - this.x;
     const dy = this.targetY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+
+    const stopOffsetX = Math.max(24, Math.min(data.attackRange, 48));
+    if (this.x <= this.targetX + stopOffsetX) {
+      this.x = this.targetX + stopOffsetX;
+      body.setVelocity(0, 0);
+
+      const now = this.scene.time.now;
+      if (now - this.lastAttackTime >= data.attackCooldown) {
+        this.lastAttackTime = now;
+        this.performAttack(data);
+      }
+      return;
+    }
 
     if (dist > data.attackRange) {
       // 추적 이동 (speedMultiplier 적용)
       const nx = dx / dist;
       const ny = dy / dist;
       const speed = data.speed * this.speedMultiplier;
-      const body = this.body as Phaser.Physics.Arcade.Body;
       body.setVelocity(nx * speed, ny * speed);
     } else {
       // 공격 범위 내 → 정지 후 공격
-      const body = this.body as Phaser.Physics.Arcade.Body;
       body.setVelocity(0, 0);
 
       const now = this.scene.time.now;

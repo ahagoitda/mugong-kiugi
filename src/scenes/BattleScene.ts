@@ -1307,25 +1307,44 @@ export class BattleScene extends Phaser.Scene {
   // ─── 이펙트 ───
 
   private showSlashEffect(x: number, y: number, skill: SkillData): void {
+    // 이펙트 색: 스킬 오버라이드 → 캐릭터 기본색
+    let baseTint = skill.effectColor ?? this.slashColor;
+    if (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
+      baseTint = Phaser.Display.Color.IntegerToColor(baseTint).brighten(20).color;
+    }
+
+    const effectType = skill.effectType ?? 'slash';
+
+    if (effectType === 'multi') {
+      this.showMultiSlash(x, y, skill, baseTint);
+    } else if (effectType === 'wave') {
+      this.showWaveSlash(x, y, skill, baseTint);
+    } else if (effectType === 'burst') {
+      this.showBurstSlash(x, y, skill, baseTint);
+    } else {
+      this.showSingleSlash(x, y, skill, baseTint);
+    }
+
+    // 등급별 화면 효과
+    if (skill.grade === 'HIGH') {
+      this.cameras.main.shake(80, 0.003);
+    } else if (skill.grade === 'ULTIMATE') {
+      this.cameras.main.shake(120, 0.006);
+      this.cameras.main.flash(100, 255, 255, 255, true);
+    }
+  }
+
+  private showSingleSlash(x: number, y: number, skill: SkillData, tint: number): void {
     const fx = this.slashPool.pop();
     if (!fx) return;
-
-    // 흰색 슬래시를 캐릭터별 색으로 틴트 (캐릭터마다 전투 이펙트 색이 다름).
-    // 상급/최상급은 살짝 밝게 보정해 등급감을 준다.
     fx.setTexture('fx_slash_white');
-    let tint = this.slashColor;
-    if (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
-      tint = Phaser.Display.Color.IntegerToColor(tint).brighten(20).color;
-    }
     fx.setTint(tint);
     fx.setPosition(x, y);
     fx.setActive(true);
     fx.setVisible(true);
     fx.setAlpha(1);
     fx.setScale(skill.hitboxSize.w / 32);
-    // 슬래시 원본은 왼쪽을 향하므로, 오른쪽을 보고 공격할 때 flipX=true.
     fx.setFlipX(this.player.isFacingRight);
-
     this.tweens.add({
       targets: fx,
       alpha: 0,
@@ -1339,6 +1358,79 @@ export class BattleScene extends Phaser.Scene {
         this.slashPool.push(fx);
       },
     });
+  }
+
+  private showMultiSlash(x: number, y: number, skill: SkillData, tint: number): void {
+    // 2연속 슬래시: 약간 다른 위치·딜레이로 연타감 표현
+    const offsets = [{ dx: 0, dy: 0, delay: 0 }, { dx: 10, dy: -6, delay: 70 }];
+    for (const { dx, dy, delay } of offsets) {
+      this.time.delayedCall(delay, () => {
+        this.showSingleSlash(x + dx, y + dy, skill, tint);
+      });
+    }
+  }
+
+  private showWaveSlash(x: number, y: number, skill: SkillData, tint: number): void {
+    const fx = this.slashPool.pop();
+    if (!fx) return;
+    fx.setTexture('fx_slash_white');
+    fx.setTint(tint);
+    fx.setPosition(x, y);
+    fx.setActive(true);
+    fx.setVisible(true);
+    fx.setAlpha(1);
+    const baseScale = skill.hitboxSize.w / 32;
+    fx.setScale(baseScale * 1.8, baseScale * 0.7); // 가로로 넓게
+    fx.setFlipX(this.player.isFacingRight);
+    // y 진동 + 페이드
+    let dir = 1;
+    this.tweens.add({
+      targets: fx,
+      alpha: 0,
+      scaleX: fx.scaleX * 1.3,
+      duration: 280,
+      onUpdate: () => {
+        fx.y += dir * 0.8;
+        dir *= -1;
+      },
+      onComplete: () => {
+        fx.setActive(false);
+        fx.setVisible(false);
+        fx.setScale(1);
+        this.slashPool.push(fx);
+      },
+    });
+  }
+
+  private showBurstSlash(x: number, y: number, skill: SkillData, tint: number): void {
+    // 슬래시 + 원형 파티클 폭발
+    this.showSingleSlash(x, y, skill, tint);
+
+    const r = (tint >> 16) & 0xff;
+    const g = (tint >> 8) & 0xff;
+    const b = tint & 0xff;
+    const radius = skill.hitboxSize.w * 0.35;
+
+    const burst = this.add.graphics();
+    burst.fillStyle(tint, 0.55);
+    burst.fillCircle(0, 0, radius * 0.4);
+    burst.lineStyle(2, tint, 0.8);
+    burst.strokeCircle(0, 0, radius * 0.4);
+    burst.setPosition(x, y);
+    burst.setDepth(135);
+
+    this.tweens.add({
+      targets: burst,
+      scaleX: 2.5,
+      scaleY: 2.5,
+      alpha: 0,
+      duration: 260,
+      ease: 'Quad.easeOut',
+      onComplete: () => burst.destroy(),
+    });
+
+    // 화면 플래시 (색조 기반)
+    this.cameras.main.flash(60, r, g, b, true);
   }
 
   private showDamageText(x: number, y: number, damage: number, isCritical: boolean): void {

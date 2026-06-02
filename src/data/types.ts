@@ -81,6 +81,23 @@ export interface SkillData {
   readonly effectChance?: number;
   /** 스킬 설명 (도감 표시용) */
   readonly description?: string;
+  /**
+   * 공격 모션 종류. undefined 이면 'standard' (기존 attack 애님).
+   *   heavy  - 묵직한 강타 (느린 예비동작 → 임팩트)
+   *   quick  - 빠른 2연타
+   *   thrust - 찌르기 (창/도 계열)
+   */
+  readonly attackMotion?: 'standard' | 'heavy' | 'quick' | 'thrust';
+  /**
+   * 이펙트 종류. undefined 이면 'slash' (기존 단일 슬래시).
+   *   slash  - 단일 슬래시 (기존)
+   *   multi  - 연속 슬래시 2~3개
+   *   wave   - 넓게 퍼지는 파동형 슬래시
+   *   burst  - 슬래시 + 원형 폭발 파티클
+   */
+  readonly effectType?: 'slash' | 'multi' | 'wave' | 'burst';
+  /** 이펙트 색상 오버라이드 (0xRRGGBB). undefined 면 캐릭터 기본 색 사용 */
+  readonly effectColor?: number;
 }
 
 /**

@@ -70,7 +70,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // 캐릭터 ID로 스프라이트 프리픽스 결정
     const charDef = characterId ? CHARACTER_MAP.get(characterId) ?? null : null;
     const prefix = charDef ? charDef.spritePrefix : 'player';
-    const idleTexture = `${prefix}_idle`;
+    const idleTexture = charDef ? `hero_${charDef.id}` : 'hero_sword_male';
 
     super(scene, x, y, idleTexture);
 
@@ -81,13 +81,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
 
     // 128x128 스프라이트를 0.8배로 표시 (화면에서 ~102x102 크기)
-    this.setScale(0.8);
+    this.setDisplaySize(210, 210);
 
     // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
-    body.setSize(50, 90);
-    body.setOffset(39, 34);
+    body.setSize(70, 150);
+    body.setOffset(70, 55);
 
     // 초기 애니메이션 재생
     this.playAnim('idle');
@@ -151,6 +151,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
   private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
+    if (!this.scene.anims.exists(`${this.spritePrefix}-${action}`)) {
+      if (action === 'attack') {
+        this.scene.tweens.add({ targets: this, angle: this.facingRight ? 5 : -5, duration: 90, yoyo: true });
+      } else if (action === 'run' && !ignoreIfPlaying) {
+        this.scene.tweens.add({ targets: this, y: this.y - 4, duration: 180, yoyo: true });
+      }
+      return;
+    }
     let key = `${this.spritePrefix}-${action}`;
     // 공격 모션이면 스킬의 attackMotion 으로 변형 키를 선택
     if (action === 'attack' && this.currentSkill?.attackMotion && this.currentSkill.attackMotion !== 'standard') {
@@ -399,7 +407,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (newFrame !== this.currentFrame && newFrame < skill.totalFrames) {
       this.currentFrame = newFrame;
-      this.setFrame(this.currentFrame);
 
       // 이동 오프셋 적용 (돌진기)
       if (skill.moveOffset.x !== 0) {

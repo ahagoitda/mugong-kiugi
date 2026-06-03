@@ -104,6 +104,24 @@ export interface SkillData {
   readonly upgradeShardBase?: number;
   /** 최대 강화 레벨 */
   readonly maxLevel?: number;
+  readonly cardArtKey?: string;
+  readonly iconKey?: string;
+  readonly vfxKey?: string;
+  readonly motionKey?: string;
+}
+
+export type EquipmentSlot = 'WEAPON' | 'ARMOR' | 'HELM' | 'BOOTS' | 'ACCESSORY' | 'RELIC';
+export type EquipmentGrade = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+
+export interface EquipmentItem {
+  id: string;
+  name: string;
+  slot: EquipmentSlot;
+  grade: EquipmentGrade;
+  setId?: string;
+  attack: number;
+  hp: number;
+  bonus: number;
 }
 
 /**
@@ -155,6 +173,16 @@ export interface SaveData {
   defeatedBosses?: string[];
   /** 총 처치 수 */
   totalKills?: number;
+  equipmentInventory?: EquipmentItem[];
+  equippedItems?: Partial<Record<EquipmentSlot, string>>;
+  trainingLevels?: Record<string, number>;
+  sectFacilities?: Record<string, number>;
+  sectResearch?: Record<string, number>;
+  disciples?: string[];
+  codexUnlocked?: string[];
+  missionProgress?: Record<string, number>;
+  missionClaims?: string[];
+  storyRegion?: number;
 }
 
 /**
@@ -182,6 +210,8 @@ export interface EnemyData {
   readonly goldReward: number;
   /** 처치 시 획득 경험치 */
   readonly expReward: number;
+  readonly region?: number;
+  readonly setId?: string;
 }
 
 /**

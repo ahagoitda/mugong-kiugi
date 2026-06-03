@@ -72,6 +72,7 @@ const ATTACK_MOTION: Readonly<Record<string, AttackMotion>> = {
  */
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private enemyData: EnemyData | null = null;
+  private lastEnemyData: EnemyData | null = null;
   private _hp = 0;
   private lastAttackTime = 0;
   private targetX = 0;
@@ -90,16 +91,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private pendingDrop: DropEntry | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'enemy_bandit');
+    super(scene, x, y, 'enemy_art_01');
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.setScale(0.75);
+    this.setDisplaySize(170, 170);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(50, 90);
-    body.setOffset(39, 34);
+    body.setSize(58, 120);
+    body.setOffset(56, 42);
     body.setCollideWorldBounds(true);
 
     this.setActive(false);
@@ -111,7 +112,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   get hp(): number { return this._hp; }
 
   /** 적 데이터 (이름 등 UI 표시용) */
-  get data_(): EnemyData | null { return this.enemyData; }
+  get data_(): EnemyData | null { return this.enemyData ?? this.lastEnemyData; }
 
   /** 현재 이동 속도 반환 */
   getSpeed(): number {
@@ -158,7 +159,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.play(key);
     } else {
       // 공격 애니메이션이 없으면 idle 유지 (위치 트윈만으로 연출)
-      this.playIdleAnim();
+      this.scene.tweens.add({ targets: this, angle: -4, duration: 80, yoyo: true });
     }
   }
 
@@ -184,6 +185,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    */
   activate(data: EnemyData, x: number, y: number): void {
     this.enemyData = data;
+    this.lastEnemyData = data;
     this._hp = data.hp;
     this.lastAttackTime = 0;
     this.knockbackTimer = 0;
@@ -195,6 +197,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.scene.tweens.killTweensOf(this);
 
     this.setTexture(data.spriteKey);
+    if (data.rank === 'BOSS') this.setDisplaySize(250, 250);
+    else this.setDisplaySize(170, 170);
     this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);

@@ -15,6 +15,7 @@ import {
 } from '../data/characters';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
+import { createEquipment } from '../data/equipment';
 
 /**
  * BattleScene - 상단 횡스크롤 자동전투 씬
@@ -33,9 +34,9 @@ import { bgmSystem } from '../systems/BgmSystem';
  * - KNOCKBACK: 즉시 밀어내기
  */
 
-const GAME_W = 360;
-const BATTLE_H = 384;
-const GROUND_Y = BATTLE_H - 80;
+const GAME_W = 540;
+const BATTLE_H = 620;
+const GROUND_Y = BATTLE_H - 130;
 const SCROLL_SPEED = 40;
 const MAX_ENEMIES = 8;
 
@@ -175,7 +176,7 @@ export class BattleScene extends Phaser.Scene {
     this.createBackground();
 
     // 플레이어 생성 (선택한 캐릭터 ID 전달)
-    this.player = new Player(this, 80, GROUND_Y, this.characterId);
+    this.player = new Player(this, 125, GROUND_Y, this.characterId);
     this.player.setOnHitCallback(this.onPlayerHit.bind(this));
 
     // 선택 캐릭터별 공격 이펙트 색 결정
@@ -634,6 +635,11 @@ export class BattleScene extends Phaser.Scene {
         // 총 처치 수 갱신
         const save = loadGame();
         save.totalKills = (save.totalKills ?? 0) + 1;
+        if (enemyData && (enemyData.rank === 'BOSS' || Math.random() < 0.22)) {
+          save.equipmentInventory = save.equipmentInventory ?? [];
+          save.equipmentInventory.push(createEquipment(enemyData.region ?? 1, undefined, enemyData.rank === 'BOSS'));
+          if (save.equipmentInventory.length > 120) save.equipmentInventory.splice(0, save.equipmentInventory.length - 120);
+        }
         saveGame(save);
 
         if (isBossDeath) {
@@ -830,6 +836,7 @@ export class BattleScene extends Phaser.Scene {
 
     if (this.bgMountains) {
       this.bgMountains.setTexture(theme.mountainsKey);
+      this.bgMountains.setSize(GAME_W, BATTLE_H);
     }
     if (this.bgGround) {
       this.bgGround.setTexture(theme.groundKey);
@@ -892,6 +899,9 @@ export class BattleScene extends Phaser.Scene {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
     }
+    save.storyRegion = Math.max(save.storyRegion ?? 1, Math.min(8, (bossData?.region ?? 1) + 1));
+    save.codexUnlocked = save.codexUnlocked ?? [];
+    if (bossData && !save.codexUnlocked.includes(bossData.id)) save.codexUnlocked.push(bossData.id);
     const bonusGold = 80 + this.waveNumber * 12;
     const bonusExp = 120 + this.waveNumber * 18;
     save.gold += bonusGold;
@@ -1281,13 +1291,11 @@ export class BattleScene extends Phaser.Scene {
     const theme = getBackgroundForWave(this.waveNumber);
     this.currentBgTheme = theme;
 
-    this.bgMountains = this.add.tileSprite(0, -120, GAME_W, BATTLE_H + 60, theme.mountainsKey)
+    this.bgMountains = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, 'background_main')
       .setOrigin(0, 0)
       .setScrollFactor(0);
 
-    this.bgGround = this.add.tileSprite(0, BATTLE_H - 140, GAME_W, 140, theme.groundKey)
-      .setOrigin(0, 0)
-      .setScrollFactor(0);
+    this.bgGround = null;
   }
 
   private updateBackground(): void {

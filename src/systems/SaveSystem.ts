@@ -13,8 +13,8 @@ import { getExpToNextLevel } from '../data/skills';
  * - 싱글톤 패턴 대신 순수 함수로 구현하여 참조 순환을 방지합니다.
  */
 
-const SAVE_KEY = 'mugong_save_v1';
-const CURRENT_VERSION = 3;
+const SAVE_KEY = 'mugong_save_highres_v1';
+const CURRENT_VERSION = 4;
 
 /**
  * 기본 세이브 데이터를 생성합니다.
@@ -42,6 +42,16 @@ export function createDefaultSave(): SaveData {
     totalKills: 0,
     lastSavedAt: Date.now(),
     lastOfflineRewardAt: Date.now(),
+    equipmentInventory: [],
+    equippedItems: {},
+    trainingLevels: { attack: 0, hp: 0, gold: 0 },
+    sectFacilities: { hall: 1, forge: 1, library: 1 },
+    sectResearch: { SWORD: 0, BLADE: 0, FIST: 0, SPEAR: 0 },
+    disciples: [],
+    codexUnlocked: ['region_1'],
+    missionProgress: {},
+    missionClaims: [],
+    storyRegion: 1,
   };
 }
 
@@ -157,6 +167,16 @@ function migrateSave(oldData: SaveData): SaveData {
     skillLevels: oldData.skillLevels ?? {},
     lastSavedAt: oldData.lastSavedAt ?? Date.now(),
     lastOfflineRewardAt: oldData.lastOfflineRewardAt ?? Date.now(),
+    equipmentInventory: oldData.equipmentInventory ?? [],
+    equippedItems: oldData.equippedItems ?? {},
+    trainingLevels: oldData.trainingLevels ?? { attack: 0, hp: 0, gold: 0 },
+    sectFacilities: oldData.sectFacilities ?? { hall: 1, forge: 1, library: 1 },
+    sectResearch: oldData.sectResearch ?? { SWORD: 0, BLADE: 0, FIST: 0, SPEAR: 0 },
+    disciples: oldData.disciples ?? [],
+    codexUnlocked: oldData.codexUnlocked ?? ['region_1'],
+    missionProgress: oldData.missionProgress ?? {},
+    missionClaims: oldData.missionClaims ?? [],
+    storyRegion: oldData.storyRegion ?? 1,
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);

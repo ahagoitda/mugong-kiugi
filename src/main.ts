@@ -27,17 +27,17 @@ import { GameOverScene } from './scenes/GameOverScene';
  * antialias: false → Nearest-neighbor 스케일링으로 도트 깨짐 방지.
  */
 
-const GAME_W = 360;
-const GAME_H = 640;
+const GAME_W = 540;
+const GAME_H = 960;
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL,
   width: GAME_W,
   height: GAME_H,
   parent: 'game-container',
-  backgroundColor: '#1a1a2e',
-  pixelArt: true,
-  antialias: false,
+  backgroundColor: '#080706',
+  pixelArt: false,
+  antialias: true,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

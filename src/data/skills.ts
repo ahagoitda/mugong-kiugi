@@ -1,4 +1,4 @@
-import type { SkillData, SynthesisRecipe, SkillGrade } from './types';
+import type { SkillData, SynthesisRecipe, SkillGrade, SkillCategory, StatusEffect } from './types';
 import type { CharacterClass } from './characters';
 
 /**
@@ -364,6 +364,103 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
   }],
 ]);
 
+const CATEGORY_META: Readonly<Record<CharacterClass, {
+  category: Exclude<SkillCategory, 'MOVEMENT'>;
+  prefix: string;
+  ko: string;
+  baseAnim: string;
+}>> = {
+  SWORD: { category: 'SWORD', prefix: 'sword', ko: '검결', baseAnim: 'player_attack' },
+  BLADE: { category: 'BLADE', prefix: 'blade', ko: '도결', baseAnim: 'player_attack' },
+  FIST: { category: 'FIST', prefix: 'fist', ko: '권결', baseAnim: 'player_attack' },
+  SPEAR: { category: 'SPEAR', prefix: 'spear', ko: '창결', baseAnim: 'player_attack' },
+};
+
+const GRADE_CONFIG: Readonly<Record<SkillGrade, {
+  count: number;
+  range: number;
+  cooldown: number;
+  damage: number;
+  stamina: number;
+  color: number;
+  gold: number;
+  shard: number;
+  maxLevel: number;
+}>> = {
+  LOW: { count: 18, range: 38, cooldown: 850, damage: 0.95, stamina: 5, color: 0xb0b0b0, gold: 25, shard: 1, maxLevel: 20 },
+  MID: { count: 16, range: 52, cooldown: 1250, damage: 1.55, stamina: 10, color: 0x4fc3f7, gold: 80, shard: 1, maxLevel: 25 },
+  HIGH: { count: 8, range: 72, cooldown: 2200, damage: 2.45, stamina: 18, color: 0xab47bc, gold: 220, shard: 2, maxLevel: 30 },
+  ULTIMATE: { count: 2, range: 105, cooldown: 4200, damage: 4.4, stamina: 34, color: 0xffd740, gold: 700, shard: 3, maxLevel: 40 },
+};
+
+const MOTIONS = ['standard', 'quick', 'heavy', 'thrust'] as const;
+const EFFECT_TYPES = ['slash', 'multi', 'wave', 'burst'] as const;
+const STATUS_EFFECTS: readonly StatusEffect[] = ['BLEED', 'STUN', 'KNOCKBACK', 'SLOW'];
+const GENERATED_SKILL_IDS: Record<CharacterClass, Record<SkillGrade, string[]>> = {
+  SWORD: { LOW: [], MID: [], HIGH: [], ULTIMATE: [] },
+  BLADE: { LOW: [], MID: [], HIGH: [], ULTIMATE: [] },
+  FIST: { LOW: [], MID: [], HIGH: [], ULTIMATE: [] },
+  SPEAR: { LOW: [], MID: [], HIGH: [], ULTIMATE: [] },
+};
+
+function createGeneratedSkill(cls: CharacterClass, grade: SkillGrade, index: number): SkillData {
+  const meta = CATEGORY_META[cls];
+  const cfg = GRADE_CONFIG[grade];
+  const id = `${meta.prefix}_${grade.toLowerCase()}_${index.toString().padStart(2, '0')}`;
+  const motion = MOTIONS[index % MOTIONS.length];
+  const effectType = EFFECT_TYPES[index % EFFECT_TYPES.length];
+  const effect = STATUS_EFFECTS[index % STATUS_EFFECTS.length];
+  const gradeBonus = grade === 'LOW' ? 0 : grade === 'MID' ? 0.35 : grade === 'HIGH' ? 0.9 : 1.9;
+  const spread = 1 + (index % 5) * 0.06;
+
+  return {
+    id,
+    name: `${meta.prefix}-${grade.toLowerCase()}-${index}`,
+    nameKo: `${meta.ko} ${index}`,
+    grade,
+    type: 'ACTIVE',
+    category: meta.category,
+    range: Math.round(cfg.range + (index % 6) * 3),
+    cooldown: Math.max(420, Math.round(cfg.cooldown - (index % 4) * 45)),
+    damageMultiplier: Number((cfg.damage * spread + gradeBonus).toFixed(2)),
+    staminaCost: Math.round(cfg.stamina + (index % 4) * 2),
+    animKey: meta.baseAnim,
+    totalFrames: 4,
+    frameRate: grade === 'ULTIMATE' ? 7 : grade === 'HIGH' ? 9 : 12 + (index % 4),
+    hitFrames: effectType === 'multi' ? [1, 3] : effectType === 'burst' ? [1, 2, 3] : [2],
+    hitboxSize: {
+      w: Math.round(cfg.range * (effectType === 'burst' ? 1.1 : 0.85)),
+      h: Math.round(24 + (index % 5) * 6 + (grade === 'ULTIMATE' ? 36 : grade === 'HIGH' ? 18 : 0)),
+    },
+    moveOffset: { x: motion === 'thrust' ? 12 : motion === 'quick' ? 7 : 4, y: 0 },
+    effect,
+    effectChance: Math.min(0.85, 0.18 + (index % 5) * 0.08 + (grade === 'ULTIMATE' ? 0.2 : 0)),
+    effectDuration: grade === 'LOW' ? 900 : grade === 'MID' ? 1500 : grade === 'HIGH' ? 2200 : 3200,
+    attackMotion: motion,
+    effectType,
+    effectColor: cfg.color,
+    upgradeGoldBase: cfg.gold,
+    upgradeShardBase: cfg.shard,
+    maxLevel: cfg.maxLevel,
+    description: `${meta.ko} 계열 자동 생성 무공. 강화할수록 피해량이 상승한다.`,
+  };
+}
+
+function installGeneratedSkills(): void {
+  const db = SKILL_DATABASE as Map<string, SkillData>;
+  for (const cls of Object.keys(CATEGORY_META) as CharacterClass[]) {
+    for (const grade of Object.keys(GRADE_CONFIG) as SkillGrade[]) {
+      for (let i = 1; i <= GRADE_CONFIG[grade].count; i++) {
+        const skill = createGeneratedSkill(cls, grade, i);
+        if (!db.has(skill.id)) db.set(skill.id, skill);
+        GENERATED_SKILL_IDS[cls][grade].push(skill.id);
+      }
+    }
+  }
+}
+
+installGeneratedSkills();
+
 /**
  * 비급 합성 레시피
  *
@@ -393,6 +490,29 @@ export const SYNTHESIS_RECIPES: readonly SynthesisRecipe[] = [
   { material1: 'hoeseon', material2: 'gwansan', result: 'yongchang', goldCost: 200 },
   { material1: 'yongchang', material2: 'yongchang', result: 'cheonha', goldCost: 1000 },
 ];
+
+function installGeneratedRecipes(): void {
+  const recipes = SYNTHESIS_RECIPES as SynthesisRecipe[];
+  for (const cls of Object.keys(GENERATED_SKILL_IDS) as CharacterClass[]) {
+    const grades: SkillGrade[] = ['LOW', 'MID', 'HIGH', 'ULTIMATE'];
+    for (const grade of grades) {
+      const ids = GENERATED_SKILL_IDS[cls][grade];
+      const nextGrade = grade === 'LOW' ? 'MID' : grade === 'MID' ? 'HIGH' : grade === 'HIGH' ? 'ULTIMATE' : null;
+      for (let i = 0; i < ids.length - 1; i += 2) {
+        const resultPool = nextGrade ? GENERATED_SKILL_IDS[cls][nextGrade] : ids;
+        const result = resultPool[Math.floor(i / 2) % resultPool.length];
+        recipes.push({
+          material1: ids[i],
+          material2: ids[i + 1],
+          result,
+          goldCost: GRADE_CONFIG[grade].gold * 2,
+        });
+      }
+    }
+  }
+}
+
+installGeneratedRecipes();
 
 /**
  * 계열별 스킬 구성.
@@ -428,7 +548,9 @@ export function getStarterSkill(cls: CharacterClass): string {
 
 /** 해당 계열에서 주어진 등급의 스킬 하나(랜덤). 드랍 환산용. */
 export function getClassSkillByGrade(cls: CharacterClass, grade: SkillGrade): string {
-  const arr = CLASS_SKILLS[cls]?.byGrade[grade];
+  const arr = Array.from(SKILL_DATABASE.values())
+    .filter(s => s.category === CATEGORY_META[cls]?.category && s.grade === grade)
+    .map(s => s.id);
   if (arr && arr.length > 0) return arr[Math.floor(Math.random() * arr.length)];
   return getStarterSkill(cls);
 }

@@ -98,6 +98,12 @@ export interface SkillData {
   readonly effectType?: 'slash' | 'multi' | 'wave' | 'burst';
   /** 이펙트 색상 오버라이드 (0xRRGGBB). undefined 면 캐릭터 기본 색 사용 */
   readonly effectColor?: number;
+  /** 강화 1회 기준 골드 비용 */
+  readonly upgradeGoldBase?: number;
+  /** 강화 1회 기준 중복 무공 소모량 */
+  readonly upgradeShardBase?: number;
+  /** 최대 강화 레벨 */
+  readonly maxLevel?: number;
 }
 
 /**
@@ -136,8 +142,11 @@ export interface SaveData {
   equippedDash: string;
   inventory: Record<string, number>;  // skillId → 보유 수량
   unlockedSkills: string[];
+  skillLevels?: Record<string, number>;
   stageCleared: number;
   totalPlayTime: number;
+  lastSavedAt?: number;
+  lastOfflineRewardAt?: number;
   /** 선택한 캐릭터 ID (characters.ts의 CharacterDef.id) */
   selectedCharacter?: string;
   /** 누적 사망 횟수 (부활 비용 계산용) */

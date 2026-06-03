@@ -41,10 +41,10 @@ const MAX_ENEMIES = 8;
 
 // ─── 난이도 조정(하향) 전역 배율 ───
 // 방치형 게임에 맞춰 적 위협을 낮춰 편하게 진행되도록 한다.
-const ENEMY_HP_MUL = 0.7;    // 적 체력 (빨리 처치)
-const ENEMY_DMG_MUL = 0.32;  // 적 공격력 (매우 안전)
-const BOSS_HP_MUL = 0.65;    // 보스 체력
-const BOSS_DMG_MUL = 0.38;   // 보스 공격력
+const ENEMY_HP_MUL = 0.45;
+const ENEMY_DMG_MUL = 0.12;
+const BOSS_HP_MUL = 0.38;
+const BOSS_DMG_MUL = 0.14;
 
 /**
  * 보스 등급별 고유 스킬 정의.
@@ -155,7 +155,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   init(data: { characterId?: string; startWave?: number; isRevive?: boolean }): void {
-    this._gameOverTriggered = false;
     if (data.characterId) {
       this.characterId = data.characterId;
     }
@@ -243,11 +242,7 @@ export class BattleScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.player.currentCharState === 'DEAD') {
-      if (!this._gameOverTriggered) {
-        this._gameOverTriggered = true;
-        this.triggerGameOver();
-      }
-      return;
+      this.player.heal(this.player.maxHp, this.player.maxStamina);
     }
     this.player.update(time, delta);
     this.updateScroll(delta);
@@ -259,24 +254,6 @@ export class BattleScene extends Phaser.Scene {
     this.updateBossSkill(delta);
     this.updateStatusEffects(delta);
     this.emitState();
-  }
-
-  private _gameOverTriggered = false;
-
-  private triggerGameOver(): void {
-    soundSystem.play('game_over');
-    this.cameras.main.shake(500, 0.015);
-    this.time.delayedCall(600, () => {
-      this.cameras.main.fadeOut(500, 0, 0, 0);
-      this.cameras.main.once('camerafadeoutcomplete', () => {
-        this.scene.stop('UIScene');
-        this.scene.start('GameOverScene', {
-          waveNumber: this.waveNumber,
-          killCount: this.killCount,
-          characterId: this.characterId,
-        });
-      });
-    });
   }
 
   // ─── 보스 HP바 UI ───
@@ -882,7 +859,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private onWaveClear(): void {
-    this.player.heal(45, 30);
+    this.player.heal(this.player.maxHp * 0.8, this.player.maxStamina);
     soundSystem.play('level_up');
 
     const save = loadGame();
@@ -914,6 +891,19 @@ export class BattleScene extends Phaser.Scene {
     if (bossData && !save.defeatedBosses?.includes(bossData.id)) {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
+    }
+    const bonusGold = 80 + this.waveNumber * 12;
+    const bonusExp = 120 + this.waveNumber * 18;
+    save.gold += bonusGold;
+    save.exp += bonusExp;
+    const rewardGrade = this.waveNumber >= 20 ? 'ULTIMATE' : this.waveNumber >= 10 ? 'HIGH' : 'MID';
+    const rewardSkillId = getClassSkillByGrade(this.playerClass, rewardGrade);
+    save.inventory[rewardSkillId] = (save.inventory[rewardSkillId] ?? 0) + 1;
+    if (!save.unlockedSkills.includes(rewardSkillId)) save.unlockedSkills.push(rewardSkillId);
+    while (save.exp >= save.expToNext) {
+      save.exp -= save.expToNext;
+      save.level += 1;
+      save.expToNext = getExpToNextLevel(save.level);
     }
     saveGame(save);
 
@@ -971,6 +961,8 @@ export class BattleScene extends Phaser.Scene {
     // 레벨 기반 데미지 보정
     const save = loadGame();
     const levelBonus = 1 + (save.level - 1) * 0.05;
+    const skillLevel = save.skillLevels?.[skill.id] ?? 0;
+    const skillUpgradeBonus = 1 + skillLevel * 0.08;
     const charDmgMul = this.player.characterDamageMul;
 
     for (const enemy of this.enemies) {
@@ -985,7 +977,7 @@ export class BattleScene extends Phaser.Scene {
       );
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
-        const damage = Math.round(skill.damageMultiplier * 10 * charDmgMul * levelBonus);
+        const damage = Math.round(skill.damageMultiplier * 10 * charDmgMul * levelBonus * skillUpgradeBonus);
         const killed = enemy.takeDamage(damage);
 
         // 상태이상 적용

@@ -2,35 +2,18 @@ import Phaser from 'phaser';
 import { SKILL_DATABASE, SYNTHESIS_RECIPES, GRADE_COLORS } from '../data/skills';
 import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
 import { soundSystem } from '../systems/SoundSystem';
-import { loadGame, saveGame } from '../systems/SaveSystem';
+import { claimOfflineReward, loadGame, saveGame } from '../systems/SaveSystem';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
-
-/**
- * UIScene - 하단 무공 관리 UI (화면 하단 40%)
- *
- * 레이아웃 (360 x 256, y=384부터 시작):
- * ┌─────────────────────────────────────┐ y=384
- * │ [HP바] [SP바]  [Lv/EXP] [Gold]     │ 상태 바
- * │ [웨이브] [처치수]  [자동/수동]       │
- * ├─────────────────────────────────────┤ y=424
- * │  [무공1] [무공2] [무공3]  [회피]     │ 장착 슬롯
- * ├─────────────────────────────────────┤ y=472
- * │  [도감]  [합성]  [장착]  [보스]      │ 메뉴 탭
- * │  (선택된 탭의 내용 표시)             │
- * └─────────────────────────────────────┘ y=640
- *
- * BattleScene과 이벤트로 통신합니다.
- */
+import type { SkillData, SynthesisRecipe } from '../data/types';
 
 const GAME_W = 360;
 const GAME_H = 640;
-const BATTLE_H = 384;
-const UI_H = GAME_H - BATTLE_H; // 256
-const UI_Y = BATTLE_H;
+const UI_Y = 384;
+const UI_H = GAME_H - UI_Y;
+const BAR_W = 108;
+const BTN_SIZE = 50;
 
-const BAR_W = 110;
-const BAR_H = 8;
-const BTN_SIZE = 52;
+type TabType = 'NONE' | 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
 
 interface PlayerStatePayload {
   hp: number;
@@ -50,40 +33,28 @@ interface PlayerStatePayload {
   expToNext: number;
 }
 
-type TabType = 'NONE' | 'CODEX' | 'SYNTH' | 'EQUIP' | 'BOSS';
-
 export class UIScene extends Phaser.Scene {
-  // HUD
   private hpBar!: Phaser.GameObjects.Rectangle;
   private spBar!: Phaser.GameObjects.Rectangle;
   private expBar!: Phaser.GameObjects.Rectangle;
   private hpText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
-  private modeBtn!: Phaser.GameObjects.Text;
   private killText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
+  private modeBtn!: Phaser.GameObjects.Text;
   private muteBtn!: Phaser.GameObjects.Text;
 
-  // 스킬 슬롯
-  private skillSlots: Phaser.GameObjects.Container[] = [];
   private skillLabels: Phaser.GameObjects.Text[] = [];
   private skillBgs: Phaser.GameObjects.Rectangle[] = [];
   private cooldownOverlays: Phaser.GameObjects.Rectangle[] = [];
   private cooldownTexts: Phaser.GameObjects.Text[] = [];
-  // 회피 버튼
-  private dashBg: Phaser.GameObjects.Rectangle | null = null;
   private dashCooldownOverlay: Phaser.GameObjects.Rectangle | null = null;
   private dashCooldownText: Phaser.GameObjects.Text | null = null;
 
-  // 탭 시스템
   private currentTab: TabType = 'NONE';
   private tabContent: Phaser.GameObjects.Container | null = null;
-
-  // 알림
   private notifText!: Phaser.GameObjects.Text;
-
-  // 선택 캐릭터 계열 (도감/장착/합성 탭 필터용)
   private charClass: CharacterClass = 'SWORD';
 
   constructor() {
@@ -97,19 +68,15 @@ export class UIScene extends Phaser.Scene {
   }
 
   create(): void {
-    // UI 영역 배경
-    this.add.rectangle(GAME_W / 2, UI_Y + UI_H / 2, GAME_W, UI_H, 0x0f0f1a)
-      .setStrokeStyle(1, 0x333366);
-
-    // 구분선
-    this.add.rectangle(GAME_W / 2, UI_Y, GAME_W, 2, 0x4fc3f7).setOrigin(0.5, 0);
+    this.add.rectangle(GAME_W / 2, UI_Y + UI_H / 2, GAME_W, UI_H, 0x101018);
+    this.add.rectangle(GAME_W / 2, UI_Y, GAME_W, 2, 0xc98b2e).setOrigin(0.5, 0);
 
     this.createStatusBar();
-    this.createSkillSlots();
-    this.createMenuTabs();
+    this.createSkillButtons();
+    this.createTabs();
     this.createNotification();
+    this.claimOffline();
 
-    // BattleScene 이벤트 리스닝
     const battleScene = this.scene.get('BattleScene');
     battleScene.events.on('player-state', this.updateHUD, this);
     battleScene.events.on('wave-clear', this.showWaveClear, this);
@@ -118,699 +85,468 @@ export class UIScene extends Phaser.Scene {
     battleScene.events.on('level-up', this.showLevelUp, this);
   }
 
-  // ─── 상태 바 (y=384~424) ───
-
   private createStatusBar(): void {
-    const barY = UI_Y + 10;
-
-    // HP 바
-    this.add.rectangle(10 + BAR_W / 2, barY, BAR_W, BAR_H, 0x333333);
-    this.hpBar = this.add.rectangle(10, barY, BAR_W, BAR_H, 0xff4444).setOrigin(0, 0.5);
-    this.hpText = this.add.text(10 + BAR_W + 4, barY, '100/100', {
-      fontSize: '7px', color: '#ffffff', fontFamily: 'monospace',
+    const y = UI_Y + 10;
+    this.add.rectangle(10 + BAR_W / 2, y, BAR_W, 8, 0x2a2a32);
+    this.hpBar = this.add.rectangle(10, y, BAR_W, 8, 0xd94a3a).setOrigin(0, 0.5);
+    this.hpText = this.add.text(10 + BAR_W + 5, y, '100/100', {
+      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
     }).setOrigin(0, 0.5);
 
-    // SP 바
-    const spY = barY + 10;
-    this.add.rectangle(10 + BAR_W / 2, spY, BAR_W, BAR_H, 0x333333);
-    this.spBar = this.add.rectangle(10, spY, BAR_W, BAR_H, 0x4488ff).setOrigin(0, 0.5);
+    this.add.rectangle(10 + BAR_W / 2, y + 11, BAR_W, 8, 0x2a2a32);
+    this.spBar = this.add.rectangle(10, y + 11, BAR_W, 8, 0x4a84d9).setOrigin(0, 0.5);
 
-    // EXP 바
-    const expY = spY + 10;
-    this.add.rectangle(10 + BAR_W / 2, expY, BAR_W, BAR_H - 2, 0x222222);
-    this.expBar = this.add.rectangle(10, expY, 0, BAR_H - 2, 0x88cc44).setOrigin(0, 0.5);
+    this.add.rectangle(10 + BAR_W / 2, y + 22, BAR_W, 6, 0x202024);
+    this.expBar = this.add.rectangle(10, y + 22, 0, 6, 0x72c05b).setOrigin(0, 0.5);
 
-    // 레벨 텍스트
-    this.levelText = this.add.text(10 + BAR_W + 4, expY, 'Lv.1', {
-      fontSize: '7px', color: '#88cc44', fontFamily: 'monospace', fontStyle: 'bold',
+    this.levelText = this.add.text(10 + BAR_W + 5, y + 22, 'Lv.1', {
+      fontSize: '8px', color: '#72c05b', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0, 0.5);
 
-    // 골드 표시
-    this.goldText = this.add.text(GAME_W - 10, barY, '0 G', {
-      fontSize: '9px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
+    this.waveText = this.add.text(GAME_W / 2, y, '1파', {
+      fontSize: '10px', color: '#ffd56a', fontFamily: 'monospace', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.killText = this.add.text(GAME_W / 2, y + 14, '처치 0', {
+      fontSize: '8px', color: '#b8b8c8', fontFamily: 'monospace',
+    }).setOrigin(0.5);
+
+    this.goldText = this.add.text(GAME_W - 10, y, '0 G', {
+      fontSize: '10px', color: '#ffd56a', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(1, 0.5);
 
-    // 웨이브
-    this.waveText = this.add.text(GAME_W / 2, barY, '제 1파', {
-      fontSize: '9px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    // 처치 수
-    this.killText = this.add.text(GAME_W / 2, spY, '처치: 0', {
-      fontSize: '7px', color: '#aaaaaa', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-
-    // 자동/수동 버튼
-    this.modeBtn = this.add.text(GAME_W - 10, spY, '⚔ 자동', {
-      fontSize: '8px', color: '#88ff88', fontFamily: 'monospace',
-      backgroundColor: '#222244',
-      padding: { x: 4, y: 2 },
+    this.modeBtn = this.add.text(GAME_W - 10, y + 14, '자동', {
+      fontSize: '9px', color: '#8cff9b', fontFamily: 'monospace',
+      backgroundColor: '#1d2c22', padding: { x: 8, y: 3 },
     }).setOrigin(1, 0.5).setInteractive();
+    this.modeBtn.on('pointerdown', () => this.scene.get('BattleScene').events.emit('toggle-battle-mode'));
 
-    this.modeBtn.on('pointerdown', () => {
-      const battleScene = this.scene.get('BattleScene');
-      battleScene.events.emit('toggle-battle-mode');
-    });
-
-    // 음소거 버튼
-    this.muteBtn = this.add.text(GAME_W - 10, expY, soundSystem.muted ? '🔇' : '🔊', {
-      fontSize: '9px', color: '#aaaaaa', fontFamily: 'monospace',
+    this.muteBtn = this.add.text(GAME_W - 10, y + 29, soundSystem.muted ? '음소거' : '소리', {
+      fontSize: '8px', color: '#b8b8c8', fontFamily: 'monospace',
+      backgroundColor: '#20202a', padding: { x: 6, y: 2 },
     }).setOrigin(1, 0.5).setInteractive();
-
     this.muteBtn.on('pointerdown', () => {
       soundSystem.toggleMute();
-      this.muteBtn.setText(soundSystem.muted ? '🔇' : '🔊');
+      this.muteBtn.setText(soundSystem.muted ? '음소거' : '소리');
     });
   }
 
-  // ─── 무공 장착 슬롯 ───
-  //
-  // 슬롯 디자인 (52x52):
-  // ┌──────────┐
-  // │1         │  ← 좌상단: 슬롯 번호
-  // │  이름     │  ← 중앙: 스킬명 (한글 2~4자)
-  // │ -SP      │  ← 하단: 기력 비용
-  // └──────────┘
-  // 쿨다운 중: 검은 반투명 오버레이가 위→아래로 줄어들고, 중앙에 남은 초 표시.
-  // 클릭 시: 짧은 스케일 트윈으로 탭 피드백.
-
-  private createSkillSlots(): void {
-    const slotY = UI_Y + 56;
-    // 4개 버튼(스킬3 + 회피1)을 화면 폭에 골고루 배치
-    const totalBtns = 4;
-    const slotGap = 14;
-    const totalW = totalBtns * BTN_SIZE + (totalBtns - 1) * slotGap;
-    const startX = (GAME_W - totalW) / 2 + BTN_SIZE / 2;
+  private createSkillButtons(): void {
+    const y = UI_Y + 64;
+    const gap = 12;
+    const startX = (GAME_W - BTN_SIZE * 4 - gap * 3) / 2 + BTN_SIZE / 2;
 
     for (let i = 0; i < 3; i++) {
-      const x = startX + i * (BTN_SIZE + slotGap);
-
-      const bg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x1a1a3a)
-        .setStrokeStyle(2, 0x4466aa);
-      const slotNum = this.add.text(-BTN_SIZE / 2 + 3, -BTN_SIZE / 2 + 2, `${i + 1}`, {
-        fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
-      }).setOrigin(0);
-      const nameLabel = this.add.text(0, -2, '-', {
-        fontSize: '10px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
-        align: 'center', wordWrap: { width: BTN_SIZE - 6 },
+      const x = startX + i * (BTN_SIZE + gap);
+      const bg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x1a2235).setStrokeStyle(2, 0x5f82d6);
+      const num = this.add.text(-20, -21, `${i + 1}`, { fontSize: '8px', color: '#9eb9ff', fontFamily: 'monospace' }).setOrigin(0);
+      const label = this.add.text(0, -2, '-', {
+        fontSize: '9px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+        align: 'center', wordWrap: { width: BTN_SIZE - 8 },
       }).setOrigin(0.5);
-
-      // 쿨다운 오버레이: 위에서 아래로 줄어들도록 origin (0.5, 1) — bottom anchor
-      const coolOverlay = this.add.rectangle(
-        0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, BTN_SIZE - 4, 0x000000, 0.65,
-      ).setOrigin(0.5, 1).setVisible(false);
+      const overlay = this.add.rectangle(0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, BTN_SIZE - 4, 0x000000, 0.65)
+        .setOrigin(0.5, 1).setVisible(false);
       const coolText = this.add.text(0, 0, '', {
-        fontSize: '13px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
+        fontSize: '12px', color: '#ffd56a', fontFamily: 'monospace', fontStyle: 'bold',
       }).setOrigin(0.5).setVisible(false);
 
-      const container = this.add.container(x, slotY, [bg, slotNum, nameLabel, coolOverlay, coolText]);
-      container.setSize(BTN_SIZE, BTN_SIZE);
-      container.setInteractive();
+      const c = this.add.container(x, y, [bg, num, label, overlay, coolText]).setSize(BTN_SIZE, BTN_SIZE).setInteractive();
+      c.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-skill', i));
 
-      const slotIndex = i;
-      container.on('pointerdown', () => {
-        this.tweens.add({
-          targets: container, scaleX: 0.92, scaleY: 0.92,
-          duration: 60, yoyo: true, ease: 'Power2',
-        });
-        const battleScene = this.scene.get('BattleScene');
-        battleScene.events.emit('use-skill', slotIndex);
-      });
-
-      this.skillSlots.push(container);
       this.skillBgs.push(bg);
-      this.skillLabels.push(nameLabel);
-      this.cooldownOverlays.push(coolOverlay);
+      this.skillLabels.push(label);
+      this.cooldownOverlays.push(overlay);
       this.cooldownTexts.push(coolText);
     }
 
-    // ─── 회피 버튼 ───
-    const dashX = startX + 3 * (BTN_SIZE + slotGap);
-    const dashBg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x3a1a1a)
-      .setStrokeStyle(2, 0xaa4444);
-    const dashLabel = this.add.text(0, -2, '회피', {
-      fontSize: '11px', color: '#ff9988', fontFamily: 'monospace', fontStyle: 'bold',
+    const dashX = startX + 3 * (BTN_SIZE + gap);
+    const dashBg = this.add.rectangle(0, 0, BTN_SIZE, BTN_SIZE, 0x351c1c).setStrokeStyle(2, 0xd45b4b);
+    const dashLabel = this.add.text(0, -3, '회피', {
+      fontSize: '11px', color: '#ffb0a6', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0.5);
-    const dashHint = this.add.text(0, BTN_SIZE / 2 - 9, '←옆구르기', {
-      fontSize: '6px', color: '#aa7777', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-    const dashCoolOverlay = this.add.rectangle(
-      0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, BTN_SIZE - 4, 0x000000, 0.65,
-    ).setOrigin(0.5, 1).setVisible(false);
-    const dashCoolText = this.add.text(0, 0, '', {
-      fontSize: '13px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
+    const overlay = this.add.rectangle(0, BTN_SIZE / 2 - 2, BTN_SIZE - 4, BTN_SIZE - 4, 0x000000, 0.65)
+      .setOrigin(0.5, 1).setVisible(false);
+    const coolText = this.add.text(0, 0, '', {
+      fontSize: '12px', color: '#ffd56a', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0.5).setVisible(false);
-
-    const dashContainer = this.add.container(dashX, slotY,
-      [dashBg, dashLabel, dashHint, dashCoolOverlay, dashCoolText]);
-    dashContainer.setSize(BTN_SIZE, BTN_SIZE);
-    dashContainer.setInteractive();
-    dashContainer.on('pointerdown', () => {
-      this.tweens.add({
-        targets: dashContainer, scaleX: 0.92, scaleY: 0.92,
-        duration: 60, yoyo: true, ease: 'Power2',
-      });
-      const battleScene = this.scene.get('BattleScene');
-      battleScene.events.emit('use-dash');
-    });
-
-    this.dashBg = dashBg;
-    this.dashCooldownOverlay = dashCoolOverlay;
-    this.dashCooldownText = dashCoolText;
+    const c = this.add.container(dashX, y, [dashBg, dashLabel, overlay, coolText]).setSize(BTN_SIZE, BTN_SIZE).setInteractive();
+    c.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-dash'));
+    this.dashCooldownOverlay = overlay;
+    this.dashCooldownText = coolText;
   }
 
-  // ─── 메뉴 탭 (y=472~640) ───
-
-  private createMenuTabs(): void {
-    const tabY = UI_Y + 86;
+  private createTabs(): void {
     const tabs: { label: string; type: TabType }[] = [
-      { label: '도감', type: 'CODEX' },
+      { label: '무공', type: 'SKILLS' },
       { label: '합성', type: 'SYNTH' },
-      { label: '장착', type: 'EQUIP' },
-      { label: '혈교', type: 'BOSS' },
+      { label: '강화', type: 'UPGRADE' },
+      { label: '보스', type: 'BOSS' },
     ];
-
-    const tabW = 52;
-    const startX = GAME_W / 2 - (tabs.length * tabW) / 2 + tabW / 2;
+    const y = UI_Y + 113;
+    const w = 76;
+    const startX = GAME_W / 2 - (tabs.length * w) / 2 + w / 2;
 
     tabs.forEach((tab, i) => {
-      const x = startX + i * tabW;
-      const btn = this.add.text(x, tabY, tab.label, {
-        fontSize: '9px', color: '#4fc3f7', fontFamily: 'monospace',
-        backgroundColor: '#1a1a3a',
-        padding: { x: 8, y: 3 },
+      const x = startX + i * w;
+      const btn = this.add.text(x, y, tab.label, {
+        fontSize: '11px', color: '#f0c36a', fontFamily: 'monospace', fontStyle: 'bold',
+        backgroundColor: '#211b13', padding: { x: 12, y: 5 },
       }).setOrigin(0.5).setInteractive();
-
-      btn.on('pointerdown', () => {
-        if (this.currentTab === tab.type) {
-          this.closeTab();
-        } else {
-          this.openTab(tab.type);
-        }
-      });
+      btn.on('pointerdown', () => this.currentTab === tab.type ? this.closeTab() : this.openTab(tab.type));
     });
   }
-
-  // ─── 알림 ───
 
   private createNotification(): void {
-    this.notifText = this.add.text(GAME_W / 2, UI_Y + 102, '', {
-      fontSize: '9px', color: '#ffd740', fontFamily: 'monospace',
-      backgroundColor: '#000000cc',
-      padding: { x: 6, y: 3 },
-    }).setOrigin(0.5).setAlpha(0);
+    this.notifText = this.add.text(GAME_W / 2, UI_Y + 136, '', {
+      fontSize: '9px', color: '#ffd56a', fontFamily: 'monospace',
+      backgroundColor: '#000000dd', padding: { x: 8, y: 4 },
+    }).setOrigin(0.5).setAlpha(0).setDepth(200);
   }
 
-  // ─── HUD 업데이트 ───
-
-  private updateHUD(state: PlayerStatePayload): void {
-    // HP
-    this.hpBar.width = BAR_W * (state.hp / state.maxHp);
-    this.hpText.setText(`${Math.ceil(state.hp)}/${state.maxHp}`);
-
-    // SP
-    this.spBar.width = BAR_W * (state.stamina / state.maxStamina);
-
-    // EXP
-    const expRatio = state.expToNext > 0 ? state.exp / state.expToNext : 0;
-    this.expBar.width = BAR_W * expRatio;
-    this.levelText.setText(`Lv.${state.level}`);
-
-    // 골드
-    this.goldText.setText(`${state.gold} G`);
-
-    // 웨이브
-    const wavePrefix = state.isBossWave ? '⚠ ' : '';
-    this.waveText.setText(`${wavePrefix}제 ${state.waveNumber}파`);
-    if (state.isBossWave) {
-      this.waveText.setColor('#ff4444');
-    } else {
-      this.waveText.setColor('#ffd740');
-    }
-    this.killText.setText(`처치: ${state.killCount}`);
-
-    // 모드
-    this.modeBtn.setText(state.battleMode === 'AUTO' ? '⚔ 자동' : '🗡 수동');
-    this.modeBtn.setColor(state.battleMode === 'AUTO' ? '#88ff88' : '#ffaa88');
-
-    // 스킬 슬롯
-    state.skills.forEach((skill, i) => {
-      if (i >= this.skillLabels.length) return;
-      this.skillLabels[i].setText(skill.nameKo);
-
-      const overlay = this.cooldownOverlays[i];
-      const coolText = this.cooldownTexts[i];
-      const bg = this.skillBgs[i];
-
-      if (skill.cooldownRemaining > 0 && skill.cooldown > 0) {
-        const ratio = Math.min(1, skill.cooldownRemaining / skill.cooldown);
-        overlay.setVisible(true);
-        overlay.height = (BTN_SIZE - 4) * ratio;
-        coolText.setVisible(true);
-        coolText.setText((skill.cooldownRemaining / 1000).toFixed(1));
-        bg.setStrokeStyle(2, 0x666666);
-      } else {
-        overlay.setVisible(false);
-        coolText.setVisible(false);
-        bg.setStrokeStyle(2, 0x4466aa);
-      }
-    });
-
-    // 회피 쿨다운
-    if (this.dashCooldownOverlay && this.dashCooldownText && this.dashBg) {
-      if (state.dashCooldownRemaining > 0 && state.dashCooldown > 0) {
-        const ratio = Math.min(1, state.dashCooldownRemaining / state.dashCooldown);
-        this.dashCooldownOverlay.setVisible(true);
-        this.dashCooldownOverlay.height = (BTN_SIZE - 4) * ratio;
-        this.dashCooldownText.setVisible(true);
-        this.dashCooldownText.setText((state.dashCooldownRemaining / 1000).toFixed(1));
-        this.dashBg.setStrokeStyle(2, 0x666666);
-      } else {
-        this.dashCooldownOverlay.setVisible(false);
-        this.dashCooldownText.setVisible(false);
-        this.dashBg.setStrokeStyle(2, 0xaa4444);
-      }
+  private claimOffline(): void {
+    const reward = claimOfflineReward();
+    if (reward.minutes > 0) {
+      this.showNotif(`오프라인 ${reward.minutes}분 보상: ${reward.gold}G / ${reward.exp}EXP`);
     }
   }
-
-  // ─── 탭 콘텐츠 ───
 
   private openTab(tab: TabType): void {
     this.closeTab();
     this.currentTab = tab;
-
-    const contentY = UI_Y + 114;
-    const contentH = GAME_H - contentY - 4;
     const items: Phaser.GameObjects.GameObject[] = [];
-
-    // 배경
-    const bg = this.add.rectangle(GAME_W / 2, contentY + contentH / 2, GAME_W - 12, contentH, 0x0a0a1a, 0.95)
-      .setStrokeStyle(1, 0x333366);
+    const top = UI_Y + 130;
+    const bg = this.add.rectangle(GAME_W / 2, top + 62, GAME_W - 12, 124, 0x0b0b12, 0.96)
+      .setStrokeStyle(1, 0x49351c);
     items.push(bg);
 
     const save = loadGame();
-
-    switch (tab) {
-      case 'CODEX':
-        this.buildCodexTab(items, contentY + 10, save);
-        break;
-      case 'SYNTH':
-        this.buildSynthTab(items, contentY + 10, save);
-        break;
-      case 'EQUIP':
-        this.buildEquipTab(items, contentY + 10, save);
-        break;
-      case 'BOSS':
-        this.buildBossTab(items, contentY + 10, save);
-        break;
-    }
+    if (tab === 'SKILLS') this.buildSkillTab(items, top + 10, save);
+    if (tab === 'SYNTH') this.buildSynthTab(items, top + 10, save);
+    if (tab === 'UPGRADE') this.buildUpgradeTab(items, top + 10, save);
+    if (tab === 'BOSS') this.buildBossTab(items, top + 10, save);
 
     this.tabContent = this.add.container(0, 0, items);
   }
 
   private closeTab(): void {
-    if (this.tabContent) {
-      this.tabContent.destroy(true);
-      this.tabContent = null;
-    }
+    this.tabContent?.destroy(true);
+    this.tabContent = null;
     this.currentTab = 'NONE';
   }
 
-  /** 도감 탭: 보유 비급 목록 + 설명 */
-  private buildCodexTab(
-    items: Phaser.GameObjects.GameObject[],
-    startY: number,
-    save: ReturnType<typeof loadGame>,
-  ): void {
-    let y = startY;
-    // 현재 캐릭터 계열의 ACTIVE 스킬만 도감에 표시
-    const allSkills = Array.from(SKILL_DATABASE.values())
-      .filter(s => s.type === 'ACTIVE' && s.category === this.charClass);
-
-    for (const skill of allSkills) {
-      const count = save.inventory[skill.id] ?? 0;
-      const unlocked = save.unlockedSkills.includes(skill.id);
-      const gradeColor = GRADE_COLORS[skill.grade] ?? 0xffffff;
-      const colorStr = `#${gradeColor.toString(16).padStart(6, '0')}`;
-
-      const dot = this.add.rectangle(20, y, 6, 6, gradeColor);
-      const name = this.add.text(30, y, skill.nameKo, {
-        fontSize: '8px',
-        color: unlocked ? '#ffffff' : '#444444',
-        fontFamily: 'monospace',
-        fontStyle: 'bold',
-      }).setOrigin(0, 0.5);
-      const qty = this.add.text(GAME_W - 60, y, `x${count}`, {
-        fontSize: '8px',
-        color: count > 0 ? '#ffd740' : '#444444',
-        fontFamily: 'monospace',
-      }).setOrigin(0, 0.5);
-      const grade = this.add.text(GAME_W - 30, y, skill.grade[0], {
-        fontSize: '7px', color: colorStr,
-        fontFamily: 'monospace',
-      }).setOrigin(0.5);
-
-      items.push(dot, name, qty, grade);
-
-      // 설명 (해금된 무공만)
-      if (unlocked && skill.description) {
-        y += 12;
-        const desc = this.add.text(30, y, skill.description, {
-          fontSize: '6px',
-          color: '#888888',
-          fontFamily: 'monospace',
-          wordWrap: { width: GAME_W - 70 },
-        }).setOrigin(0, 0.5);
-        items.push(desc);
-      }
-
-      // 효과 정보
-      if (unlocked && skill.effect) {
-        y += 10;
-        const effectNames: Record<string, string> = {
-          BLEED: '출혈', STUN: '기절', SLOW: '둔화', KNOCKBACK: '넉백', SILENCE: '봉인',
-        };
-        const effectText = `효과: ${effectNames[skill.effect] ?? skill.effect} (${Math.round((skill.effectChance ?? 0) * 100)}%)`;
-        const eff = this.add.text(30, y, effectText, {
-          fontSize: '6px', color: '#ff8888', fontFamily: 'monospace',
-        }).setOrigin(0, 0.5);
-        items.push(eff);
-      }
-
-      y += 16;
-    }
-  }
-
-  /** 합성 탭: 합성 레시피 + 골드 비용 + 실행 버튼 */
-  private buildSynthTab(
-    items: Phaser.GameObjects.GameObject[],
-    startY: number,
-    save: ReturnType<typeof loadGame>,
-  ): void {
-    let y = startY;
-
-    const title = this.add.text(GAME_W / 2, y, '비급 합성', {
-      fontSize: '10px', color: '#4fc3f7', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    items.push(title);
-    y += 16;
-
-    // 보유 골드 표시
-    const goldInfo = this.add.text(GAME_W / 2, y, `보유 골드: ${save.gold} G`, {
-      fontSize: '8px', color: '#ffd740', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-    items.push(goldInfo);
-    y += 16;
-
-    for (const recipe of SYNTHESIS_RECIPES) {
-      const mat1 = SKILL_DATABASE.get(recipe.material1);
-      const mat2 = SKILL_DATABASE.get(recipe.material2);
-      const result = SKILL_DATABASE.get(recipe.result);
-      if (!mat1 || !mat2 || !result) continue;
-      // 현재 캐릭터 계열의 합성만 표시
-      if (result.category !== this.charClass) continue;
-
-      const count1 = save.inventory[recipe.material1] ?? 0;
-      const count2 = save.inventory[recipe.material2] ?? 0;
-      const hasGold = save.gold >= recipe.goldCost;
-      const hasMats = recipe.material1 === recipe.material2
-        ? count1 >= 2
-        : count1 >= 1 && count2 >= 1;
-      const canSynth = hasMats && hasGold;
-
-      const resultColor = GRADE_COLORS[result.grade] ?? 0xffffff;
-      const resultColorStr = `#${resultColor.toString(16).padStart(6, '0')}`;
-
-      const text = this.add.text(16, y,
-        `${mat1.nameKo}(${count1}) + ${mat2.nameKo}(${count2})`, {
-        fontSize: '7px',
-        color: hasMats ? '#ffffff' : '#555555',
-        fontFamily: 'monospace',
-      });
-      items.push(text);
-      y += 12;
-
-      const arrow = this.add.text(16, y,
-        `  → ${result.nameKo}  [${recipe.goldCost}G]`, {
-        fontSize: '7px',
-        color: canSynth ? resultColorStr : '#555555',
-        fontFamily: 'monospace',
-      });
-      items.push(arrow);
-
-      if (canSynth) {
-        const btn = this.add.text(GAME_W - 30, y, '합성', {
-          fontSize: '8px', color: '#ffd740', fontFamily: 'monospace',
-          backgroundColor: '#332211',
-          padding: { x: 4, y: 2 },
-        }).setOrigin(0.5).setInteractive();
-
-        btn.on('pointerdown', () => {
-          this.performSynthesis(recipe.material1, recipe.material2, recipe.result, recipe.goldCost);
-        });
-        items.push(btn);
-      }
-
-      y += 16;
-    }
-  }
-
-  /** 장착 탭: 무공 장착 변경 */
-  private buildEquipTab(
-    items: Phaser.GameObjects.GameObject[],
-    startY: number,
-    save: ReturnType<typeof loadGame>,
-  ): void {
-    let y = startY;
-
-    const title = this.add.text(GAME_W / 2, y, '무공 장착', {
-      fontSize: '10px', color: '#4fc3f7', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    items.push(title);
-    y += 16;
-
-    // 현재 장착 표시
-    const equippedNames = save.equippedSkills.map(id => {
-      const s = SKILL_DATABASE.get(id);
-      return s ? s.nameKo : id;
-    }).join(' / ');
-    const equipped = this.add.text(16, y, `장착중: ${equippedNames}`, {
-      fontSize: '7px', color: '#88ff88', fontFamily: 'monospace',
+  private buildSkillTab(items: Phaser.GameObjects.GameObject[], y: number, save: ReturnType<typeof loadGame>): void {
+    const skills = this.availableOwnedSkills(save).slice(0, 4);
+    this.addTitle(items, '보유 무공', y);
+    y += 18;
+    skills.forEach((skill, i) => {
+      this.addSkillCard(items, 12 + i * 84, y, 78, skill, save, () => this.equipSkillToSlot(skill.id, i % 3));
     });
-    items.push(equipped);
-    y += 16;
-
-    // 장착 가능한 무공 목록 (현재 캐릭터 계열만)
-    const availableSkills = save.unlockedSkills
-      .map(id => SKILL_DATABASE.get(id))
-      .filter(s => s && s.type === 'ACTIVE' && s.category === this.charClass);
-
-    for (const skill of availableSkills) {
-      if (!skill) continue;
-      const count = save.inventory[skill.id] ?? 0;
-      if (count <= 0) continue;
-
-      const isEquipped = save.equippedSkills.includes(skill.id);
-      const gradeColor = GRADE_COLORS[skill.grade] ?? 0xffffff;
-
-      const dot = this.add.rectangle(20, y, 6, 6, gradeColor);
-      const name = this.add.text(30, y, `${skill.nameKo} (x${count})`, {
-        fontSize: '8px',
-        color: isEquipped ? '#88ff88' : '#ffffff',
-        fontFamily: 'monospace',
-      }).setOrigin(0, 0.5);
-
-      items.push(dot, name);
-
-      // 데미지 정보
-      const dmgInfo = this.add.text(GAME_W - 80, y, `x${skill.damageMultiplier}`, {
-        fontSize: '7px', color: '#ff8888', fontFamily: 'monospace',
-      }).setOrigin(0, 0.5);
-      items.push(dmgInfo);
-
-      if (!isEquipped) {
-        // 슬롯 선택 버튼들
-        for (let slot = 0; slot < 3; slot++) {
-          const btn = this.add.text(GAME_W - 50 + slot * 20, y, `${slot + 1}`, {
-            fontSize: '8px', color: '#4fc3f7', fontFamily: 'monospace',
-            backgroundColor: '#1a1a3a',
-            padding: { x: 3, y: 1 },
-          }).setOrigin(0.5).setInteractive();
-
-          btn.on('pointerdown', () => {
-            this.equipSkillToSlot(skill.id, slot);
-          });
-          items.push(btn);
-        }
-      } else {
-        const eqLabel = this.add.text(GAME_W - 30, y, '장착중', {
-          fontSize: '7px', color: '#88ff88', fontFamily: 'monospace',
-        }).setOrigin(0.5);
-        items.push(eqLabel);
-      }
-
-      y += 16;
-    }
   }
 
-  /** 혈교 탭: 보스 처치 기록 */
-  private buildBossTab(
+  private buildSynthTab(items: Phaser.GameObjects.GameObject[], y: number, save: ReturnType<typeof loadGame>): void {
+    this.addTitle(items, `합성 가능 ${save.gold}G`, y);
+    const allBtn = this.add.text(GAME_W - 52, y, '일괄', {
+      fontSize: '9px', color: '#ffd56a', fontFamily: 'monospace',
+      backgroundColor: '#3a2812', padding: { x: 8, y: 4 },
+    }).setOrigin(0.5).setInteractive();
+    allBtn.on('pointerdown', () => this.performAllSynthesis());
+    items.push(allBtn);
+    y += 18;
+
+    const recipes = this.availableRecipes(save).slice(0, 3);
+    recipes.forEach((recipe, i) => {
+      const result = SKILL_DATABASE.get(recipe.result);
+      if (!result) return;
+      const x = 12 + i * 112;
+      this.addRecipeCard(items, x, y, 104, recipe, result);
+    });
+  }
+
+  private buildUpgradeTab(items: Phaser.GameObjects.GameObject[], y: number, save: ReturnType<typeof loadGame>): void {
+    this.addTitle(items, `강화 ${save.gold}G`, y);
+    y += 18;
+    this.availableOwnedSkills(save).slice(0, 4).forEach((skill, i) => {
+      this.addUpgradeCard(items, 12 + i * 84, y, 78, skill, save);
+    });
+  }
+
+  private buildBossTab(items: Phaser.GameObjects.GameObject[], y: number, save: ReturnType<typeof loadGame>): void {
+    this.addTitle(items, '보스 돌파', y);
+    y += 18;
+    const bosses = [
+      ['boss_daeju', 'DAEJU', 5],
+      ['boss_danju', 'DANJU', 10],
+      ['boss_gakju', 'GAKJU', 15],
+      ['boss_magun', 'MAGUN', 20],
+    ] as const;
+    bosses.forEach((boss, i) => {
+      const [id, rank, wave] = boss;
+      const done = save.defeatedBosses?.includes(id);
+      const color = BOSS_RANK_COLORS[rank] ?? 0xffffff;
+      const x = 12 + i * 84;
+      const card = this.add.rectangle(x, y, 78, 70, done ? 0x1d2b1d : 0x161620).setOrigin(0, 0)
+        .setStrokeStyle(1, done ? color : 0x393946);
+      const rankText = this.add.text(x + 8, y + 8, BOSS_RANK_NAMES[rank] ?? rank, {
+        fontSize: '8px', color: `#${color.toString(16).padStart(6, '0')}`, fontFamily: 'monospace',
+      });
+      const waveText = this.add.text(x + 8, y + 28, `${wave}파`, {
+        fontSize: '13px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+      });
+      const stateText = this.add.text(x + 8, y + 50, done ? '격파' : '대기', {
+        fontSize: '9px', color: done ? '#8cff9b' : '#777788', fontFamily: 'monospace',
+      });
+      items.push(card, rankText, waveText, stateText);
+    });
+  }
+
+  private addTitle(items: Phaser.GameObjects.GameObject[], text: string, y: number): void {
+    const title = this.add.text(14, y, text, {
+      fontSize: '11px', color: '#f0c36a', fontFamily: 'monospace', fontStyle: 'bold',
+    });
+    items.push(title);
+  }
+
+  private addSkillCard(
     items: Phaser.GameObjects.GameObject[],
-    startY: number,
+    x: number,
+    y: number,
+    w: number,
+    skill: SkillData,
+    save: ReturnType<typeof loadGame>,
+    onTap: () => void,
+  ): void {
+    const level = save.skillLevels?.[skill.id] ?? 0;
+    const color = GRADE_COLORS[skill.grade] ?? 0xffffff;
+    const card = this.add.rectangle(x, y, w, 72, 0x171722).setOrigin(0, 0).setStrokeStyle(1, color).setInteractive();
+    card.on('pointerdown', onTap);
+    const name = this.add.text(x + 6, y + 7, skill.nameKo, {
+      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+      wordWrap: { width: w - 12 },
+    });
+    const meta = this.add.text(x + 6, y + 34, `x${save.inventory[skill.id] ?? 0}  +${level}`, {
+      fontSize: '9px', color: '#ffd56a', fontFamily: 'monospace',
+    });
+    const dmg = this.add.text(x + 6, y + 52, `피해 x${skill.damageMultiplier}`, {
+      fontSize: '7px', color: '#b8b8c8', fontFamily: 'monospace',
+    });
+    items.push(card, name, meta, dmg);
+  }
+
+  private addRecipeCard(
+    items: Phaser.GameObjects.GameObject[],
+    x: number,
+    y: number,
+    w: number,
+    recipe: SynthesisRecipe,
+    result: SkillData,
+  ): void {
+    const color = GRADE_COLORS[result.grade] ?? 0xffffff;
+    const card = this.add.rectangle(x, y, w, 72, 0x171722).setOrigin(0, 0).setStrokeStyle(1, color).setInteractive();
+    card.on('pointerdown', () => this.performSynthesis(recipe.material1, recipe.material2, recipe.result, recipe.goldCost));
+    const title = this.add.text(x + 7, y + 7, result.nameKo, {
+      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+      wordWrap: { width: w - 14 },
+    });
+    const cost = this.add.text(x + 7, y + 42, `${recipe.goldCost}G`, {
+      fontSize: '10px', color: '#ffd56a', fontFamily: 'monospace',
+    });
+    const hint = this.add.text(x + 7, y + 57, '터치 합성', {
+      fontSize: '7px', color: '#9aa0b8', fontFamily: 'monospace',
+    });
+    items.push(card, title, cost, hint);
+  }
+
+  private addUpgradeCard(
+    items: Phaser.GameObjects.GameObject[],
+    x: number,
+    y: number,
+    w: number,
+    skill: SkillData,
     save: ReturnType<typeof loadGame>,
   ): void {
-    let y = startY;
-
-    const title = this.add.text(GAME_W / 2, y, '혈교 위계도', {
-      fontSize: '10px', color: '#ff4444', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    items.push(title);
-    y += 16;
-
-    const subtitle = this.add.text(GAME_W / 2, y, '처치한 혈교 간부', {
-      fontSize: '7px', color: '#888888', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-    items.push(subtitle);
-    y += 14;
-
-    const bossList: { id: string; name: string; rank: string; wave: number }[] = [
-      { id: 'boss_daeju', name: '냉혈대주', rank: 'DAEJU', wave: 5 },
-      { id: 'boss_danju', name: '혈풍단주', rank: 'DANJU', wave: 10 },
-      { id: 'boss_gakju', name: '단혼각주', rank: 'GAKJU', wave: 15 },
-      { id: 'boss_magun', name: '빙룡마군', rank: 'MAGUN', wave: 20 },
-      { id: 'boss_hobup', name: '금강호법', rank: 'HOBUP', wave: 25 },
-      { id: 'boss_saja', name: '흑운좌사자', rank: 'SAJA', wave: 30 },
-      { id: 'boss_bugyoju', name: '적마부교주', rank: 'BUGYOJU', wave: 40 },
-      { id: 'boss_hyeolma', name: '무령혈마', rank: 'HYEOLMA', wave: 50 },
-    ];
-
-    const defeated = save.defeatedBosses ?? [];
-
-    for (const boss of bossList) {
-      const isDefeated = defeated.includes(boss.id);
-      const rankColor = BOSS_RANK_COLORS[boss.rank] ?? 0xffffff;
-      const colorStr = `#${rankColor.toString(16).padStart(6, '0')}`;
-      const rankName = BOSS_RANK_NAMES[boss.rank] ?? '';
-
-      const dot = this.add.rectangle(20, y, 8, 8, isDefeated ? rankColor : 0x333333);
-      const rankLabel = this.add.text(34, y, rankName, {
-        fontSize: '7px', color: isDefeated ? colorStr : '#444444',
-        fontFamily: 'monospace',
-      }).setOrigin(0, 0.5);
-      const nameLabel = this.add.text(70, y, boss.name, {
-        fontSize: '8px',
-        color: isDefeated ? '#ffffff' : '#333333',
-        fontFamily: 'monospace',
-        fontStyle: isDefeated ? 'bold' : 'normal',
-      }).setOrigin(0, 0.5);
-      const waveLabel = this.add.text(GAME_W - 30, y, `${boss.wave}파`, {
-        fontSize: '7px', color: isDefeated ? '#88ff88' : '#333333',
-        fontFamily: 'monospace',
-      }).setOrigin(0.5);
-
-      // 처치 표시
-      if (isDefeated) {
-        const check = this.add.text(GAME_W - 60, y, '✓', {
-          fontSize: '9px', color: '#88ff88', fontFamily: 'monospace',
-        }).setOrigin(0.5);
-        items.push(check);
-      }
-
-      items.push(dot, rankLabel, nameLabel, waveLabel);
-      y += 16;
-    }
-
-    // 총 처치 수
-    y += 6;
-    const totalKills = this.add.text(GAME_W / 2, y, `총 처치: ${save.totalKills ?? 0}`, {
-      fontSize: '8px', color: '#aaaaaa', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-    items.push(totalKills);
+    const level = save.skillLevels?.[skill.id] ?? 0;
+    const maxLevel = skill.maxLevel ?? 20;
+    const gold = this.upgradeGoldCost(skill, level);
+    const shards = this.upgradeShardCost(skill, level);
+    const can = level < maxLevel && save.gold >= gold && (save.inventory[skill.id] ?? 0) > shards;
+    const color = GRADE_COLORS[skill.grade] ?? 0xffffff;
+    const card = this.add.rectangle(x, y, w, 72, can ? 0x1d2418 : 0x171722).setOrigin(0, 0)
+      .setStrokeStyle(1, can ? color : 0x34343f).setInteractive();
+    card.on('pointerdown', () => this.upgradeSkill(skill.id));
+    const name = this.add.text(x + 6, y + 7, skill.nameKo, {
+      fontSize: '8px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+      wordWrap: { width: w - 12 },
+    });
+    const lvl = this.add.text(x + 6, y + 34, `+${level}/${maxLevel}`, {
+      fontSize: '10px', color: '#ffd56a', fontFamily: 'monospace',
+    });
+    const cost = this.add.text(x + 6, y + 53, `${gold}G / x${shards}`, {
+      fontSize: '7px', color: can ? '#8cff9b' : '#777788', fontFamily: 'monospace',
+    });
+    items.push(card, name, lvl, cost);
   }
 
-  // ─── 합성 실행 ───
+  private availableOwnedSkills(save: ReturnType<typeof loadGame>): SkillData[] {
+    return Array.from(SKILL_DATABASE.values())
+      .filter(s => s.type === 'ACTIVE' && s.category === this.charClass)
+      .filter(s => (save.inventory[s.id] ?? 0) > 0 || save.unlockedSkills.includes(s.id))
+      .sort((a, b) => (save.skillLevels?.[b.id] ?? 0) - (save.skillLevels?.[a.id] ?? 0));
+  }
 
-  private performSynthesis(mat1Id: string, mat2Id: string, resultId: string, goldCost: number): void {
-    const save = loadGame();
+  private availableRecipes(save: ReturnType<typeof loadGame>): SynthesisRecipe[] {
+    return [...SYNTHESIS_RECIPES]
+      .filter(r => {
+        const result = SKILL_DATABASE.get(r.result);
+        if (!result || result.category !== this.charClass) return false;
+        const c1 = save.inventory[r.material1] ?? 0;
+        const c2 = save.inventory[r.material2] ?? 0;
+        const mats = r.material1 === r.material2 ? c1 >= 2 : c1 >= 1 && c2 >= 1;
+        return mats && save.gold >= r.goldCost;
+      })
+      .sort((a, b) => a.goldCost - b.goldCost);
+  }
 
-    // 골드 체크
-    if (save.gold < goldCost) {
-      this.showNotif('골드가 부족합니다!');
-      return;
+  private performAllSynthesis(): void {
+    let count = 0;
+    for (let i = 0; i < 12; i++) {
+      const save = loadGame();
+      const recipe = this.availableRecipes(save)[0];
+      if (!recipe) break;
+      if (this.applySynthesis(recipe)) count++;
     }
-
-    if (mat1Id === mat2Id) {
-      if ((save.inventory[mat1Id] ?? 0) < 2) return;
-      save.inventory[mat1Id] -= 2;
-    } else {
-      if ((save.inventory[mat1Id] ?? 0) < 1 || (save.inventory[mat2Id] ?? 0) < 1) return;
-      save.inventory[mat1Id] -= 1;
-      save.inventory[mat2Id] -= 1;
-    }
-
-    save.gold -= goldCost;
-    save.inventory[resultId] = (save.inventory[resultId] ?? 0) + 1;
-    if (!save.unlockedSkills.includes(resultId)) {
-      save.unlockedSkills.push(resultId);
-    }
-    saveGame(save);
-    soundSystem.play('synth_ok');
-
-    const result = SKILL_DATABASE.get(resultId);
-    this.showNotif(`합성 성공! ${result?.nameKo ?? resultId} 획득`);
-
-    // 탭 새로고침
+    this.showNotif(count > 0 ? `${count}회 합성 완료` : '가능한 합성이 없습니다');
     this.openTab('SYNTH');
   }
 
-  // ─── 장착 (슬롯 지정) ───
+  private performSynthesis(mat1Id: string, mat2Id: string, resultId: string, goldCost: number): void {
+    const ok = this.applySynthesis({ material1: mat1Id, material2: mat2Id, result: resultId, goldCost });
+    this.showNotif(ok ? `${SKILL_DATABASE.get(resultId)?.nameKo ?? resultId} 획득` : '재료 또는 골드 부족');
+    this.openTab('SYNTH');
+  }
+
+  private applySynthesis(recipe: SynthesisRecipe): boolean {
+    const save = loadGame();
+    if (save.gold < recipe.goldCost) return false;
+    const c1 = save.inventory[recipe.material1] ?? 0;
+    const c2 = save.inventory[recipe.material2] ?? 0;
+    if (recipe.material1 === recipe.material2) {
+      if (c1 < 2) return false;
+      save.inventory[recipe.material1] = c1 - 2;
+    } else {
+      if (c1 < 1 || c2 < 1) return false;
+      save.inventory[recipe.material1] = c1 - 1;
+      save.inventory[recipe.material2] = c2 - 1;
+    }
+    save.gold -= recipe.goldCost;
+    save.inventory[recipe.result] = (save.inventory[recipe.result] ?? 0) + 1;
+    if (!save.unlockedSkills.includes(recipe.result)) save.unlockedSkills.push(recipe.result);
+    saveGame(save);
+    soundSystem.play('synth_ok');
+    return true;
+  }
+
+  private upgradeSkill(skillId: string): void {
+    const skill = SKILL_DATABASE.get(skillId);
+    if (!skill) return;
+    const save = loadGame();
+    if (!save.skillLevels) save.skillLevels = {};
+    const level = save.skillLevels[skillId] ?? 0;
+    const maxLevel = skill.maxLevel ?? 20;
+    const gold = this.upgradeGoldCost(skill, level);
+    const shards = this.upgradeShardCost(skill, level);
+    if (level >= maxLevel || save.gold < gold || (save.inventory[skillId] ?? 0) <= shards) {
+      this.showNotif('강화 재료 부족');
+      return;
+    }
+    save.gold -= gold;
+    save.inventory[skillId] -= shards;
+    save.skillLevels[skillId] = level + 1;
+    saveGame(save);
+    soundSystem.play('equip');
+    this.showNotif(`${skill.nameKo} +${level + 1}`);
+    this.openTab('UPGRADE');
+  }
+
+  private upgradeGoldCost(skill: SkillData, level: number): number {
+    return Math.round((skill.upgradeGoldBase ?? 40) * (1 + level * 0.32));
+  }
+
+  private upgradeShardCost(skill: SkillData, level: number): number {
+    return Math.max(1, (skill.upgradeShardBase ?? 1) + Math.floor(level / 10));
+  }
 
   private equipSkillToSlot(skillId: string, slotIndex: number): void {
     const save = loadGame();
-    const skills = save.equippedSkills;
-
-    // 배열 크기 보장
-    while (skills.length <= slotIndex) {
-      skills.push('samjae');
-    }
-
-    skills[slotIndex] = skillId;
+    while (save.equippedSkills.length <= slotIndex) save.equippedSkills.push(skillId);
+    save.equippedSkills[slotIndex] = skillId;
     saveGame(save);
     soundSystem.play('equip');
-
-    const battleScene = this.scene.get('BattleScene');
-    battleScene.events.emit('equip-changed');
-
-    this.showNotif(`${SKILL_DATABASE.get(skillId)?.nameKo ?? skillId} → 슬롯 ${slotIndex + 1} 장착!`);
-    this.openTab('EQUIP');
+    this.scene.get('BattleScene').events.emit('equip-changed');
+    this.showNotif(`${slotIndex + 1}번 슬롯 장착`);
+    this.openTab('SKILLS');
   }
 
-  // ─── 알림 표시 ───
+  private updateHUD(state: PlayerStatePayload): void {
+    this.hpBar.width = BAR_W * Phaser.Math.Clamp(state.hp / state.maxHp, 0, 1);
+    this.spBar.width = BAR_W * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
+    this.expBar.width = BAR_W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
+    this.hpText.setText(`${Math.ceil(state.hp)}/${state.maxHp}`);
+    this.levelText.setText(`Lv.${state.level}`);
+    this.goldText.setText(`${state.gold} G`);
+    this.waveText.setText(`${state.isBossWave ? '보스 ' : ''}${state.waveNumber}파`);
+    this.waveText.setColor(state.isBossWave ? '#ff6b57' : '#ffd56a');
+    this.killText.setText(`처치 ${state.killCount}`);
+    this.modeBtn.setText(state.battleMode === 'AUTO' ? '자동' : '수동');
+
+    state.skills.forEach((skill, i) => {
+      if (!this.skillLabels[i]) return;
+      this.skillLabels[i].setText(skill.nameKo);
+      const overlay = this.cooldownOverlays[i];
+      const coolText = this.cooldownTexts[i];
+      if (skill.cooldownRemaining > 0 && skill.cooldown > 0) {
+        const ratio = Phaser.Math.Clamp(skill.cooldownRemaining / skill.cooldown, 0, 1);
+        overlay.setVisible(true);
+        overlay.height = (BTN_SIZE - 4) * ratio;
+        coolText.setVisible(true).setText((skill.cooldownRemaining / 1000).toFixed(1));
+        this.skillBgs[i].setStrokeStyle(2, 0x666666);
+      } else {
+        overlay.setVisible(false);
+        coolText.setVisible(false);
+        this.skillBgs[i].setStrokeStyle(2, 0x5f82d6);
+      }
+    });
+
+    if (this.dashCooldownOverlay && this.dashCooldownText) {
+      if (state.dashCooldownRemaining > 0 && state.dashCooldown > 0) {
+        const ratio = Phaser.Math.Clamp(state.dashCooldownRemaining / state.dashCooldown, 0, 1);
+        this.dashCooldownOverlay.setVisible(true);
+        this.dashCooldownOverlay.height = (BTN_SIZE - 4) * ratio;
+        this.dashCooldownText.setVisible(true).setText((state.dashCooldownRemaining / 1000).toFixed(1));
+      } else {
+        this.dashCooldownOverlay.setVisible(false);
+        this.dashCooldownText.setVisible(false);
+      }
+    }
+  }
 
   private showNotif(msg: string): void {
     this.notifText.setText(msg);
     this.notifText.setAlpha(1);
-    this.tweens.add({
-      targets: this.notifText,
-      alpha: 0,
-      duration: 2000,
-      delay: 500,
-    });
+    this.tweens.add({ targets: this.notifText, alpha: 0, duration: 1800, delay: 700 });
   }
 
   private showWaveClear(wave: number): void {
-    this.showNotif(`제 ${wave}파 돌파!`);
+    this.showNotif(`${wave}파 돌파`);
   }
 
   private showBossClear(wave: number): void {
-    this.showNotif(`⚔ 보스 격파! 제 ${wave}파 ⚔`);
+    this.showNotif(`보스 격파: ${wave}파`);
   }
 
   private showDropNotif(_skillId: string, nameKo: string): void {
-    this.showNotif(`비급 획득: ${nameKo}`);
+    this.showNotif(`무공 획득: ${nameKo}`);
   }
 
   private showLevelUp(level: number): void {
-    this.showNotif(`레벨 업! Lv.${level}`);
+    this.showNotif(`레벨 상승: ${level}`);
   }
 }

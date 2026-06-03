@@ -51,6 +51,7 @@ export function createDefaultSave(): SaveData {
     codexUnlocked: ['region_1'],
     missionProgress: {},
     missionClaims: [],
+    dailyMissionDate: new Date().toLocaleDateString('en-CA'),
     storyRegion: 1,
   };
 }
@@ -176,6 +177,7 @@ function migrateSave(oldData: SaveData): SaveData {
     codexUnlocked: oldData.codexUnlocked ?? ['region_1'],
     missionProgress: oldData.missionProgress ?? {},
     missionClaims: oldData.missionClaims ?? [],
+    dailyMissionDate: oldData.dailyMissionDate ?? new Date().toLocaleDateString('en-CA'),
     storyRegion: oldData.storyRegion ?? 1,
   };
   // 마이그레이션 후 즉시 저장

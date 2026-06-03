@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { ALL_RUNTIME_ASSETS } from '../data/assets';
+import { ALL_RUNTIME_ASSETS, COMBAT_VFX_KEYS, heroSetSkinKey } from '../data/assets';
+import { CHARACTER_LIST } from '../data/characters';
+import { SET_IDS, SET_TINTS } from '../data/equipment';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -37,6 +39,128 @@ export class BootScene extends Phaser.Scene {
       graphics.generateTexture(key, 96, 96);
     }
     graphics.destroy();
+    this.createCombatVfxTextures();
+    this.createHeroSetSkinTextures();
     this.scene.start('CharacterSelectScene');
+  }
+
+  private createCombatVfxTextures(): void {
+    const palette = [
+      0x66ccff, 0xffcc33, 0xff6633, 0x99ffbb, 0xff5599, 0xab47bc,
+      0x4fc3f7, 0xffd740, 0x66ffee, 0xff3366, 0x88ddff, 0xd6a84b,
+    ];
+
+    COMBAT_VFX_KEYS.forEach((key, index) => {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      const color = palette[index % palette.length];
+      const accent = palette[(index + 5) % palette.length];
+      const mode = index % 6;
+
+      g.clear();
+      g.setBlendMode(Phaser.BlendModes.ADD);
+      g.lineStyle(3 + (index % 4), color, 0.9);
+      g.fillStyle(color, 0.35);
+
+      if (mode === 0) {
+        g.beginPath();
+        g.arc(64, 64, 42, -0.95, 0.85);
+        g.strokePath();
+        g.lineStyle(2, accent, 0.7);
+        g.beginPath();
+        g.arc(62, 59, 26, -0.75, 0.65);
+        g.strokePath();
+      } else if (mode === 1) {
+        for (let i = 0; i < 3; i++) {
+          g.lineStyle(3, i === 1 ? accent : color, 0.85 - i * 0.12);
+          g.beginPath();
+          g.moveTo(22 + i * 7, 36 + i * 15);
+          g.lineTo(104 - i * 4, 70 - i * 7);
+          g.strokePath();
+        }
+      } else if (mode === 2) {
+        g.fillCircle(64, 64, 14);
+        g.lineStyle(3, color, 0.8);
+        g.strokeCircle(64, 64, 30);
+        g.lineStyle(2, accent, 0.65);
+        g.strokeCircle(64, 64, 46);
+      } else if (mode === 3) {
+        g.lineStyle(5, color, 0.9);
+        g.beginPath();
+        g.moveTo(16, 62);
+        for (let step = 1; step <= 10; step++) {
+          const t = step / 10;
+          const cx = 48;
+          const cy = 24 + (index % 3) * 8;
+          const x = (1 - t) * (1 - t) * 16 + 2 * (1 - t) * t * cx + t * t * 112;
+          const y = (1 - t) * (1 - t) * 62 + 2 * (1 - t) * t * cy + t * t * 60;
+          g.lineTo(x, y);
+        }
+        g.strokePath();
+        g.lineStyle(2, accent, 0.65);
+        g.beginPath();
+        g.moveTo(24, 78);
+        for (let step = 1; step <= 10; step++) {
+          const t = step / 10;
+          const x = (1 - t) * (1 - t) * 24 + 2 * (1 - t) * t * 58 + t * t * 112;
+          const y = (1 - t) * (1 - t) * 78 + 2 * (1 - t) * t * 48 + t * t * 80;
+          g.lineTo(x, y);
+        }
+        g.strokePath();
+      } else if (mode === 4) {
+        for (let i = 0; i < 8; i++) {
+          const angle = (Math.PI * 2 * i) / 8 + index * 0.08;
+          g.lineStyle(i % 2 ? 2 : 4, i % 2 ? accent : color, 0.8);
+          g.beginPath();
+          g.moveTo(64, 64);
+          g.lineTo(64 + Math.cos(angle) * 48, 64 + Math.sin(angle) * 48);
+          g.strokePath();
+        }
+      } else {
+        g.lineStyle(4, color, 0.9);
+        g.beginPath();
+        g.moveTo(20, 74);
+        g.lineTo(72, 26);
+        g.lineTo(110, 62);
+        g.strokePath();
+        g.fillStyle(accent, 0.38);
+        g.fillCircle(82, 52, 12);
+      }
+
+      g.generateTexture(key, 128, 128);
+      g.destroy();
+    });
+  }
+
+  private createHeroSetSkinTextures(): void {
+    for (const character of CHARACTER_LIST) {
+      const baseKey = `hero_${character.id}`;
+      const source = this.textures.get(baseKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+      const width = source.width;
+      const height = source.height;
+
+      for (const setId of SET_IDS) {
+        const key = heroSetSkinKey(character.id, setId);
+        if (this.textures.exists(key)) continue;
+
+        const texture = this.textures.createCanvas(key, width, height);
+        if (!texture) continue;
+        const ctx = texture.getContext();
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(source, 0, 0, width, height);
+
+        const tint = SET_TINTS[setId] ?? 0xffffff;
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = `#${tint.toString(16).padStart(6, '0')}`;
+        ctx.fillRect(0, 0, width, height);
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(width * 0.18, 0, width * 0.16, height);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        texture.refresh();
+      }
+    }
   }
 }

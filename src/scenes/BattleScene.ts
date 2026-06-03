@@ -15,7 +15,8 @@ import {
 } from '../data/characters';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
-import { createEquipment } from '../data/equipment';
+import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus } from '../data/equipment';
+import { skillVfxKey } from '../data/assets';
 
 /**
  * BattleScene - 상단 횡스크롤 자동전투 씬
@@ -98,6 +99,14 @@ interface StatusInstance {
   tickTimer: number;    // 틱 타이머 (BLEED용)
   damage: number;       // 틱당 데미지 (BLEED용)
   originalSpeed: number; // 원래 속도 (SLOW 복구용)
+}
+
+interface CombatBonuses {
+  attackMul: number;
+  hpMul: number;
+  goldMul: number;
+  flatAttack: number;
+  flatHp: number;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -634,7 +643,10 @@ export class BattleScene extends Phaser.Scene {
 
         // 총 처치 수 갱신
         const save = loadGame();
+        this.ensureDailyMission(save);
         save.totalKills = (save.totalKills ?? 0) + 1;
+        save.missionProgress = save.missionProgress ?? {};
+        save.missionProgress.daily_kill = (save.missionProgress.daily_kill ?? 0) + 1;
         if (enemyData && (enemyData.rank === 'BOSS' || Math.random() < 0.22)) {
           save.equipmentInventory = save.equipmentInventory ?? [];
           save.equipmentInventory.push(createEquipment(enemyData.region ?? 1, undefined, enemyData.rank === 'BOSS'));
@@ -906,6 +918,13 @@ export class BattleScene extends Phaser.Scene {
     const bonusExp = 120 + this.waveNumber * 18;
     save.gold += bonusGold;
     save.exp += bonusExp;
+    save.equipmentInventory = save.equipmentInventory ?? [];
+    if (bossData) {
+      const rewardSlots = ['WEAPON', 'ARMOR', 'HELM', 'BOOTS', 'ACCESSORY', 'RELIC'] as const;
+      const rewardSlot = rewardSlots[((bossData.region ?? 1) - 1) % rewardSlots.length];
+      save.equipmentInventory.push(createSetEquipment(bossData.region ?? 1, rewardSlot, this.waveNumber >= 30 ? 'LEGENDARY' : undefined));
+      if (save.equipmentInventory.length > 140) save.equipmentInventory.splice(0, save.equipmentInventory.length - 140);
+    }
     const rewardGrade = this.waveNumber >= 20 ? 'ULTIMATE' : this.waveNumber >= 10 ? 'HIGH' : 'MID';
     const rewardSkillId = getClassSkillByGrade(this.playerClass, rewardGrade);
     save.inventory[rewardSkillId] = (save.inventory[rewardSkillId] ?? 0) + 1;
@@ -974,6 +993,7 @@ export class BattleScene extends Phaser.Scene {
     const skillLevel = save.skillLevels?.[skill.id] ?? 0;
     const skillUpgradeBonus = 1 + skillLevel * 0.08;
     const charDmgMul = this.player.characterDamageMul;
+    const bonuses = this.getCombatBonuses(save);
 
     for (const enemy of this.enemies) {
       if (!enemy.active) continue;
@@ -987,7 +1007,7 @@ export class BattleScene extends Phaser.Scene {
       );
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
-        const damage = Math.round(skill.damageMultiplier * 10 * charDmgMul * levelBonus * skillUpgradeBonus);
+        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul);
         const killed = enemy.takeDamage(damage);
 
         // 상태이상 적용
@@ -1189,7 +1209,9 @@ export class BattleScene extends Phaser.Scene {
       return false;
     }
 
-    this.player.takeDamage(damage);
+    const bonuses = this.getCombatBonuses(save);
+    const reducedDamage = Math.max(1, Math.round(damage / bonuses.hpMul - bonuses.flatHp * 0.015));
+    this.player.takeDamage(reducedDamage);
     soundSystem.play('player_hurt');
     return true;
   }
@@ -1229,9 +1251,11 @@ export class BattleScene extends Phaser.Scene {
 
   private awardRewards(gold: number, exp: number, x: number, y: number): void {
     const save = loadGame();
-    save.gold += gold;
+    const bonuses = this.getCombatBonuses(save);
+    const finalGold = Math.max(0, Math.round(gold * bonuses.goldMul));
+    save.gold += finalGold;
     save.exp += exp;
-    this.sessionGold += gold;
+    this.sessionGold += finalGold;
     this.sessionExp += exp;
 
     // 레벨업 체크
@@ -1268,8 +1292,8 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // 골드 획득 표시 (작은 텍스트)
-    if (gold > 0) {
-      const goldText = this.add.text(x + 10, y - 8, `+${gold}G`, {
+    if (finalGold > 0) {
+      const goldText = this.add.text(x + 10, y - 8, `+${finalGold}G`, {
         fontSize: '8px',
         color: '#ffd740',
         fontFamily: 'monospace',
@@ -1337,7 +1361,7 @@ export class BattleScene extends Phaser.Scene {
   private showSingleSlash(x: number, y: number, skill: SkillData, tint: number): void {
     const fx = this.slashPool.pop();
     if (!fx) return;
-    fx.setTexture('fx_slash_white');
+    fx.setTexture(skill.vfxKey ?? skillVfxKey(skill.id));
     fx.setTint(tint);
     fx.setPosition(x, y);
     fx.setActive(true);
@@ -1373,7 +1397,7 @@ export class BattleScene extends Phaser.Scene {
   private showWaveSlash(x: number, y: number, skill: SkillData, tint: number): void {
     const fx = this.slashPool.pop();
     if (!fx) return;
-    fx.setTexture('fx_slash_white');
+    fx.setTexture(skill.vfxKey ?? skillVfxKey(skill.id));
     fx.setTint(tint);
     fx.setPosition(x, y);
     fx.setActive(true);
@@ -1532,6 +1556,25 @@ export class BattleScene extends Phaser.Scene {
     this.events.emit('item-drop', skillId, skill.nameKo);
   }
 
+  private getCombatBonuses(save: ReturnType<typeof loadGame>): CombatBonuses {
+    const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
+    const sets = equipmentSetBonus(equipped);
+    const training = save.trainingLevels ?? {};
+    const research = save.sectResearch ?? {};
+    const classResearch = research[this.playerClass] ?? 0;
+    const disciples = save.disciples?.length ?? 0;
+    const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
+    const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
+
+    return {
+      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
+      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
+      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
+      flatAttack,
+      flatHp,
+    };
+  }
+
   // ─── 유틸 ───
 
   /** 현재 플레이어 캐릭터의 계열 */
@@ -1557,6 +1600,21 @@ export class BattleScene extends Phaser.Scene {
     if (save.equippedDash) {
       this.player.equipDash(save.equippedDash);
     }
+    this.applyEquipmentSkin(save);
+  }
+
+  private applyEquipmentSkin(save = loadGame()): void {
+    const currentItems = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
+    this.player.setEquipmentSetSkin(dominantSetId(currentItems, 4));
+  }
+
+  private ensureDailyMission(save: ReturnType<typeof loadGame>): void {
+    const today = new Date().toLocaleDateString('en-CA');
+    if (save.dailyMissionDate === today) return;
+    save.dailyMissionDate = today;
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_kill = 0;
+    save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
   }
 
   private toggleBattleMode(): void {

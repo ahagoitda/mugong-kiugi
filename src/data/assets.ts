@@ -1,4 +1,5 @@
 import { CHARACTER_LIST } from './characters';
+import { SET_IDS } from './equipment';
 
 export const RUNTIME_ASSET_PATH = 'sprites/generated/runtime';
 
@@ -6,6 +7,10 @@ export const HERO_ASSETS = CHARACTER_LIST.map(character => ({
   key: `hero_${character.id}`,
   path: `${RUNTIME_ASSET_PATH}/hero_${character.id}.png`,
 }));
+
+export const HERO_SET_SKIN_KEYS = CHARACTER_LIST.flatMap(character =>
+  SET_IDS.map(setId => `hero_set_${character.id}_${setId}`)
+);
 
 export const ENEMY_ASSETS = Array.from({ length: 24 }, (_, index) => {
   const id = String(index + 1).padStart(2, '0');
@@ -29,6 +34,10 @@ export const SKILL_CARD_ASSETS = Array.from({ length: 40 }, (_, index) => {
   return { key: `skill_card_${id}`, path: `${RUNTIME_ASSET_PATH}/skill_card_${id}.webp` };
 });
 
+export const COMBAT_VFX_KEYS = Array.from({ length: 24 }, (_, index) =>
+  `combat_vfx_${String(index + 1).padStart(2, '0')}`
+);
+
 export const ALL_RUNTIME_ASSETS = [
   ...HERO_ASSETS,
   ...ENEMY_ASSETS,
@@ -41,4 +50,14 @@ export function skillCardKey(skillId: string): string {
   let hash = 0;
   for (const char of skillId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return `skill_card_${String((hash % 40) + 1).padStart(2, '0')}`;
+}
+
+export function skillVfxKey(skillId: string): string {
+  let hash = 0;
+  for (const char of skillId) hash = (hash * 131 + char.charCodeAt(0)) >>> 0;
+  return COMBAT_VFX_KEYS[hash % COMBAT_VFX_KEYS.length];
+}
+
+export function heroSetSkinKey(characterId: string, setId: string): string {
+  return `hero_set_${characterId}_${setId}`;
 }

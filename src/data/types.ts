@@ -182,6 +182,7 @@ export interface SaveData {
   codexUnlocked?: string[];
   missionProgress?: Record<string, number>;
   missionClaims?: string[];
+  dailyMissionDate?: string;
   storyRegion?: number;
 }
 

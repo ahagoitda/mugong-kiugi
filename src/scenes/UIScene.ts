@@ -2,10 +2,13 @@ import Phaser from 'phaser';
 import { SKILL_DATABASE, SYNTHESIS_RECIPES } from '../data/skills';
 import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
-import { EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore } from '../data/equipment';
+import {
+  EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore,
+  equippedItems, equipmentSetBonus,
+} from '../data/equipment';
 import { skillCardKey } from '../data/assets';
 import { claimOfflineReward, loadGame, saveGame } from '../systems/SaveSystem';
-import type { EquipmentItem, SkillData } from '../data/types';
+import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
 
 const W = 540;
 const H = 960;
@@ -14,6 +17,7 @@ const PANEL = 0x0b0907;
 
 type Panel = 'NONE' | 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS';
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
+type EquipmentFilter = 'ALL' | 'SET' | EquipmentGrade;
 
 interface PlayerStatePayload {
   hp: number; maxHp: number; stamina: number; maxStamina: number;
@@ -26,6 +30,7 @@ interface PlayerStatePayload {
 export class UIScene extends Phaser.Scene {
   private charClass: CharacterClass = 'SWORD';
   private martialTab: MartialTab = 'SKILLS';
+  private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
   private hpFill!: Phaser.GameObjects.Rectangle;
   private spFill!: Phaser.GameObjects.Rectangle;
@@ -213,26 +218,52 @@ export class UIScene extends Phaser.Scene {
 
   private buildEquipment(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const auto = this.add.rectangle(W - 115, 105, 160, 44, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-    auto.on('pointerdown', () => this.autoEquip());
-    items.push(auto, this.add.text(W - 115, 105, '최적 장착', this.textStyle(16, '#f0d493')).setOrigin(0.5));
+    const filters: [EquipmentFilter, string][] = [['ALL', 'ALL'], ['SET', 'SET'], ['EPIC', 'EPIC'], ['LEGENDARY', 'LEG']];
+    filters.forEach(([filter, label], index) => {
+      const x = 48 + index * 62;
+      const button = this.add.rectangle(x, 105, 56, 38, this.equipmentFilter === filter ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(1, this.equipmentFilter === filter ? GOLD : 0x75572b).setInteractive();
+      button.on('pointerdown', () => { this.equipmentFilter = filter; this.openPanel('EQUIPMENT'); });
+      items.push(button, this.add.text(x, 105, label, this.textStyle(12, '#f0d493')).setOrigin(0.5));
+    });
+
+    const salvage = this.add.rectangle(305, 105, 86, 38, 0x3b2514).setStrokeStyle(1, GOLD).setInteractive();
+    salvage.on('pointerdown', () => this.salvageFilteredEquipment());
+    items.push(salvage, this.add.text(305, 105, 'BREAK', this.textStyle(12, '#f0d493')).setOrigin(0.5));
+
+    const autoNew = this.add.rectangle(W - 72, 105, 96, 38, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
+    autoNew.on('pointerdown', () => this.autoEquip());
+    items.push(autoNew, this.add.text(W - 72, 105, 'BEST', this.textStyle(12, '#f0d493')).setOrigin(0.5));
+
+    const currentItems = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
+    const setBonus = equipmentSetBonus(currentItems);
+    items.push(this.add.text(55, 148,
+      `SET ATK x${setBonus.attackMul.toFixed(2)}  HP x${setBonus.hpMul.toFixed(2)}  GOLD x${setBonus.goldMul.toFixed(2)}`,
+      this.textStyle(13, '#d4a74e')));
+
     EQUIPMENT_SLOTS.forEach((slot, index) => {
       const x = 55 + (index % 3) * 165;
-      const y = 190 + Math.floor(index / 3) * 150;
+      const y = 190 + Math.floor(index / 3) * 145;
       const id = save.equippedItems?.[slot];
       const item = save.equipmentInventory?.find(candidate => candidate.id === id);
       items.push(this.add.rectangle(x, y, 145, 120, 0x15110c).setOrigin(0, 0).setStrokeStyle(1, item ? GOLD : 0x4b4132),
         this.add.text(x + 72, y + 24, EQUIPMENT_SLOT_NAMES[slot], this.textStyle(16, '#d4a74e')).setOrigin(0.5),
-        this.add.text(x + 72, y + 68, item ? item.name : '미장착', { ...this.textStyle(14, item ? '#eee0c1' : '#777066'), align: 'center', wordWrap: { width: 125 } }).setOrigin(0.5));
+        this.add.text(x + 72, y + 68, item ? item.name : 'EMPTY', { ...this.textStyle(14, item ? '#eee0c1' : '#777066'), align: 'center', wordWrap: { width: 125 } }).setOrigin(0.5));
     });
-    const inventory = [...(save.equipmentInventory ?? [])].sort((a, b) => equipmentScore(b) - equipmentScore(a)).slice(0, 8);
-    inventory.forEach((item, index) => {
+
+    const equippedIds = new Set(Object.values(save.equippedItems ?? {}));
+    const filteredInventory = [...(save.equipmentInventory ?? [])]
+      .filter(item => this.equipmentFilter === 'ALL' ||
+        (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter))
+      .sort((a, b) => equipmentScore(b) - equipmentScore(a)).slice(0, 8);
+    filteredInventory.forEach((item, index) => {
       const x = 55 + (index % 2) * 245;
       const y = 540 + Math.floor(index / 2) * 70;
-      const button = this.add.rectangle(x, y, 220, 56, 0x17120d).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
+      const equipped = equippedIds.has(item.id);
+      const button = this.add.rectangle(x, y, 220, 56, equipped ? 0x26301a : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
       button.setInteractive().on('pointerdown', () => this.equipItem(item));
       items.push(button, this.add.text(x + 10, y + 10, item.name, this.textStyle(14, '#eee0c1')),
-        this.add.text(x + 10, y + 33, `전투력 ${equipmentScore(item)}`, this.textStyle(12, '#d4a74e')));
+        this.add.text(x + 10, y + 33, `${equipped ? 'EQUIP ' : ''}PWR ${equipmentScore(item)}`, this.textStyle(12, '#d4a74e')));
     });
   }
 
@@ -252,7 +283,19 @@ export class UIScene extends Phaser.Scene {
     ['SWORD', 'BLADE', 'FIST', 'SPEAR'].forEach((key, index) => {
       const level = save.sectResearch?.[key] ?? 0;
       items.push(this.add.text(65 + index * 115, 590, `${key}\nLv.${level}`, { ...this.textStyle(15, '#d4a74e'), align: 'center' }).setOrigin(0.5));
+      const x = 65 + index * 115;
+      const cost = 220 * (level + 1);
+      const button = this.add.rectangle(x, 635, 88, 36, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
+      button.on('pointerdown', () => this.upgradeResearch(key, cost));
+      items.push(button, this.add.text(x, 635, `${cost}G`, this.textStyle(12, '#f0d493')).setOrigin(0.5));
     });
+
+    const discipleCount = save.disciples?.length ?? 0;
+    const recruitCost = 600 + discipleCount * 350;
+    const recruit = this.add.rectangle(W / 2, 735, 210, 46, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
+    recruit.on('pointerdown', () => this.recruitDisciple(recruitCost));
+    items.push(this.add.text(55, 700, `DISCIPLES ${discipleCount}`, this.titleStyle(20)),
+      recruit, this.add.text(W / 2, 735, `RECRUIT ${recruitCost}G`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
   }
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
@@ -273,6 +316,7 @@ export class UIScene extends Phaser.Scene {
 
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
+    this.ensureDailyMission(save);
     const missions = [
       ['story', '스토리', `혈교 ${save.storyRegion ?? 1}장 돌파`, save.stageCleared, (save.storyRegion ?? 1) * 5],
       ['daily_kill', '일일', '적 30명 처치', save.totalKills ?? 0, 30],
@@ -280,12 +324,13 @@ export class UIScene extends Phaser.Scene {
     ] as const;
     missions.forEach(([id, type, name, progress, target], index) => {
       const y = 180 + index * 130;
+      const effectiveProgress = id === 'daily_kill' ? (save.missionProgress?.daily_kill ?? 0) : progress;
       const claimed = save.missionClaims?.includes(id);
-      const can = progress >= target && !claimed;
+      const can = effectiveProgress >= target && !claimed;
       const button = this.add.rectangle(W - 115, y, 150, 48, can ? 0x4a3215 : 0x1a1712).setStrokeStyle(1, can ? GOLD : 0x4b4132).setInteractive();
       button.on('pointerdown', () => this.claimMission(id, can));
       items.push(this.add.text(55, y - 20, `[${type}] ${name}`, this.titleStyle(19)),
-        this.add.text(55, y + 18, `${Math.min(progress, target)} / ${target}`, this.textStyle(15, '#d8c9aa')),
+        this.add.text(55, y + 18, `${Math.min(effectiveProgress, target)} / ${target}`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 115, y, claimed ? '수령 완료' : can ? '보상 수령' : '진행 중', this.textStyle(14, can ? '#f0d493' : '#8f8778')).setOrigin(0.5));
     });
   }
@@ -375,6 +420,30 @@ export class UIScene extends Phaser.Scene {
       if (best) save.equippedItems[slot] = best.id;
     }
     saveGame(save);
+    this.scene.get('BattleScene').events.emit('equip-changed');
+    this.openPanel('EQUIPMENT');
+  }
+
+  private salvageFilteredEquipment(): void {
+    const save = loadGame();
+    const equippedIds = new Set(Object.values(save.equippedItems ?? {}));
+    const keep: EquipmentItem[] = [];
+    let refund = 0;
+
+    for (const item of save.equipmentInventory ?? []) {
+      const matched = this.equipmentFilter === 'ALL' ||
+        (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter);
+      const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY';
+      if (matched && !protectedItem) refund += Math.max(5, Math.round(equipmentScore(item) * 0.08));
+      else keep.push(item);
+    }
+
+    if (refund <= 0) return this.showNotice('NO ITEMS');
+    save.equipmentInventory = keep;
+    save.gold += refund;
+    saveGame(save);
+    this.scene.get('BattleScene').events.emit('equip-changed');
+    this.showNotice(`+${refund}G`);
     this.openPanel('EQUIPMENT');
   }
 
@@ -383,7 +452,38 @@ export class UIScene extends Phaser.Scene {
     save.equippedItems = save.equippedItems ?? {};
     save.equippedItems[item.slot] = item.id;
     saveGame(save);
+    this.scene.get('BattleScene').events.emit('equip-changed');
     this.openPanel('EQUIPMENT');
+  }
+
+  private upgradeResearch(key: string, cost: number): void {
+    const save = loadGame();
+    if (save.gold < cost) return this.showNotice('NO GOLD');
+    save.gold -= cost;
+    save.sectResearch = save.sectResearch ?? {};
+    save.sectResearch[key] = (save.sectResearch[key] ?? 0) + 1;
+    saveGame(save);
+    this.openPanel('SECT');
+  }
+
+  private recruitDisciple(cost: number): void {
+    const save = loadGame();
+    if (save.gold < cost) return this.showNotice('NO GOLD');
+    save.gold -= cost;
+    save.disciples = save.disciples ?? [];
+    save.disciples.push(`disciple_${Date.now()}_${save.disciples.length + 1}`);
+    saveGame(save);
+    this.openPanel('SECT');
+  }
+
+  private ensureDailyMission(save: ReturnType<typeof loadGame>): void {
+    const today = new Date().toLocaleDateString('en-CA');
+    if (save.dailyMissionDate === today) return;
+    save.dailyMissionDate = today;
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_kill = 0;
+    save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
+    saveGame(save);
   }
 
   private claimMission(id: string, can: boolean): void {

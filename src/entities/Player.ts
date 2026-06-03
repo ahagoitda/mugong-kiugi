@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { CharacterState, SkillData } from '../data/types';
 import { SKILL_DATABASE, getStarterSkill } from '../data/skills';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
+import { heroSetSkinKey } from '../data/assets';
 
 /**
  * Player - 플레이어 캐릭터 엔티티
@@ -27,6 +28,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // ─── 캐릭터 설정 ───
   private readonly spritePrefix: string;
   private readonly charClass: CharacterClass;
+  private readonly characterId: string;
+  private readonly baseTextureKey: string;
 
   // ─── 상태 ───
   private currentState: CharacterState = 'IDLE';
@@ -76,6 +79,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.spritePrefix = prefix;
     this.charClass = charDef?.charClass ?? 'SWORD';
+    this.characterId = charDef?.id ?? 'sword_male';
+    this.baseTextureKey = idleTexture;
 
     scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
@@ -119,6 +124,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   get skills(): readonly SkillData[] { return this.equippedSkills; }
   get dashSkill(): SkillData | null { return this.equippedDash; }
   get characterDamageMul(): number { return this.damageMul; }
+
+  setEquipmentSetSkin(setId: string | null): void {
+    if (!setId) {
+      this.setTexture(this.baseTextureKey);
+      return;
+    }
+    const key = heroSetSkinKey(this.characterId, setId);
+    this.setTexture(this.scene.textures.exists(key) ? key : this.baseTextureKey);
+  }
 
   /**
    * 캐릭터 프리픽스 기반 애니메이션 재생 헬퍼

@@ -1445,6 +1445,50 @@ export class BattleScene extends Phaser.Scene {
       this.showScreenPulse(tint, 0.16, 170);
       this.cameras.main.shake(90, 0.004);
     }
+    this.showCastAfterimages(tint, gradeScale);
+    this.showGroundWindup(x, y + 44, tint, skill.grade === 'ULTIMATE' ? 1.35 : gradeScale);
+  }
+
+  private showCastAfterimages(tint: number, scale: number): void {
+    const dir = this.player.isFacingRight ? 1 : -1;
+    const copies = scale > 1.3 ? 4 : scale > 1.1 ? 3 : 2;
+    for (let i = 0; i < copies; i++) {
+      const ghost = this.add.image(this.player.x - dir * (10 + i * 8), this.player.y, this.player.texture.key)
+        .setDisplaySize(this.player.displayWidth, this.player.displayHeight)
+        .setFlipX(this.player.flipX)
+        .setTint(tint)
+        .setAlpha(0.24 - i * 0.04)
+        .setDepth(9)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: ghost,
+        x: ghost.x - dir * (10 + i * 4),
+        alpha: 0,
+        duration: 150 + i * 35,
+        ease: 'Quad.easeOut',
+        onComplete: () => ghost.destroy(),
+      });
+    }
+  }
+
+  private showGroundWindup(x: number, y: number, tint: number, scale: number): void {
+    const dir = this.player.isFacingRight ? 1 : -1;
+    const width = 72 * scale;
+    const wake = this.add.ellipse(x - dir * 10, y, width, 12 * scale, tint, 0.28)
+      .setDepth(6)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setRotation(dir > 0 ? -0.08 : 0.08);
+    wake.setStrokeStyle(1, 0xffffff, 0.28);
+    this.tweens.add({
+      targets: wake,
+      x: x + dir * 26,
+      scaleX: 1.8,
+      scaleY: 0.35,
+      alpha: 0,
+      duration: 210,
+      ease: 'Cubic.easeOut',
+      onComplete: () => wake.destroy(),
+    });
   }
 
   private showSlashEffect(x: number, y: number, skill: SkillData): void {
@@ -1469,11 +1513,25 @@ export class BattleScene extends Phaser.Scene {
 
     // 등급별 화면 효과
     if (skill.grade === 'HIGH') {
+      this.kickCamera(110, 1.012);
       this.cameras.main.shake(80, 0.003);
     } else if (skill.grade === 'ULTIMATE') {
+      this.kickCamera(150, 1.02);
       this.cameras.main.shake(120, 0.006);
       this.cameras.main.flash(100, 255, 255, 255, true);
     }
+  }
+
+  private kickCamera(duration: number, zoom: number): void {
+    this.tweens.killTweensOf(this.cameras.main);
+    this.tweens.add({
+      targets: this.cameras.main,
+      zoom,
+      duration,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => { this.cameras.main.setZoom(1); },
+    });
   }
 
   private showSingleSlash(x: number, y: number, skill: SkillData, tint: number): void {

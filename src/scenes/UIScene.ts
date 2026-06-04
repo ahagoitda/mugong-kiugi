@@ -320,13 +320,20 @@ export class UIScene extends Phaser.Scene {
     const tabs: [MartialTab, string][] = [['SKILLS', UI.martial], ['SYNTH', UI.synth], ['UPGRADE', UI.upgrade], ['BOSS', UI.boss]];
     tabs.forEach(([tab, label], index) => {
       const x = 28 + index * 121;
-      const button = this.add.rectangle(x, 718, 112, 36, tab === 'SKILLS' ? 0x6a481a : 0x17120d)
+      const active = tab === 'SKILLS';
+      const button = this.add.rectangle(x, 718, 112, 36, active ? 0x6a481a : 0x17120d)
         .setOrigin(0, 0)
-        .setStrokeStyle(1, tab === 'SKILLS' ? GOLD : 0x60451f)
+        .setStrokeStyle(active ? 2 : 1, active ? GOLD : 0x60451f)
         .setDepth(202)
         .setInteractive();
+      this.add.rectangle(x + 56, 724, 98, 3, active ? 0xffdf84 : 0x2a2115, active ? 0.55 : 0.35).setDepth(203);
+      this.add.rectangle(x + 56, 753, 100, 2, active ? 0x8d5a20 : 0x050403, active ? 0.6 : 0.45).setDepth(203);
+      if (active) {
+        this.add.circle(x + 56, 718, 7, 0x080604, 1).setStrokeStyle(1, GOLD).setDepth(204);
+        this.add.text(x + 56, 718, '\u25C6', this.textStyle(8, '#ffe29a')).setOrigin(0.5).setDepth(205);
+      }
       button.on('pointerdown', () => { this.martialTab = tab; this.openPanel('MARTIAL'); });
-      this.add.text(x + 56, 736, label, this.textStyle(16, tab === 'SKILLS' ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(203);
+      this.add.text(x + 56, 736, label, this.textStyle(16, active ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(204);
     });
 
     const save = loadGame();

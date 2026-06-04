@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SKILL_DATABASE, SYNTHESIS_RECIPES } from '../data/skills';
+import { SKILL_DATABASE, SYNTHESIS_RECIPES, getStarterSkill } from '../data/skills';
 import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 import {
@@ -116,6 +116,7 @@ export class UIScene extends Phaser.Scene {
   private dashCooldown!: Phaser.GameObjects.Arc;
   private dashCooldownText!: Phaser.GameObjects.Text;
   private skillLabels: Phaser.GameObjects.Text[] = [];
+  private skillIcons: Phaser.GameObjects.Image[] = [];
   private cooldowns: Phaser.GameObjects.Arc[] = [];
   private cooldownTexts: Phaser.GameObjects.Text[] = [];
   private progressNodes: Phaser.GameObjects.Arc[] = [];
@@ -299,7 +300,12 @@ export class UIScene extends Phaser.Scene {
       }
 
       ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-skill', slot.action));
-      this.skillLabels[slot.action] = this.add.text(slot.x, 680, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 74 } }).setOrigin(0.5).setDepth(204);
+      this.skillIcons[slot.action] = this.add.image(slot.x, 676, skillCardKey(getStarterSkill(this.charClass)))
+        .setDisplaySize(slot.radius * 1.24, slot.radius * 1.24)
+        .setDepth(202)
+        .setAlpha(0.9);
+      this.add.circle(slot.x, 680, slot.radius - 9, 0x000000, 0.18).setDepth(203);
+      this.skillLabels[slot.action] = this.add.text(slot.x, 704, slot.label, { ...this.textStyle(9, '#f6e3b2'), align: 'center', wordWrap: { width: 74 } }).setOrigin(0.5).setDepth(204);
       this.cooldowns[slot.action] = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
       this.cooldownTexts[slot.action] = this.add.text(slot.x, 680, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
     });
@@ -664,7 +670,9 @@ export class UIScene extends Phaser.Scene {
     }
     state.skills.forEach((skill, index) => {
       if (!this.skillLabels[index]) return;
-      this.skillLabels[index].setText(this.skillLabel(SKILL_DATABASE.get(skill.id)));
+      const data = SKILL_DATABASE.get(skill.id);
+      this.skillLabels[index].setText(this.skillLabel(data));
+      this.skillIcons[index]?.setTexture(skillCardKey(skill.id));
       this.updateCooldown(this.cooldowns[index], this.cooldownTexts[index], skill.cooldownRemaining, skill.cooldown);
     });
     const activeProgress = state.isBossWave ? this.progressNodes.length : (state.waveNumber - 1) % this.progressNodes.length;

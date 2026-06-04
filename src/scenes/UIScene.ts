@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SKILL_DATABASE, SYNTHESIS_RECIPES, getStarterSkill } from '../data/skills';
-import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
+import { BOSS_RANK_NAMES, BOSS_RANK_COLORS, ENEMY_DATABASE } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 import {
   EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore,
@@ -106,6 +106,8 @@ export class UIScene extends Phaser.Scene {
   private martialTab: MartialTab = 'SKILLS';
   private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
+  private codexTab: 'SKILLS' | 'ENEMIES' | 'BOSSES' = 'SKILLS';
+  private missionsTab: 'DAILY' | 'ACHIEVEMENT' = 'DAILY';
   private hpFill!: Phaser.GameObjects.Rectangle;
   private spFill!: Phaser.GameObjects.Rectangle;
   private expFill!: Phaser.GameObjects.Rectangle;
@@ -529,19 +531,87 @@ export class UIScene extends Phaser.Scene {
 
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const rows = [['attack', '공격 수련', '공격'], ['hp', '체력 수련', '체력'], ['gold', '재물 수련', '금화 획득']] as const;
-    rows.forEach(([key, name, effect], index) => {
-      const level = save.trainingLevels?.[key] ?? 0;
-      const cost = 100 * (level + 1);
-      const y = 170 + index * 120;
-      const button = this.add.rectangle(W - 120, y, 150, 52, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-      button.on('pointerdown', () => this.upgradeTraining(key, cost));
-      items.push(this.add.text(55, y - 18, name, this.titleStyle(20)),
-        this.add.text(55, y + 16, `${effect} +${level * 2}%`, this.textStyle(15, '#d8c9aa')),
-        button, this.add.text(W - 120, y, `${cost} 금화`, this.textStyle(15, '#f0d493')).setOrigin(0.5));
+    const TRAIN = [
+      { key: 'attack',  name: '공격 수련', sub: '호신강공(護身剛功)', icon: '剑', eff: '공격력',    pct: 2,   maxLv: 20, base: 100, color: 0xe05555 },
+      { key: 'hp',      name: '체력 수련', sub: '금강불괴(金剛不壞)', icon: '氣', eff: '최대 체력',  pct: 2,   maxLv: 20, base: 100, color: 0xcc3333 },
+      { key: 'gold',    name: '재물 수련', sub: '취재술(聚財術)',     icon: '財', eff: '금화 획득',  pct: 2,   maxLv: 20, base: 80,  color: 0xd4a74e },
+      { key: 'speed',   name: '신법 수련', sub: '경공술(輕功術)',     icon: '步', eff: '이동 속도',  pct: 1.5, maxLv: 15, base: 150, color: 0x5aafff },
+      { key: 'stamina', name: '내공 수련', sub: '심기단련(心氣鍛鍊)', icon: '心', eff: '최대 내공',  pct: 3,   maxLv: 20, base: 120, color: 0x50c878 },
+      { key: 'crit',    name: '격파 수련', sub: '파공술(破功術)',     icon: '破', eff: '치명타 확률', pct: 2,   maxLv: 10, base: 250, color: 0xc878ff },
+    ] as const;
+
+    // 2×3 그리드
+    const COL = [150, 392];
+    const ROW = [180, 360, 540];
+    const CW = 224, CH = 158;
+
+    TRAIN.forEach((t, i) => {
+      const cx = COL[i % 2];
+      const cy = ROW[Math.floor(i / 2)];
+      const lv = save.trainingLevels?.[t.key] ?? 0;
+      const isMax = lv >= t.maxLv;
+      const cost = t.base * (lv + 1);
+      const ratio = lv / t.maxLv;
+      const effPct = (t.pct * lv).toFixed(1);
+
+      // 카드 배경
+      items.push(
+        this.add.rectangle(cx, cy, CW, CH, 0x0f0e0c, 1)
+          .setStrokeStyle(2, t.color, isMax ? 1.0 : 0.6).setDepth(702),
+        this.add.rectangle(cx, cy - CH / 2 + 3, CW - 4, 5, t.color, isMax ? 0.9 : 0.55)
+          .setOrigin(0.5, 0.5).setDepth(703),
+      );
+      // 아이콘
+      items.push(
+        this.add.circle(cx - 90, cy - 40, 21, 0x0a0806).setStrokeStyle(2, t.color, 0.9).setDepth(703),
+        this.add.text(cx - 90, cy - 40, t.icon, this.titleStyle(19)).setOrigin(0.5).setDepth(704),
+      );
+      // 이름 / 서브 / 레벨
+      items.push(
+        this.add.text(cx - 62, cy - 52, t.name, this.textStyle(14, '#e8c36a')).setDepth(703),
+        this.add.text(cx - 62, cy - 34, t.sub, this.textStyle(9, '#6e6254')).setDepth(703),
+        this.add.text(cx + 100, cy - 52, `${lv}/${t.maxLv}`, this.textStyle(12, '#f0d493'))
+          .setOrigin(1, 0).setDepth(703),
+      );
+      // 효과 텍스트
+      items.push(
+        this.add.text(cx - 104, cy - 10, `${t.eff}  +${effPct}%`, this.textStyle(13, '#c8b98a')).setDepth(703),
+      );
+      // 진행 바
+      const bw = 200;
+      items.push(
+        this.add.rectangle(cx, cy + 22, bw, 7, 0x1e1a13, 1).setDepth(703),
+        this.add.rectangle(cx - bw / 2, cy + 22, Math.max(3, bw * ratio), 7, t.color, 0.85)
+          .setOrigin(0, 0.5).setDepth(704),
+      );
+      // 업그레이드 버튼
+      if (!isMax) {
+        const btn = this.add.rectangle(cx, cy + 52, 200, 28, 0x4a3215)
+          .setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+        btn.on('pointerdown', () => this.upgradeTraining(t.key, cost));
+        items.push(
+          btn,
+          this.add.text(cx, cy + 52, `수련  ·  ${cost}G`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(704),
+        );
+      } else {
+        items.push(
+          this.add.rectangle(cx, cy + 52, 200, 28, 0x1c1c1c).setStrokeStyle(1, 0x444444).setDepth(703),
+          this.add.text(cx, cy + 52, '수련 완성 (MAX)', this.textStyle(12, '#555555')).setOrigin(0.5).setDepth(704),
+        );
+      }
     });
-    // 점소이 일러스트 추가
-    const npc = this.add.image(W - 120, 680, 'npc_jeomsoyi').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
+
+    // 종합 보너스 요약
+    const tl = save.trainingLevels ?? {};
+    items.push(
+      this.add.rectangle(W / 2, 655, W - 52, 46, 0x0c0a07, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(W / 2, 647, '현재 총 보너스', this.textStyle(11, '#7a6e58')).setOrigin(0.5).setDepth(703),
+      this.add.text(W / 2, 665,
+        `공격 +${(tl.attack ?? 0) * 2}%   체력 +${(tl.hp ?? 0) * 2}%   속도 +${((tl.speed ?? 0) * 1.5).toFixed(1)}%   치명타 +${(tl.crit ?? 0) * 2}%`,
+        this.textStyle(12, '#d4a74e')).setOrigin(0.5).setDepth(703),
+    );
+
+    const npc = this.add.image(W - 95, 820, 'npc_jeomsoyi').setDisplaySize(190, 210).setDepth(702).setAlpha(0.82);
     items.push(npc);
   }
 
@@ -595,80 +665,275 @@ export class UIScene extends Phaser.Scene {
 
   private buildSect(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const facilities = [['hall', '대전'], ['forge', '대장간'], ['library', '무경각']] as const;
-    facilities.forEach(([key, name], index) => {
-      const level = save.sectFacilities?.[key] ?? 1;
-      const cost = level * 250;
-      const y = 170 + index * 105;
-      const button = this.add.rectangle(W - 115, y, 150, 48, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-      button.on('pointerdown', () => this.upgradeSect(key, cost));
-      items.push(this.add.text(55, y - 15, name, this.titleStyle(20)),
-        this.add.text(55, y + 18, `시설 Lv.${level}`, this.textStyle(15, '#d8c9aa')),
-        button, this.add.text(W - 115, y, `${cost} 금화`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
+
+    // ─── 시설 섹션 ───
+    items.push(
+      this.add.rectangle(W / 2, 90, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 90, '시설 (施設)', this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+
+    const FACILITIES = [
+      { key: 'hall',    name: '대전 (大殿)',    icon: '殿', eff: (lv: number) => `공격력 +${(lv * 2.5).toFixed(1)}%  ·  제자 +${lv}명` },
+      { key: 'forge',   name: '대장간 (冶鐵)',  icon: '鐵', eff: (lv: number) => `장비 효율 +${lv * 3}%  ·  골드 생산 +${lv}%` },
+      { key: 'library', name: '무경각 (武經閣)', icon: '卷', eff: (lv: number) => `연구 효율 +${lv * 5}%  ·  무공 경험 +${lv * 2}%` },
+    ] as const;
+    FACILITIES.forEach(({ key, name, icon, eff }, i) => {
+      const lv = save.sectFacilities?.[key] ?? 1;
+      const cost = lv * 250;
+      const y = 133 + i * 82;
+      items.push(
+        this.add.rectangle(W / 2, y, W - 52, 68, 0x110e0a, 1).setStrokeStyle(1, 0x75572b, 0.7).setDepth(702),
+        this.add.circle(70, y, 24, 0x0a0806).setStrokeStyle(2, GOLD, 0.7).setDepth(703),
+        this.add.text(70, y, icon, this.titleStyle(20)).setOrigin(0.5).setDepth(704),
+        this.add.text(102, y - 16, name, this.textStyle(15, '#e8c36a')).setDepth(703),
+        this.add.text(102, y + 6, eff(lv), this.textStyle(11, '#a8987a')).setDepth(703),
+        this.add.text(102, y + 22, `시설 Lv.${lv}`, this.textStyle(11, '#d4a74e')).setDepth(703),
+      );
+      const btn = this.add.rectangle(W - 95, y, 130, 38, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+      btn.on('pointerdown', () => this.upgradeSect(key, cost));
+      items.push(btn, this.add.text(W - 95, y, `${cost}G 업그레이드`, this.textStyle(12, '#f0d493')).setOrigin(0.5).setDepth(704));
     });
 
-    items.push(this.add.text(55, 530, '계열 연구', this.titleStyle(22)));
-    (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[]).forEach((key, index) => {
-      const level = save.sectResearch?.[key] ?? 0;
-      const x = 65 + index * 115;
-      const cost = 220 * (level + 1);
-      const button = this.add.rectangle(x, 635, 88, 36, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-      button.on('pointerdown', () => this.upgradeResearch(key, cost));
-      items.push(this.add.text(x, 585, `${CLASS_KO[key]}\nLv.${level}`, { ...this.textStyle(15, '#d4a74e'), align: 'center' }).setOrigin(0.5),
-        button, this.add.text(x, 635, `${cost}G`, this.textStyle(12, '#f0d493')).setOrigin(0.5));
+    // ─── 계열 연구 섹션 ───
+    items.push(
+      this.add.rectangle(W / 2, 384, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 384, '계열 연구 (系列硏究)', this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+    const RESEARCH_COLORS: Record<CharacterClass, number> = { SWORD: 0x5aafff, BLADE: 0xe05555, FIST: 0xf0b444, SPEAR: 0x60d060 };
+    (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[]).forEach((key, i) => {
+      const lv = save.sectResearch?.[key] ?? 0;
+      const cost = 220 * (lv + 1);
+      const x = 68 + i * 102;
+      const isActive = key === this.charClass;
+      items.push(
+        this.add.rectangle(x, 450, 90, 90, isActive ? 0x1a2035 : 0x100e0c, 1)
+          .setStrokeStyle(2, RESEARCH_COLORS[key], isActive ? 0.9 : 0.5).setDepth(702),
+        this.add.text(x, 425, CLASS_KO[key], this.textStyle(14, isActive ? '#e8c36a' : '#8a7d6a')).setOrigin(0.5).setDepth(703),
+        this.add.text(x, 445, `Lv.${lv}`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(703),
+        this.add.text(x, 462, `공격+${(lv * 2.5).toFixed(1)}%`, this.textStyle(10, '#a8987a')).setOrigin(0.5).setDepth(703),
+      );
+      const btn = this.add.rectangle(x, 482, 80, 26, 0x4a3215).setStrokeStyle(1, RESEARCH_COLORS[key], 0.7).setInteractive().setDepth(703);
+      btn.on('pointerdown', () => this.upgradeResearch(key, cost));
+      items.push(btn, this.add.text(x, 482, `${cost}G`, this.textStyle(11, '#f0d493')).setOrigin(0.5).setDepth(704));
     });
 
-    const discipleCount = save.disciples?.length ?? 0;
+    // ─── 제자 섹션 ───
+    const DISCIPLE_NAMES = ['청운', '백호', '철검', '방파', '나한', '운학', '소월', '천풍', '화룡', '옥기'];
+    const disciples = save.disciples ?? [];
+    const discipleCount = disciples.length;
     const recruitCost = 600 + discipleCount * 350;
-    const recruit = this.add.rectangle(W / 2, 735, 210, 46, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
+    items.push(
+      this.add.rectangle(W / 2, 532, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 532, `제자 (弟子)  ·  ${discipleCount}명`, this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+    const recruit = this.add.rectangle(W - 95, 532, 130, 30, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
     recruit.on('pointerdown', () => this.recruitDisciple(recruitCost));
-    items.push(this.add.text(55, 700, `제자 ${discipleCount}명`, this.titleStyle(20)),
-      recruit, this.add.text(W / 2, 735, `모집 ${recruitCost}G`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
-    // 문파 장문인 일러스트 배치
-    const npc = this.add.image(W - 95, 750, 'npc_master').setDisplaySize(180, 180).setDepth(702).setAlpha(0.85);
+    items.push(recruit, this.add.text(W - 95, 532, `모집  ${recruitCost}G`, this.textStyle(12, '#f0d493')).setOrigin(0.5).setDepth(704));
+
+    const maxShow = 5;
+    for (let d = 0; d < maxShow; d++) {
+      const y = 570 + d * 52;
+      const hasDisciple = d < discipleCount;
+      items.push(
+        this.add.rectangle(W / 2, y, W - 52, 44, hasDisciple ? 0x141008 : 0x0d0b09, 1)
+          .setStrokeStyle(1, hasDisciple ? 0x75572b : 0x2a2218, 0.7).setDepth(702),
+      );
+      if (hasDisciple) {
+        const nameIdx = d % DISCIPLE_NAMES.length;
+        items.push(
+          this.add.text(70, y, DISCIPLE_NAMES[nameIdx], this.textStyle(15, '#e8c36a')).setOrigin(0, 0.5).setDepth(703),
+          this.add.text(220, y, `공격 +${((d + 1) * 1).toFixed(0)}%`, this.textStyle(12, '#a8987a')).setOrigin(0, 0.5).setDepth(703),
+          this.add.text(W - 60, y, `제자 ${d + 1}호`, this.textStyle(11, '#7a6e5a')).setOrigin(1, 0.5).setDepth(703),
+        );
+      } else {
+        items.push(
+          this.add.text(W / 2, y, '비어있음', this.textStyle(13, '#3a3530')).setOrigin(0.5).setDepth(703),
+        );
+      }
+    }
+
+    const npc = this.add.image(W - 90, 840, 'npc_master').setDisplaySize(170, 190).setDepth(702).setAlpha(0.82);
     items.push(npc);
   }
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const stats = [
-      ['영웅', '8 / 8'], ['무공', `${save.unlockedSkills.length} / ${SKILL_DATABASE.size}`],
-      ['보스', `${save.defeatedBosses?.length ?? 0} / 8`], ['장비 세트', `${new Set((save.equipmentInventory ?? []).map(item => item.setId).filter(Boolean)).size} / 8`],
-      ['지역', `${save.storyRegion ?? 1} / 8`], ['일반 적', `${Math.min(24, Math.floor((save.totalKills ?? 0) / 10))} / 24`],
+
+    // ─── 탭 바 ───
+    const CODEX_TABS: [typeof this.codexTab, string, string][] = [
+      ['SKILLS', '무공', '武'],
+      ['ENEMIES', '일반 적', '敵'],
+      ['BOSSES', '보스', '魔'],
     ];
-    stats.forEach(([label, value], index) => {
-      const x = 55 + (index % 2) * 245;
-      const y = 170 + Math.floor(index / 2) * 130;
-      items.push(this.add.rectangle(x, y, 220, 100, 0x15110c).setOrigin(0, 0).setStrokeStyle(1, 0x75572b),
-        this.add.text(x + 110, y + 30, label, this.titleStyle(19)).setOrigin(0.5),
-        this.add.text(x + 110, y + 68, value, this.textStyle(18, '#e8dfce')).setOrigin(0.5));
+    CODEX_TABS.forEach(([tab, label, glyph], i) => {
+      const x = 90 + i * 125;
+      const isActive = this.codexTab === tab;
+      const btn = this.add.rectangle(x, 103, 112, 38, isActive ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(isActive ? 2 : 1, isActive ? GOLD : 0x60451f).setInteractive().setDepth(702);
+      btn.on('pointerdown', () => { this.codexTab = tab; this.openPanel('CODEX'); });
+      items.push(btn,
+        this.add.text(x - 20, 103, glyph, this.titleStyle(18)).setOrigin(0.5).setDepth(703),
+        this.add.text(x + 16, 103, label, this.textStyle(14, isActive ? '#f3d992' : '#b7aa92')).setOrigin(0, 0.5).setDepth(703),
+      );
     });
-    // 신비상인 일러스트 배치
-    const npc = this.add.image(W - 120, 680, 'npc_merchant').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
-    items.push(npc);
+
+    if (this.codexTab === 'SKILLS') {
+      // 무공 탭 - 2열 스킬 목록
+      const allSkills = [...SKILL_DATABASE.values()].filter(s => s.type === 'ACTIVE' && s.category === this.charClass);
+      const owned = new Set(save.unlockedSkills);
+      items.push(this.add.text(38, 140, `${this.charClass === 'SWORD' ? '검법' : this.charClass === 'BLADE' ? '도법' : this.charClass === 'FIST' ? '권법' : '창법'} 계열 무공  ·  ${owned.size}개 습득`, this.textStyle(12, '#7a6e58')).setDepth(702));
+      allSkills.slice(0, 14).forEach((skill, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = 38 + col * 248;
+        const y = 160 + row * 90;
+        const isOwned = owned.has(skill.id);
+        const gradeColor = this.skillGradeColor(skill.grade);
+        items.push(
+          this.add.rectangle(x, y, 234, 78, 0x110f0c, 1)
+            .setOrigin(0, 0).setStrokeStyle(1, isOwned ? gradeColor : 0x2a2218, isOwned ? 0.8 : 0.5).setDepth(702),
+          this.add.image(x + 36, y + 39, skillCardKey(skill.id)).setDisplaySize(58, 58).setOrigin(0.5).setAlpha(isOwned ? 0.9 : 0.25).setDepth(703),
+          this.add.text(x + 70, y + 16, this.skillLabel(skill), this.textStyle(13, isOwned ? '#e8c36a' : '#4a4035')).setDepth(703),
+          this.add.text(x + 70, y + 36, `${GRADE_KO[skill.grade]} · 쿨타임 ${(skill.cooldown / 1000).toFixed(1)}s`, this.textStyle(11, isOwned ? '#a8987a' : '#3a3530')).setDepth(703),
+          this.add.text(x + 70, y + 54, skill.description ? skill.description.slice(0, 20) + (skill.description.length > 20 ? '…' : '') : '', this.textStyle(10, '#6a5e4a')).setDepth(703),
+          this.add.text(x + 222, y + 14, GRADE_KO[skill.grade], this.textStyle(10, isOwned ? '#f0d493' : '#3a3530')).setOrigin(1, 0).setDepth(703),
+          this.add.text(x + 222, y + 58, isOwned ? '습득' : '미습득', this.textStyle(10, isOwned ? '#83d68a' : '#554e45')).setOrigin(1, 1).setDepth(703),
+        );
+      });
+    } else if (this.codexTab === 'ENEMIES') {
+      // 일반 적 탭
+      const enemies = [...ENEMY_DATABASE.values()].filter(e => e.rank !== 'BOSS');
+      const unlockedRegion = save.storyRegion ?? 1;
+      items.push(this.add.text(38, 140, `일반 적 도감  ·  총 ${Math.min(enemies.length, unlockedRegion * 3)}마리 발견`, this.textStyle(12, '#7a6e58')).setDepth(702));
+      enemies.slice(0, 12).forEach((enemy, i) => {
+        const y = 158 + i * 58;
+        const isUnlocked = (enemy.region ?? 1) <= unlockedRegion;
+        const regionColor = [0x5aafff, 0x60d060, 0xffd060, 0xe07030, 0xe05555, 0xc04040, 0x9050e0, 0xcc2030][Math.min(7, (enemy.region ?? 1) - 1)];
+        items.push(
+          this.add.rectangle(W / 2, y + 26, W - 52, 50, 0x110f0c, 1)
+            .setStrokeStyle(1, isUnlocked ? regionColor : 0x2a2218, isUnlocked ? 0.55 : 0.3).setDepth(702),
+          this.add.text(56, y + 16, isUnlocked ? enemy.name : '???', this.textStyle(14, isUnlocked ? '#e8c36a' : '#3a3530')).setDepth(703),
+          this.add.text(56, y + 36, isUnlocked ? `${enemy.region ?? 1}지역  ·  HP ${enemy.hp}  ·  공격 ${enemy.damage}` : '미발견', this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(W - 56, y + 26, isUnlocked ? (enemy.rank === 'ELITE' ? '정예' : '일반') : '', this.textStyle(12, isUnlocked ? '#f0d493' : '#3a3530')).setOrigin(1, 0.5).setDepth(703),
+        );
+      });
+    } else {
+      // 보스 탭
+      const bosses = [...ENEMY_DATABASE.values()].filter(e => e.rank === 'BOSS');
+      const defeatedSet = new Set(save.defeatedBosses ?? []);
+      items.push(this.add.text(38, 140, `혈교 보스 도감  ·  ${defeatedSet.size} / ${bosses.length} 격파`, this.textStyle(12, '#7a6e58')).setDepth(702));
+      bosses.forEach((boss, i) => {
+        const y = 160 + i * 84;
+        const isDefeated = defeatedSet.has(boss.id);
+        const rankColor = BOSS_RANK_COLORS[boss.bossRank ?? 'DAEJU'] ?? 0x75572b;
+        items.push(
+          this.add.rectangle(W / 2, y + 34, W - 52, 72, isDefeated ? 0x131c0e : 0x110f0c, 1)
+            .setStrokeStyle(2, rankColor, isDefeated ? 0.9 : 0.35).setDepth(702),
+          this.add.text(56, y + 16, `${i + 1}장  ${BOSS_RANK_NAMES[boss.bossRank ?? 'DAEJU'] ?? ''}`, this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(56, y + 34, isDefeated ? boss.name : '???', this.titleStyle(18)).setDepth(703),
+          this.add.text(56, y + 56, isDefeated ? `HP ${boss.hp}  ·  공격 ${boss.damage}  ·  ${boss.region ?? 1}지역 수호자` : '격파 필요', this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(W - 56, y + 34, isDefeated ? '격파 ✓' : '미격파', this.textStyle(14, isDefeated ? '#83d68a' : '#554e45')).setOrigin(1, 0.5).setDepth(703),
+        );
+      });
+    }
   }
 
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     this.ensureDailyMission(save);
-    const missions = [
-      ['story', '스토리', `혈교 ${save.storyRegion ?? 1}장 돌파`, save.stageCleared, (save.storyRegion ?? 1) * 5],
-      ['daily_kill', '일일', '적 30명 처치', save.missionProgress?.daily_kill ?? 0, 30],
-      ['achievement', '업적', '적 500명 처치', save.totalKills ?? 0, 500],
-    ] as const;
-    missions.forEach(([id, type, name, progress, target], index) => {
-      const y = 180 + index * 130;
-      const claimed = save.missionClaims?.includes(id);
-      const can = progress >= target && !claimed;
-      const button = this.add.rectangle(W - 115, y, 150, 48, can ? 0x4a3215 : 0x1a1712).setStrokeStyle(1, can ? GOLD : 0x4b4132).setInteractive();
-      button.on('pointerdown', () => this.claimMission(id, can));
-      items.push(this.add.text(55, y - 20, `[${type}] ${name}`, this.titleStyle(19)),
-        this.add.text(55, y + 18, `${Math.min(progress, target)} / ${target}`, this.textStyle(15, '#d8c9aa')),
-        button, this.add.text(W - 115, y, claimed ? '수령 완료' : can ? '보상 수령' : '진행 중', this.textStyle(14, can ? '#f0d493' : '#8f8778')).setOrigin(0.5));
+    const mp = save.missionProgress ?? {};
+    const claims = save.missionClaims ?? [];
+
+    // ─── 탭 바 ───
+    const TABS: [typeof this.missionsTab, string][] = [['DAILY', '일일 임무'], ['ACHIEVEMENT', '업적']];
+    TABS.forEach(([tab, label], i) => {
+      const x = 135 + i * 178;
+      const isActive = this.missionsTab === tab;
+      const btn = this.add.rectangle(x, 103, 158, 38, isActive ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(isActive ? 2 : 1, isActive ? GOLD : 0x60451f).setInteractive().setDepth(702);
+      btn.on('pointerdown', () => { this.missionsTab = tab; this.openPanel('MISSIONS'); });
+      items.push(btn, this.add.text(x, 103, label, this.textStyle(15, isActive ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(703));
     });
-    // 객잔 주인 일러스트 배치
-    const npc = this.add.image(W - 120, 680, 'npc_innkeeper').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
-    items.push(npc);
+
+    if (this.missionsTab === 'DAILY') {
+      // 일일 임무 리셋 날짜 표시
+      items.push(this.add.text(W / 2, 137, `자정에 초기화 · ${save.dailyMissionDate ?? '오늘'}`, this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
+
+      const daily = [
+        { id: 'daily_kill',      name: '적 30명 처치',       prog: mp.daily_kill ?? 0,      target: 30,  reward: 500  },
+        { id: 'daily_waves',     name: '웨이브 5회 클리어',  prog: mp.daily_waves ?? 0,     target: 5,   reward: 400  },
+        { id: 'daily_boss',      name: '보스 1회 처치',       prog: mp.daily_boss ?? 0,      target: 1,   reward: 800  },
+        { id: 'daily_gold',      name: '금화 500개 수집',     prog: mp.daily_gold ?? 0,      target: 500, reward: 300  },
+        { id: 'daily_synthesis', name: '합성 1회 성공',       prog: mp.daily_synthesis ?? 0, target: 1,   reward: 400  },
+      ];
+
+      daily.forEach(({ id, name, prog, target, reward }, i) => {
+        const y = 158 + i * 128;
+        const claimed = claims.includes(id);
+        const done = prog >= target;
+        const canClaim = done && !claimed;
+        const ratio = Math.min(1, prog / target);
+        const cardColor = claimed ? 0x131e0e : canClaim ? 0x1e2010 : 0x110f0c;
+        const borderColor = claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528;
+        items.push(
+          this.add.rectangle(W / 2, y + 46, W - 52, 110, cardColor, 1)
+            .setStrokeStyle(2, borderColor, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
+          this.add.text(56, y + 18, name, this.titleStyle(18)).setDepth(703),
+          this.add.text(56, y + 44, `보상  ${reward}G`, this.textStyle(13, '#d4a74e')).setDepth(703),
+          // 진행 바
+          this.add.rectangle(56, y + 68, W - 108, 10, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
+          this.add.rectangle(56, y + 68, Math.max(4, (W - 108) * ratio), 10, canClaim || claimed ? 0x83d68a : GOLD, 0.85).setOrigin(0, 0.5).setDepth(704),
+          this.add.text(56, y + 87, `${Math.min(prog, target)} / ${target}`, this.textStyle(12, '#8a7d6a')).setDepth(703),
+        );
+        const btn = this.add.rectangle(W - 95, y + 65, 120, 38, canClaim ? 0x4a3215 : 0x17120d)
+          .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
+        btn.on('pointerdown', () => this.claimMission(id, canClaim));
+        items.push(btn, this.add.text(W - 95, y + 65, claimed ? '수령 완료' : canClaim ? '보상 수령' : '진행 중',
+          this.textStyle(13, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#666666')).setOrigin(0.5).setDepth(704));
+      });
+    } else {
+      // 업적
+      items.push(this.add.text(W / 2, 137, '영구적으로 달성되는 업적입니다', this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
+
+      const totalKills = save.totalKills ?? 0;
+      const bossCount = save.defeatedBosses?.length ?? 0;
+      const skillCount = save.unlockedSkills.length;
+      const eqCount = save.equipmentInventory?.length ?? 0;
+
+      const achievements = [
+        { id: 'ach_kill100',  name: '첫 번째 백인도',  desc: '적 100명 처치', prog: totalKills, target: 100,  reward: 1000 },
+        { id: 'ach_kill500',  name: '오백인도',        desc: '적 500명 처치', prog: totalKills, target: 500,  reward: 2500 },
+        { id: 'ach_kill2000', name: '이천인도',        desc: '적 2000명 처치',prog: totalKills, target: 2000, reward: 5000 },
+        { id: 'ach_boss1',    name: '혈교 첫 타도',   desc: '보스 1회 격파', prog: bossCount,  target: 1,    reward: 1500 },
+        { id: 'ach_boss4',    name: '혈교 사천왕 격파',desc: '보스 4회 격파', prog: bossCount,  target: 4,    reward: 3000 },
+        { id: 'ach_lvl10',    name: '초입 경지',       desc: '레벨 10 달성',  prog: save.level, target: 10,   reward: 1000 },
+        { id: 'ach_lvl30',    name: '화경(化境) 돌입', desc: '레벨 30 달성',  prog: save.level, target: 30,   reward: 5000 },
+        { id: 'ach_skill8',   name: '팔방진인',        desc: '무공 8개 습득', prog: skillCount, target: 8,    reward: 2000 },
+        { id: 'ach_equip10',  name: '무장 강화',       desc: '장비 10개 수집',prog: eqCount,    target: 10,   reward: 1500 },
+      ];
+
+      achievements.forEach(({ id, name, desc, prog, target, reward }, i) => {
+        const y = 152 + i * 78;
+        const claimed = claims.includes(id);
+        const canClaim = prog >= target && !claimed;
+        const ratio = Math.min(1, prog / target);
+        items.push(
+          this.add.rectangle(W / 2, y + 30, W - 52, 64, claimed ? 0x131e0e : 0x110f0c, 1)
+            .setStrokeStyle(1, claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
+          this.add.text(56, y + 14, name, this.textStyle(14, claimed ? '#83d68a' : canClaim ? '#e8c36a' : '#8a7d6a')).setDepth(703),
+          this.add.text(56, y + 34, `${desc}  ·  보상 ${reward}G`, this.textStyle(11, '#7a6e58')).setDepth(703),
+          // 미니 진행 바
+          this.add.rectangle(56, y + 52, 240, 5, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
+          this.add.rectangle(56, y + 52, Math.max(3, 240 * ratio), 5, canClaim || claimed ? 0x83d68a : GOLD, 0.8).setOrigin(0, 0.5).setDepth(704),
+          this.add.text(304, y + 52, `${Math.min(prog, target)}/${target}`, this.textStyle(10, '#5a5048')).setOrigin(0, 0.5).setDepth(703),
+        );
+        const btn = this.add.rectangle(W - 88, y + 30, 110, 34, canClaim ? 0x4a3215 : 0x17120d)
+          .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
+        btn.on('pointerdown', () => this.claimMission(id, canClaim));
+        items.push(btn, this.add.text(W - 88, y + 30, claimed ? '달성 ✓' : canClaim ? '수령' : `${Math.floor(ratio * 100)}%`,
+          this.textStyle(12, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#555555')).setOrigin(0.5).setDepth(704));
+      });
+    }
   }
 
   private updateHUD(state: PlayerStatePayload): void {
@@ -744,6 +1009,8 @@ export class UIScene extends Phaser.Scene {
     save.inventory[b] = (save.inventory[b] ?? 0) - 1;
     save.inventory[result] = (save.inventory[result] ?? 0) + 1;
     if (!save.unlockedSkills.includes(result)) save.unlockedSkills.push(result);
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_synthesis = (save.missionProgress.daily_synthesis ?? 0) + 1;
     saveGame(save);
     this.showNotice(`합성 성공 · ${this.skillLabel(SKILL_DATABASE.get(result))}`);
     this.openPanel('MARTIAL');
@@ -849,6 +1116,10 @@ export class UIScene extends Phaser.Scene {
     save.dailyMissionDate = today;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_kill = 0;
+    save.missionProgress.daily_waves = 0;
+    save.missionProgress.daily_boss = 0;
+    save.missionProgress.daily_gold = 0;
+    save.missionProgress.daily_synthesis = 0;
     save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
     saveGame(save);
   }
@@ -858,8 +1129,18 @@ export class UIScene extends Phaser.Scene {
     const save = loadGame();
     save.missionClaims = save.missionClaims ?? [];
     save.missionClaims.push(id);
-    save.gold += id === 'achievement' ? 2000 : id === 'story' ? 900 : 500;
+    const REWARDS: Record<string, number> = {
+      daily_kill: 500, daily_waves: 400, daily_boss: 800, daily_gold: 300, daily_synthesis: 400,
+      ach_kill100: 1000, ach_kill500: 2500, ach_kill2000: 5000,
+      ach_boss1: 1500, ach_boss4: 3000,
+      ach_lvl10: 1000, ach_lvl30: 5000,
+      ach_skill8: 2000, ach_equip10: 1500,
+      achievement: 2000, story: 900,
+    };
+    const reward = REWARDS[id] ?? 500;
+    save.gold += reward;
     saveGame(save);
+    this.showNotice(`임무 완료 · +${reward}G`);
     this.openPanel('MISSIONS');
   }
 

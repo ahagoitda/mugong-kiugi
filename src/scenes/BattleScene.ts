@@ -118,6 +118,8 @@ interface CombatBonuses {
   goldMul: number;
   flatAttack: number;
   flatHp: number;
+  speedMul: number;
+  critChance: number;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -935,6 +937,9 @@ export class BattleScene extends Phaser.Scene {
 
     const save = loadGame();
     save.stageCleared = Math.max(save.stageCleared, this.waveNumber);
+    this.ensureDailyMission(save);
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_waves = (save.missionProgress.daily_waves ?? 0) + 1;
     saveGame(save);
 
     this.events.emit('wave-clear', this.waveNumber);
@@ -959,6 +964,9 @@ export class BattleScene extends Phaser.Scene {
     // 보스 처치 기록
     const save = loadGame();
     save.stageCleared = Math.max(save.stageCleared, this.waveNumber);
+    this.ensureDailyMission(save);
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_boss = (save.missionProgress.daily_boss ?? 0) + 1;
     if (bossData && !save.defeatedBosses?.includes(bossData.id)) {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
@@ -1059,7 +1067,8 @@ export class BattleScene extends Phaser.Scene {
       );
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
-        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul);
+        const isCrit = Math.random() < bonuses.critChance;
+        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1));
         const killed = enemy.takeDamage(damage);
 
         // 상태이상 적용
@@ -1312,6 +1321,8 @@ export class BattleScene extends Phaser.Scene {
     save.gold += finalGold;
     save.exp += exp;
     this.sessionGold += finalGold;
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_gold = (save.missionProgress.daily_gold ?? 0) + finalGold;
     this.sessionExp += exp;
 
     // 레벨업 체크
@@ -1932,6 +1943,8 @@ export class BattleScene extends Phaser.Scene {
       goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
       flatAttack,
       flatHp,
+      speedMul: 1 + (training.speed ?? 0) * 0.015,
+      critChance: Math.min(0.5, (training.crit ?? 0) * 0.02),
     };
   }
 
@@ -1960,6 +1973,8 @@ export class BattleScene extends Phaser.Scene {
     if (save.equippedDash) {
       this.player.equipDash(save.equippedDash);
     }
+    const bonuses = this.getCombatBonuses(save);
+    this.player.applyTrainingBonuses(bonuses.speedMul, 1 + (save.trainingLevels?.stamina ?? 0) * 0.03);
     this.applyEquipmentSkin(save);
   }
 
@@ -2039,6 +2054,10 @@ export class BattleScene extends Phaser.Scene {
     save.dailyMissionDate = today;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_kill = 0;
+    save.missionProgress.daily_waves = 0;
+    save.missionProgress.daily_boss = 0;
+    save.missionProgress.daily_gold = 0;
+    save.missionProgress.daily_synthesis = 0;
     save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
   }
 

@@ -13,6 +13,31 @@ import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
 const W = 540;
 const H = 960;
 const GOLD = 0xd4a74e;
+const UI = {
+  martial: '\uBB34\uACF5',
+  synth: '\uD569\uC131',
+  upgrade: '\uAC15\uD654',
+  boss: '\uBCF4\uC2A4',
+  training: '\uC218\uB828',
+  equipment: '\uC7A5\uBE44',
+  sect: '\uBB38\uD30C',
+  codex: '\uB3C4\uAC10',
+  manual: '\uC218\uB3D9',
+  mission: '\uC784\uBB34',
+  secret: '\uBE44\uAE09',
+  dash: '\uACBD\uACF5',
+  ultimate: '\uC808\uAE30',
+  locked: '\uBD09\uC778',
+  gold: '\uAE08\uD654',
+  gem: '\uC6D0\uBCF4',
+  energy: '\uAE30\uC6B4',
+  wave: '\uC6E8\uC774\uBE0C',
+  acquired: '\uD68D\uB4DD',
+  equipped: '\uC7A5\uCC29',
+  clear: '\uD074\uB9AC\uC5B4',
+  levelUp: '\uACBD\uC9C0 \uC0C1\uC2B9',
+  offline: '\uC624\uD504\uB77C\uC778 \uBCF4\uC0C1',
+};
 
 type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS';
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
@@ -107,10 +132,10 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     const battle = this.scene.get('BattleScene');
     battle.events.on('player-state', this.updateHUD, this);
-    battle.events.on('wave-clear', (wave: number) => this.showNotice(`${wave} 웨이브 돌파`), this);
-    battle.events.on('boss-clear', (wave: number) => this.showNotice(`보스 격파 · ${wave} 웨이브`), this);
-    battle.events.on('item-drop', (id: string) => this.showNotice(`무공 획득 · ${this.skillLabel(SKILL_DATABASE.get(id))}`), this);
-    battle.events.on('level-up', (level: number) => this.showNotice(`경지 상승 · Lv.${level}`), this);
+    battle.events.on('wave-clear', (wave: number) => this.showNotice(`${wave} ${UI.wave} ${UI.clear}`), this);
+    battle.events.on('boss-clear', (wave: number) => this.showNotice(`${UI.boss} ${UI.clear} · ${wave} ${UI.wave}`), this);
+    battle.events.on('item-drop', (id: string) => this.showNotice(`${UI.martial} ${UI.acquired} · ${this.skillLabel(SKILL_DATABASE.get(id))}`), this);
+    battle.events.on('level-up', (level: number) => this.showNotice(`${UI.levelUp} · Lv.${level}`), this);
 
     this.createTopHud();
     this.createTopResourceStrip();
@@ -122,7 +147,7 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setDepth(500).setStroke('#000000', 5).setAlpha(0);
 
     const reward = claimOfflineReward();
-    if (reward.minutes > 0) this.showNotice(`오프라인 보상 · ${reward.gold} 금화 · ${reward.exp} 경험치`);
+    if (reward.minutes > 0) this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}`);
   }
 
   private createTopHud(): void {
@@ -153,9 +178,9 @@ export class UIScene extends Phaser.Scene {
 
   private createTopResourceStrip(): void {
     const resources = [
-      { x: 302, y: 20, icon: '◎', text: '금화', color: 0xd4a74e },
-      { x: 394, y: 20, icon: '◆', text: '원보', color: 0xffc85a },
-      { x: 486, y: 20, icon: '✦', text: '기운', color: 0x55a7ff },
+      { x: 302, y: 20, icon: '\u25CE', text: UI.gold, color: 0xd4a74e },
+      { x: 394, y: 20, icon: '\u25C6', text: UI.gem, color: 0xffc85a },
+      { x: 486, y: 20, icon: '\u2726', text: UI.energy, color: 0x55a7ff },
     ];
     resources.forEach(({ x, y, icon, text, color }) => {
       this.add.rectangle(x, y, 82, 24, 0x0b0907, 0.86)
@@ -176,7 +201,7 @@ export class UIScene extends Phaser.Scene {
       .setStrokeStyle(2, GOLD)
       .setDepth(205)
       .setInteractive();
-    this.add.text(W - 30, 78, '☰', this.titleStyle(24)).setOrigin(0.5).setDepth(206);
+    this.add.text(W - 30, 78, '\u2630', this.titleStyle(24)).setOrigin(0.5).setDepth(206);
     menu.on('pointerdown', () => this.openPanel('MISSIONS'));
   }
 
@@ -226,17 +251,17 @@ export class UIScene extends Phaser.Scene {
     this.bossNode = this.add.star(W / 2 + 5, y - 1, 8, 16, 28, 0x5b150c, 1)
       .setStrokeStyle(3, 0xf1b34f)
       .setDepth(207);
-    this.add.text(W / 2 + 5, y - 1, '魔', this.titleStyle(17)).setOrigin(0.5).setDepth(208);
+    this.add.text(W / 2 + 5, y - 1, '\u9B54', this.titleStyle(17)).setOrigin(0.5).setDepth(208);
   }
 
   private createCombatSkillDockV2(): void {
     this.add.rectangle(W / 2, 642, W, 116, 0x080706, 0.9).setDepth(200).setStrokeStyle(1, 0x60451f);
     const slots = [
-      { x: 56, radius: 35, label: '경공', action: 'dash' as const, color: 0x2f2a16 },
-      { x: 145, radius: 38, label: '무공', action: 0 as const, color: 0x163b64 },
-      { x: 235, radius: 46, label: '절기', action: 1 as const, color: 0x65180f },
-      { x: 325, radius: 38, label: '무공', action: 2 as const, color: 0x163b64 },
-      { x: 415, radius: 35, label: '봉인', action: 'locked' as const, color: 0x152f55 },
+      { x: 56, radius: 35, label: UI.dash, action: 'dash' as const, color: 0x2f2a16 },
+      { x: 145, radius: 38, label: UI.martial, action: 0 as const, color: 0x163b64 },
+      { x: 235, radius: 46, label: UI.ultimate, action: 1 as const, color: 0x65180f },
+      { x: 325, radius: 38, label: UI.martial, action: 2 as const, color: 0x163b64 },
+      { x: 415, radius: 35, label: UI.locked, action: 'locked' as const, color: 0x152f55 },
     ];
 
     slots.forEach((slot) => {
@@ -272,7 +297,7 @@ export class UIScene extends Phaser.Scene {
 
   private createQuickMartialBoard(): void {
     this.add.rectangle(W / 2, 806, W, 214, 0x0a0806, 0.97).setDepth(190).setStrokeStyle(1, 0x60451f);
-    const tabs: [MartialTab, string][] = [['SKILLS', '무공'], ['SYNTH', '합성'], ['UPGRADE', '강화'], ['BOSS', '보스']];
+    const tabs: [MartialTab, string][] = [['SKILLS', UI.martial], ['SYNTH', UI.synth], ['UPGRADE', UI.upgrade], ['BOSS', UI.boss]];
     tabs.forEach(([tab, label], index) => {
       const x = 28 + index * 121;
       const button = this.add.rectangle(x, 718, 112, 36, tab === 'SKILLS' ? 0x6a481a : 0x17120d)
@@ -314,8 +339,8 @@ export class UIScene extends Phaser.Scene {
   private createBottomNavV2(): void {
     this.add.rectangle(W / 2, 925, W, 70, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
     const nav: [Panel, string, string][] = [
-      ['TRAINING', '수련', '修'], ['EQUIPMENT', '장비', '裝'], ['MARTIAL', '문파', '門'],
-      ['SECT', '도감', '書'], ['CODEX', '비급', '典'], ['MISSIONS', '임무', '令'],
+      ['TRAINING', UI.training, '\u4FEE'], ['EQUIPMENT', UI.equipment, '\u88DD'], ['MARTIAL', UI.sect, '\u9580'],
+      ['SECT', UI.codex, '\u66F8'], ['CODEX', UI.secret, '\u5178'], ['MISSIONS', UI.mission, '\u4EE4'],
     ];
     nav.forEach(([panel, label, glyph], index) => {
       const x = 45 + index * 90;
@@ -346,7 +371,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private buildMartial(items: Phaser.GameObjects.GameObject[]): void {
-    const tabs: [MartialTab, string][] = [['SKILLS', '무공'], ['SYNTH', '합성'], ['UPGRADE', '강화'], ['BOSS', '보스']];
+    const tabs: [MartialTab, string][] = [['SKILLS', UI.martial], ['SYNTH', UI.synth], ['UPGRADE', UI.upgrade], ['BOSS', UI.boss]];
     tabs.forEach(([tab, label], index) => {
       const x = 38 + index * 124;
       const button = this.add.rectangle(x, 95, 112, 44, tab === this.martialTab ? 0x5a3d18 : 0x17120d)

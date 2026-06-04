@@ -2,15 +2,19 @@ import type { BossRank, EnemyData } from './types';
 
 const SKILLS = ['samjae', 'yukhap', 'maehwa', 'cheongpung', 'taegeuk', 'changung'] as const;
 const ENEMY_NAMES = [
-  '산채 도적', '흑의 검객', '혈교 자객', '창봉 수문인', '독문 제자', '철권 무사',
-  '대나무 숲 매복자', '비도 살수', '설산 검사', '빙혼 권사', '빙창 호위', '백면 자객',
-  '황야 낭인', '사막 도객', '유랑 창객', '금사 독사', '혈교 무사', '혈교 고수',
-  '흑풍 대원', '적월 자객', '금강 호위', '마혈 권사', '혈창 장수', '혈교 집행관',
+  '녹림 도적', '흑의 검객', '혈교 자객',
+  '창룡 문도', '입문 제자', '철권 무사',
+  '대나무 산적', '비도 암수', '설산 검수',
+  '빙혈 권사', '빙창 호위', '백면 자객',
+  '흑야 낭인', '사막 도객', '낙양 창객',
+  '금사 낭사', '혈교 무사', '혈교 고수',
+  '흑풍 대주', '적월 자객', '금강 호위',
+  '마예 권사', '혈창 술사', '혈교 집행관',
 ] as const;
 
 const BOSS_IDS = ['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'] as const;
 const BOSS_RANKS: readonly BossRank[] = ['DAEJU', 'DANJU', 'GAKJU', 'MAGUN', 'HOBUP', 'SAJA', 'BUGYOJU', 'HYEOLMA'];
-const BOSS_NAMES = ['철혈 대주', '적월 단주', '환영 각주', '비천 마군', '금강 호법', '묵운 사자', '혈마 부교주', '무령 혈마'] as const;
+const BOSS_NAMES = ['혈예 대주', '적월 단주', '유영 각주', '비천 마군', '금강 호법', '묵운 사자', '혈마 부교주', '무령 혈마'] as const;
 
 const entries: [string, EnemyData][] = ENEMY_NAMES.map((name, index) => {
   const n = index + 1;

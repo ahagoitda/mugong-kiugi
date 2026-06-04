@@ -76,6 +76,17 @@ const BOSS_SKILLS: Readonly<Record<string, BossSkillDef>> = {
   HYEOLMA: { type: 'burst',       color: 0xff2222, count: 8, dmgMul: 1.3, nameKo: '혈마강세(血魔降世)' },
 };
 
+const BOSS_SKILL_NAMES: Readonly<Record<string, string>> = {
+  DAEJU: '혈예 진각',
+  DANJU: '적월 혈창',
+  GAKJU: '유영환검',
+  MAGUN: '비천강림',
+  HOBUP: '금강지진',
+  SAJA: '묵운산탄',
+  BUGYOJU: '혈우',
+  HYEOLMA: '혈마강세',
+};
+
 /**
  * 캐릭터별 공격 이펙트(슬래시) 색상.
  * 선택한 캐릭터마다 전투 이펙트 색이 달라진다.
@@ -379,7 +390,7 @@ export class BattleScene extends Phaser.Scene {
 
     boss.playCastMotion();
     this.cameras.main.shake(140, 0.004);
-    this.showBossSkillName(def.nameKo, def.color);
+    this.showBossSkillName(BOSS_SKILL_NAMES[rank] ?? def.nameKo, def.color);
     soundSystem.play('boss_appear');
 
     const bx = boss.x;

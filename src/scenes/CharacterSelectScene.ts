@@ -4,6 +4,18 @@ import { loadGame, saveGame } from '../systems/SaveSystem';
 
 const W = 540;
 const H = 960;
+const GOLD = 0xd4a74e;
+
+const HERO_TEXT: Record<string, { name: string; desc: string }> = {
+  sword_male: { name: '검객', desc: '균형 잡힌 검법으로 강호를 걷는 무인' },
+  sword_female: { name: '여검객', desc: '빠른 기세와 안정적인 검초를 다루는 무인' },
+  dao_male: { name: '도객', desc: '묵직한 도법으로 적을 베어내는 무인' },
+  dao_female: { name: '여도객', desc: '예리한 도세로 빈틈을 파고드는 무인' },
+  fist_male: { name: '권사', desc: '근접 연타와 빠른 몸놀림에 능한 무인' },
+  fist_female: { name: '여권사', desc: '가벼운 보법과 연속 타격에 특화된 무인' },
+  spear_male: { name: '창객', desc: '긴 사거리로 전장을 제압하는 무인' },
+  spear_female: { name: '여창객', desc: '날카로운 창술로 적의 진입을 막는 무인' },
+};
 
 export class CharacterSelectScene extends Phaser.Scene {
   private selected = 0;
@@ -30,13 +42,13 @@ export class CharacterSelectScene extends Phaser.Scene {
     }).setOrigin(0.5, 0);
     this.statText = this.add.text(W / 2, 720, '', this.textStyle(16, '#e8c36a')).setOrigin(0.5);
 
-    this.add.text(55, 350, '‹', this.titleStyle(64)).setOrigin(0.5).setInteractive()
+    this.add.text(55, 350, '<', this.titleStyle(64)).setOrigin(0.5).setInteractive()
       .on('pointerdown', () => this.select(this.selected - 1));
-    this.add.text(W - 55, 350, '›', this.titleStyle(64)).setOrigin(0.5).setInteractive()
+    this.add.text(W - 55, 350, '>', this.titleStyle(64)).setOrigin(0.5).setInteractive()
       .on('pointerdown', () => this.select(this.selected + 1));
 
     const start = this.add.rectangle(W / 2, H - 105, 300, 70, 0x2b1d0c, 0.96)
-      .setStrokeStyle(2, 0xd4a74e).setInteractive();
+      .setStrokeStyle(2, GOLD).setInteractive();
     this.add.text(W / 2, H - 105, '강호 출정', this.titleStyle(25)).setOrigin(0.5);
     start.on('pointerdown', () => {
       const character = CHARACTER_LIST[this.selected];
@@ -46,15 +58,17 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.scene.start('BattleScene', { characterId: character.id, startWave: Math.max(1, save.stageCleared + 1) });
       this.scene.launch('UIScene', { characterId: character.id });
     });
+
     this.select(0);
   }
 
   private select(index: number): void {
     this.selected = Phaser.Math.Wrap(index, 0, CHARACTER_LIST.length);
     const character = CHARACTER_LIST[this.selected];
+    const text = HERO_TEXT[character.id] ?? { name: character.nameEn, desc: character.description };
     this.hero.setTexture(`hero_${character.id}`);
-    this.nameText.setText(character.nameKo);
-    this.descText.setText(character.description);
+    this.nameText.setText(text.name);
+    this.descText.setText(text.desc);
     this.statText.setText(`체력 x${character.stats.hpMul.toFixed(1)}   공격 x${character.stats.damageMul.toFixed(1)}   속도 x${character.stats.speedMul.toFixed(1)}`);
   }
 

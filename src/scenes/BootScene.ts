@@ -56,7 +56,6 @@ export class BootScene extends Phaser.Scene {
       const accent = palette[(index + 5) % palette.length];
       const mode = index % 6;
 
-      g.clear();
       g.setBlendMode(Phaser.BlendModes.ADD);
       g.lineStyle(3 + (index % 4), color, 0.9);
       g.fillStyle(color, 0.35);
@@ -84,27 +83,10 @@ export class BootScene extends Phaser.Scene {
         g.lineStyle(2, accent, 0.65);
         g.strokeCircle(64, 64, 46);
       } else if (mode === 3) {
-        g.lineStyle(5, color, 0.9);
-        g.beginPath();
-        g.moveTo(16, 62);
-        for (let step = 1; step <= 10; step++) {
-          const t = step / 10;
-          const cx = 48;
-          const cy = 24 + (index % 3) * 8;
-          const x = (1 - t) * (1 - t) * 16 + 2 * (1 - t) * t * cx + t * t * 112;
-          const y = (1 - t) * (1 - t) * 62 + 2 * (1 - t) * t * cy + t * t * 60;
-          g.lineTo(x, y);
-        }
+        this.drawCurve(g, 16, 62, 48, 24 + (index % 3) * 8, 112, 60);
         g.strokePath();
         g.lineStyle(2, accent, 0.65);
-        g.beginPath();
-        g.moveTo(24, 78);
-        for (let step = 1; step <= 10; step++) {
-          const t = step / 10;
-          const x = (1 - t) * (1 - t) * 24 + 2 * (1 - t) * t * 58 + t * t * 112;
-          const y = (1 - t) * (1 - t) * 78 + 2 * (1 - t) * t * 48 + t * t * 80;
-          g.lineTo(x, y);
-        }
+        this.drawCurve(g, 24, 78, 58, 48, 112, 80);
         g.strokePath();
       } else if (mode === 4) {
         for (let i = 0; i < 8; i++) {
@@ -131,6 +113,17 @@ export class BootScene extends Phaser.Scene {
     });
   }
 
+  private drawCurve(g: Phaser.GameObjects.Graphics, sx: number, sy: number, cx: number, cy: number, ex: number, ey: number): void {
+    g.beginPath();
+    g.moveTo(sx, sy);
+    for (let step = 1; step <= 10; step++) {
+      const t = step / 10;
+      const x = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * cx + t * t * ex;
+      const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * cy + t * t * ey;
+      g.lineTo(x, y);
+    }
+  }
+
   private createHeroSetSkinTextures(): void {
     for (const character of CHARACTER_LIST) {
       const baseKey = `hero_${character.id}`;
@@ -141,13 +134,11 @@ export class BootScene extends Phaser.Scene {
       for (const setId of SET_IDS) {
         const key = heroSetSkinKey(character.id, setId);
         if (this.textures.exists(key)) continue;
-
         const texture = this.textures.createCanvas(key, width, height);
         if (!texture) continue;
         const ctx = texture.getContext();
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(source, 0, 0, width, height);
-
         const tint = SET_TINTS[setId] ?? 0xffffff;
         ctx.globalCompositeOperation = 'source-atop';
         ctx.globalAlpha = 0.3;

@@ -9,7 +9,7 @@ export const EQUIPMENT_SLOT_NAMES: Readonly<Record<EquipmentSlot, string>> = {
 };
 
 export const SET_NAMES: Readonly<Record<string, string>> = {
-  blood_set_1: '철혈', blood_set_2: '적월', blood_set_3: '환영', blood_set_4: '비천',
+  blood_set_1: '혈예', blood_set_2: '적월', blood_set_3: '유영', blood_set_4: '비천',
   blood_set_5: '금강', blood_set_6: '묵운', blood_set_7: '혈마', blood_set_8: '무령',
 };
 
@@ -50,16 +50,12 @@ export function createEquipment(region: number, slot?: EquipmentSlot, boss = fal
   };
 }
 
-export function equipmentScore(item: EquipmentItem): number {
-  return item.attack * 5 + item.hp + item.bonus * 10;
-}
-
 export function createSetEquipment(region: number, slot?: EquipmentSlot, grade?: EquipmentGrade): EquipmentItem {
   const chosenSlot = slot ?? EQUIPMENT_SLOTS[Math.floor(Math.random() * EQUIPMENT_SLOTS.length)];
   const finalGrade = grade ?? (Math.random() < 0.3 ? 'LEGENDARY' : 'EPIC');
   const power = Math.round((12 + region * 8) * GRADE_POWER[finalGrade]);
   const setId = `blood_set_${Math.min(8, Math.max(1, region))}`;
-  const setName = SET_NAMES[setId] ?? 'SET';
+  const setName = SET_NAMES[setId] ?? '세트';
   return {
     id: `eq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name: `${setName} ${EQUIPMENT_SLOT_NAMES[chosenSlot]}`,
@@ -70,6 +66,10 @@ export function createSetEquipment(region: number, slot?: EquipmentSlot, grade?:
     hp: chosenSlot === 'ARMOR' || chosenSlot === 'HELM' ? power * 6 : Math.round(power * 1.2),
     bonus: Math.round(power * 0.1),
   };
+}
+
+export function equipmentScore(item: EquipmentItem): number {
+  return item.attack * 5 + item.hp + item.bonus * 10;
 }
 
 export interface EquipmentSetBonus {

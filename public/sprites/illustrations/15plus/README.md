@@ -1,6 +1,9 @@
 # 15+ 고화질 일러스트 (Mugong Kiugi)
 
-기존 픽셀 아트/고화질 히어로 포트레이트 (heroes-mockup-v2.png, bosses-mockup-v2.png, hero_*.png 등)를 참고하여 제작한 **15금 에로틱/팬서비스 버전 일러스트** 컬렉션입니다.
+기존 픽셀 아트/고화질 히어로 포트레이트 (heroes-mockup-v2.png, bosses-mockup-v2.png, hero_*.png 등)를 참고하여 제작한 **일러스트** 컬렉션입니다.
+
+- 여성 캐릭터: 15금 (강한 팬서비스 / 에로틱)
+- 남성 캐릭터: 12금 / Heroic (쿨하고 멋진 영웅 스타일로 옷을 제대로 입힘)
 
 ## 스타일
 - 원본과 동일한 무협 판타지 디지털 페인팅 스타일 (wuxia/xianxia)
@@ -27,12 +30,12 @@
 - `15plus_jeomsoyi.jpg` - 기본 tavern girl
 - `15plus_jeomsoyi_blood.jpg` - Blood corrupted tavern girl
 
-### 남성 영웅 15+ 버전 (신규, 5장)
-- `15plus_sword_male.jpg` - 검객
+### 남성 영웅 버전 (12+ / Heroic 스타일)
+- `15plus_sword_male.jpg` - 검객 (쿨하고 멋진 영웅 스타일, 로브 제대로 착용)
 - `15plus_dao_male.jpg` - 도객
 - `15plus_fist_male.jpg` - 권사
 - `15plus_spear_male.jpg` - 창객
-- `15plus_male_shirtless.jpg` - 상체 완전 노출 근육 중심 추가 변형
+- `15plus_fist_male_bare.jpg` - 권사 상체 노출 버전 (수련 느낌, 여전히 12+ 수준으로 조정)
 
 ## 사용 제안
 - 캐릭터 선택 화면 대체 아트 또는 갤러리/도감 특수 일러스트로 사용 가능
@@ -41,7 +44,9 @@
 
 ## 제작 노트
 - 원본 히어로 아트 (hero_sword_female.png 등) 및 컨셉 시트(heroes-mockup-v2.png, boss-concept-sheet.png, backgrounds-mockup-v2.png)의 얼굴/헤어/의상/포즈/오라를 최대한 일치시킴
-- 15금 수위: 과도한 노출/팬서비스 (cleavage, underboob, high leg exposure, torn clothing)지만 완전 frontal nudity는 피함 (모더레이션 통과)
+- 여성: 15금 (강한 팬서비스, 높은 노출, 찢어진 로브 스타일)
+- 남성: 12금 / Heroic (원본 mockup 스타일에 가깝게 로브를 제대로 입힌 영웅적이고 멋진 버전)
+- 완전 frontal nudity / 성기 노출은 피함 (모더레이션 통과)
 - 추가 제작 필요 시: 더 많은 남성 변형, 보스 여성 버전, 스킬 풀 일러스트, 배경 포함 합성 CG, 특정 포즈(뒷모습/앉은 자세/커플) 등 요청
 
 원본 에셋 위치:

@@ -38,12 +38,18 @@ export const COMBAT_VFX_KEYS = Array.from({ length: 24 }, (_, index) =>
   `combat_vfx_${String(index + 1).padStart(2, '0')}`
 );
 
+export const COMBAT_VFX_ASSETS = COMBAT_VFX_KEYS.map(key => ({
+  key,
+  path: `${RUNTIME_ASSET_PATH}/${key}.png`,
+}));
+
 export const ALL_RUNTIME_ASSETS = [
   ...HERO_ASSETS,
   ...ENEMY_ASSETS,
   ...BOSS_ASSETS,
   ...BACKGROUND_ASSETS,
   ...SKILL_CARD_ASSETS,
+  ...COMBAT_VFX_ASSETS,
 ];
 
 export function skillCardKey(skillId: string): string {

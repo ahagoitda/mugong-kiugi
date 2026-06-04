@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ALL_RUNTIME_ASSETS, COMBAT_VFX_KEYS, heroSetSkinKey } from '../data/assets';
+import { ALL_RUNTIME_ASSETS, heroSetSkinKey } from '../data/assets';
 import { CHARACTER_LIST } from '../data/characters';
 import { SET_IDS, SET_TINTS } from '../data/equipment';
 
@@ -39,95 +39,18 @@ export class BootScene extends Phaser.Scene {
       graphics.generateTexture(key, 96, 96);
     }
     graphics.destroy();
-    this.createCombatVfxTextures();
     this.createHeroSetSkinTextures();
     this.scene.start('CharacterSelectScene');
   }
 
-  private createCombatVfxTextures(): void {
-    const palette = [
-      0x66ccff, 0xffcc33, 0xff6633, 0x99ffbb, 0xff5599, 0xab47bc,
-      0x4fc3f7, 0xffd740, 0x66ffee, 0xff3366, 0x88ddff, 0xd6a84b,
-    ];
 
-    COMBAT_VFX_KEYS.forEach((key, index) => {
-      const g = this.make.graphics({ x: 0, y: 0 });
-      const color = palette[index % palette.length];
-      const accent = palette[(index + 5) % palette.length];
-      const mode = index % 6;
-
-      g.setBlendMode(Phaser.BlendModes.ADD);
-      g.lineStyle(3 + (index % 4), color, 0.9);
-      g.fillStyle(color, 0.35);
-
-      if (mode === 0) {
-        g.beginPath();
-        g.arc(64, 64, 42, -0.95, 0.85);
-        g.strokePath();
-        g.lineStyle(2, accent, 0.7);
-        g.beginPath();
-        g.arc(62, 59, 26, -0.75, 0.65);
-        g.strokePath();
-      } else if (mode === 1) {
-        for (let i = 0; i < 3; i++) {
-          g.lineStyle(3, i === 1 ? accent : color, 0.85 - i * 0.12);
-          g.beginPath();
-          g.moveTo(22 + i * 7, 36 + i * 15);
-          g.lineTo(104 - i * 4, 70 - i * 7);
-          g.strokePath();
-        }
-      } else if (mode === 2) {
-        g.fillCircle(64, 64, 14);
-        g.lineStyle(3, color, 0.8);
-        g.strokeCircle(64, 64, 30);
-        g.lineStyle(2, accent, 0.65);
-        g.strokeCircle(64, 64, 46);
-      } else if (mode === 3) {
-        this.drawCurve(g, 16, 62, 48, 24 + (index % 3) * 8, 112, 60);
-        g.strokePath();
-        g.lineStyle(2, accent, 0.65);
-        this.drawCurve(g, 24, 78, 58, 48, 112, 80);
-        g.strokePath();
-      } else if (mode === 4) {
-        for (let i = 0; i < 8; i++) {
-          const angle = (Math.PI * 2 * i) / 8 + index * 0.08;
-          g.lineStyle(i % 2 ? 2 : 4, i % 2 ? accent : color, 0.8);
-          g.beginPath();
-          g.moveTo(64, 64);
-          g.lineTo(64 + Math.cos(angle) * 48, 64 + Math.sin(angle) * 48);
-          g.strokePath();
-        }
-      } else {
-        g.lineStyle(4, color, 0.9);
-        g.beginPath();
-        g.moveTo(20, 74);
-        g.lineTo(72, 26);
-        g.lineTo(110, 62);
-        g.strokePath();
-        g.fillStyle(accent, 0.38);
-        g.fillCircle(82, 52, 12);
-      }
-
-      g.generateTexture(key, 128, 128);
-      g.destroy();
-    });
-  }
-
-  private drawCurve(g: Phaser.GameObjects.Graphics, sx: number, sy: number, cx: number, cy: number, ex: number, ey: number): void {
-    g.beginPath();
-    g.moveTo(sx, sy);
-    for (let step = 1; step <= 10; step++) {
-      const t = step / 10;
-      const x = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * cx + t * t * ex;
-      const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * cy + t * t * ey;
-      g.lineTo(x, y);
-    }
-  }
 
   private createHeroSetSkinTextures(): void {
     for (const character of CHARACTER_LIST) {
       const baseKey = `hero_${character.id}`;
-      const source = this.textures.get(baseKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+      const texObj = this.textures.get(baseKey);
+      if (!texObj) continue;
+      const source = texObj.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
       const width = source.width;
       const height = source.height;
 
@@ -138,18 +61,64 @@ export class BootScene extends Phaser.Scene {
         if (!texture) continue;
         const ctx = texture.getContext();
         ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(source, 0, 0, width, height);
+
         const tint = SET_TINTS[setId] ?? 0xffffff;
-        ctx.globalCompositeOperation = 'source-atop';
-        ctx.globalAlpha = 0.3;
-        ctx.fillStyle = `#${tint.toString(16).padStart(6, '0')}`;
-        ctx.fillRect(0, 0, width, height);
-        ctx.globalCompositeOperation = 'screen';
-        ctx.globalAlpha = 0.16;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(width * 0.18, 0, width * 0.16, height);
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = 'source-over';
+        const tr = (tint >> 16) & 0xff;
+        const tg = (tint >> 8) & 0xff;
+        const tb = tint & 0xff;
+
+        // Create temporary canvas to selectively process pixels
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const tempCtx = tempCanvas.getContext('2d');
+        if (tempCtx) {
+          tempCtx.drawImage(source, 0, 0, width, height);
+          const imgData = tempCtx.getImageData(0, 0, width, height);
+          const pixels = imgData.data;
+
+          for (let i = 0; i < pixels.length; i += 4) {
+            const r = pixels[i];
+            const g = pixels[i+1];
+            const b = pixels[i+2];
+            const a = pixels[i+3];
+
+            if (a > 10) {
+              // Skin color check (standard peach/beige ranges)
+              const isSkin = (r > 135 && g > 85 && b > 55 && r > g && g > b) || (r > 190 && g > 140 && b > 110);
+              // Hair / outline check (dark pixels)
+              const isDark = r < 75 && g < 75 && b < 75;
+
+              if (!isSkin && !isDark) {
+                const blend = 0.48; // Apply 48% color tint to clothing
+                pixels[i] = Math.round(r * (1 - blend) + tr * blend);
+                pixels[i+1] = Math.round(g * (1 - blend) + tg * blend);
+                pixels[i+2] = Math.round(b * (1 - blend) + tb * blend);
+              }
+            }
+          }
+          tempCtx.putImageData(imgData, 0, 0);
+
+          // Draw a soft glowing outline behind the hero using shadow properties
+          ctx.save();
+          ctx.shadowColor = `#${tint.toString(16).padStart(6, '0')}`;
+          ctx.shadowBlur = 24;
+          ctx.globalAlpha = 0.65;
+          ctx.drawImage(tempCanvas, 0, 0, width, height);
+          ctx.restore();
+
+          // Draw the tinted character itself
+          ctx.drawImage(tempCanvas, 0, 0, width, height);
+
+          // Add a premium diagonal sheen reflection across the character
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+          ctx.globalAlpha = 0.12;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(width * 0.22, 0, width * 0.12, height);
+          ctx.restore();
+        }
+
         texture.refresh();
       }
     }

@@ -25,6 +25,7 @@
   "devDependencies": {
     "@capacitor/cli": "^8.3.3",
     "@types/node": "^25.6.2",
+    "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "vite": "^8.0.11"
   }

@@ -15,7 +15,7 @@ import {
 } from '../data/characters';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
-import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus } from '../data/equipment';
+import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
 
 /**
@@ -147,6 +147,10 @@ export class BattleScene extends Phaser.Scene {
   private bossWarningText: Phaser.GameObjects.Text | null = null;
   private bossRankText: Phaser.GameObjects.Text | null = null;
 
+  // 플레이어 아우라
+  private playerAuraFeet: Phaser.GameObjects.Ellipse | null = null;
+  private playerAuraBack: Phaser.GameObjects.Graphics | null = null;
+
   // 횡스크롤 상태
   private scrollX = 0;
   private worldOffsetX = 0;
@@ -197,7 +201,17 @@ export class BattleScene extends Phaser.Scene {
 
     // 플레이어 생성 (선택한 캐릭터 ID 전달)
     this.player = new Player(this, 125, GROUND_Y, this.characterId);
+    this.player.setDepth(10);
     this.player.setOnHitCallback(this.onPlayerHit.bind(this));
+
+    // 플레이어 아우라 생성
+    this.playerAuraFeet = this.add.ellipse(125, GROUND_Y + 100, 80, 24, 0xffffff, 0.35)
+      .setVisible(false)
+      .setDepth(8);
+    
+    this.playerAuraBack = this.add.graphics()
+      .setVisible(false)
+      .setDepth(9);
 
     // 선택 캐릭터별 공격 이펙트 색 결정
     this.slashColor = CHAR_SLASH_COLORS[this.characterId] ?? 0xffffff;
@@ -274,6 +288,7 @@ export class BattleScene extends Phaser.Scene {
     this.updateBossHpBar();
     this.updateBossSkill(delta);
     this.updateStatusEffects(delta);
+    this.updatePlayerAuraPosition(delta);
     this.emitState();
   }
 
@@ -1616,7 +1631,72 @@ export class BattleScene extends Phaser.Scene {
 
   private applyEquipmentSkin(save = loadGame()): void {
     const currentItems = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
-    this.player.setEquipmentSetSkin(dominantSetId(currentItems, 4));
+    const setId = dominantSetId(currentItems, 4);
+    this.player.setEquipmentSetSkin(setId);
+    this.updatePlayerAura(setId);
+  }
+
+  private updatePlayerAura(setId: string | null): void {
+    if (!setId || !SET_TINTS[setId]) {
+      if (this.playerAuraFeet) this.playerAuraFeet.setVisible(false);
+      if (this.playerAuraBack) {
+        this.playerAuraBack.clear();
+        this.playerAuraBack.setVisible(false);
+      }
+      return;
+    }
+
+    const color = SET_TINTS[setId];
+    
+    if (this.playerAuraFeet) {
+      this.playerAuraFeet.setFillStyle(color, 0.45);
+      this.playerAuraFeet.setVisible(true);
+      
+      this.tweens.killTweensOf(this.playerAuraFeet);
+      this.playerAuraFeet.setScale(1);
+      this.tweens.add({
+        targets: this.playerAuraFeet,
+        scaleX: 1.25,
+        scaleY: 1.25,
+        alpha: 0.18,
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    }
+
+    if (this.playerAuraBack) {
+      this.playerAuraBack.clear();
+      this.playerAuraBack.setVisible(true);
+      
+      // Draw a glowing ring/halo behind the player's back
+      this.playerAuraBack.lineStyle(4, color, 0.85);
+      this.playerAuraBack.strokeCircle(0, 0, 36);
+      
+      // Add glowing spikes (radiating martial energy)
+      this.playerAuraBack.lineStyle(2, color, 0.45);
+      for (let i = 0; i < 8; i++) {
+        const angle = (i * Math.PI) / 4;
+        this.playerAuraBack.lineBetween(
+          Math.cos(angle) * 40, Math.sin(angle) * 40,
+          Math.cos(angle) * 54, Math.sin(angle) * 54
+        );
+      }
+    }
+  }
+
+  private updatePlayerAuraPosition(delta: number): void {
+    if (!this.player || !this.player.active) return;
+    
+    if (this.playerAuraFeet && this.playerAuraFeet.visible) {
+      this.playerAuraFeet.setPosition(this.player.x, this.player.y + 100);
+    }
+    
+    if (this.playerAuraBack && this.playerAuraBack.visible) {
+      this.playerAuraBack.setPosition(this.player.x, this.player.y - 12);
+      this.playerAuraBack.rotation += 0.0012 * delta; // Rotates based on frame time
+    }
   }
 
   private ensureDailyMission(save: ReturnType<typeof loadGame>): void {

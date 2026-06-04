@@ -311,6 +311,7 @@ export class UIScene extends Phaser.Scene {
 
     const save = loadGame();
     const owned = this.ownedSkills(save);
+    const equipped = new Set(save.equippedSkills ?? []);
     const fallback = [...SKILL_DATABASE.values()].filter(skill => skill.type === 'ACTIVE' && skill.category === this.charClass);
     const seen = new Set<string>();
     const skills = [...owned, ...fallback]
@@ -326,6 +327,16 @@ export class UIScene extends Phaser.Scene {
       const row = Math.floor(index / 5);
       const cx = 54 + col * 108;
       const cy = 780 + row * 78;
+      const gradeTint = this.skillGradeColor(skill.grade);
+      const isEquipped = equipped.has(skill.id);
+
+      this.add.rectangle(cx, cy, 86, 76, 0x090706, 0.96)
+        .setStrokeStyle(isEquipped ? 2 : 1, isEquipped ? 0xffdf84 : gradeTint, isEquipped ? 1 : 0.72)
+        .setDepth(200);
+      this.add.ellipse(cx, cy - 6, 74, 48, gradeTint, isEquipped ? 0.26 : 0.14)
+        .setDepth(200)
+        .setBlendMode(Phaser.BlendModes.ADD);
+
       const art = this.add.image(cx, cy, skillCardKey(skill.id))
         .setDisplaySize(82, 74)
         .setDepth(201)
@@ -335,6 +346,10 @@ export class UIScene extends Phaser.Scene {
       const grade = skill.grade.toLowerCase();
       const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
       this.add.image(cx, cy, frameKey).setDisplaySize(82, 74).setDepth(202);
+      if (isEquipped) {
+        this.add.rectangle(cx, cy - 33, 58, 12, 0x2a1707, 0.86).setDepth(203).setStrokeStyle(1, 0xffdf84, 0.8);
+        this.add.text(cx, cy - 34, UI.equipped, this.textStyle(8, '#ffe3a0')).setOrigin(0.5).setDepth(204);
+      }
       this.add.rectangle(cx, cy + 21, 76, 24, 0x050403, 0.72).setDepth(203);
       this.add.text(cx, cy + 12, this.skillLabel(skill), {
         ...this.textStyle(9, '#f3e7ca'),
@@ -342,9 +357,21 @@ export class UIScene extends Phaser.Scene {
         wordWrap: { width: 72 },
       }).setOrigin(0.5, 0).setDepth(204);
       const gradeMark = { LOW: '\uD558', MID: '\uC911', HIGH: '\uC0C1', ULTIMATE: '\uC808' }[skill.grade] ?? '';
+      this.add.rectangle(cx - 29, cy - 25, 17, 17, 0x17120d, 0.92)
+        .setRotation(Math.PI / 4)
+        .setDepth(203)
+        .setStrokeStyle(1, gradeTint, 1);
       this.add.text(cx - 29, cy - 25, gradeMark, this.textStyle(12, '#f6d47a')).setOrigin(0.5).setDepth(204);
       const level = save.skillLevels?.[skill.id] ?? 0;
       this.add.text(cx + 26, cy + 27, `+${level}`, this.textStyle(10, '#d4a74e')).setOrigin(0.5).setDepth(204);
+
+      const stars = Math.min(5, Math.max(1, level + (skill.grade === 'ULTIMATE' ? 4 : skill.grade === 'HIGH' ? 3 : skill.grade === 'MID' ? 2 : 1)));
+      for (let i = 0; i < 5; i++) {
+        this.add.rectangle(cx - 25 + i * 11, cy + 30, 5, 5, i < stars ? 0xd7a63a : 0x2b2419, 1)
+          .setRotation(Math.PI / 4)
+          .setDepth(204)
+          .setStrokeStyle(1, i < stars ? 0xffe19a : 0x6a5130, 0.8);
+      }
     });
   }
 
@@ -803,6 +830,10 @@ export class UIScene extends Phaser.Scene {
 
   private gradeColor(item: EquipmentItem): number {
     return { COMMON: 0x777777, RARE: 0x3c8ed0, EPIC: 0x9a57d1, LEGENDARY: 0xd5a633 }[item.grade];
+  }
+
+  private skillGradeColor(grade: SkillData['grade']): number {
+    return { LOW: 0x9c3b28, MID: 0x5a9d2f, HIGH: 0x2f8fc6, ULTIMATE: 0xd08a2f }[grade];
   }
 
   private showNotice(message: string): void {

@@ -164,6 +164,8 @@ export class BattleScene extends Phaser.Scene {
   private bgLayerBg: Phaser.GameObjects.TileSprite | null = null;
   private bgLayerMg: Phaser.GameObjects.TileSprite | null = null;
   private bgLayerFg: Phaser.GameObjects.TileSprite | null = null;
+  private groundShadowLayer: Phaser.GameObjects.TileSprite | null = null;
+  private foregroundMistLayer: Phaser.GameObjects.TileSprite | null = null;
   private currentBgTheme: BackgroundTheme | null = null;
 
   // 상태이상 추적
@@ -1387,12 +1389,46 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(3);
     this.bgLayerFg.tileScaleX = GAME_W / 1024;
     this.bgLayerFg.tileScaleY = BATTLE_H / 1024;
+
+    this.groundShadowLayer = this.add.tileSprite(0, GROUND_Y + 34, GAME_W, 106, `${id}_fg`)
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(6)
+      .setTint(0x080604)
+      .setAlpha(0.42);
+    this.groundShadowLayer.tileScaleX = GAME_W / 1024;
+    this.groundShadowLayer.tileScaleY = 0.22;
+
+    this.foregroundMistLayer = this.add.tileSprite(0, GROUND_Y + 2, GAME_W, 72, `${id}_mg`)
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(7)
+      .setTint(0x6d7680)
+      .setAlpha(0.16)
+      .setBlendMode(Phaser.BlendModes.SCREEN);
+    this.foregroundMistLayer.tileScaleX = GAME_W / 1024;
+    this.foregroundMistLayer.tileScaleY = 0.18;
+
+    this.add.rectangle(GAME_W / 2, 20, GAME_W, 120, 0x000000, 0.28)
+      .setDepth(120)
+      .setScrollFactor(0);
+    this.add.rectangle(GAME_W / 2, BATTLE_H - 38, GAME_W, 120, 0x000000, 0.46)
+      .setDepth(120)
+      .setScrollFactor(0);
+    this.add.rectangle(10, BATTLE_H / 2, 28, BATTLE_H, 0x000000, 0.28)
+      .setDepth(120)
+      .setScrollFactor(0);
+    this.add.rectangle(GAME_W - 10, BATTLE_H / 2, 28, BATTLE_H, 0x000000, 0.28)
+      .setDepth(120)
+      .setScrollFactor(0);
   }
 
   private updateBackground(): void {
     if (this.bgLayerBg) this.bgLayerBg.tilePositionX = this.scrollX * 0.1;
     if (this.bgLayerMg) this.bgLayerMg.tilePositionX = this.scrollX * 0.45;
     if (this.bgLayerFg) this.bgLayerFg.tilePositionX = this.scrollX * 1.0;
+    if (this.groundShadowLayer) this.groundShadowLayer.tilePositionX = this.scrollX * 1.08;
+    if (this.foregroundMistLayer) this.foregroundMistLayer.tilePositionX = this.scrollX * 0.62;
   }
 
   // ─── 이펙트 ───

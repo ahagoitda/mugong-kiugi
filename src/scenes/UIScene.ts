@@ -319,20 +319,32 @@ export class UIScene extends Phaser.Scene {
         seen.add(skill.id);
         return true;
       })
-      .slice(0, 8);
+      .slice(0, 10);
+
     skills.forEach((skill, index) => {
-      const x = 33 + (index % 4) * 123;
-      const y = 764 + Math.floor(index / 4) * 70;
-      const art = this.add.image(x + 48, y + 25, skillCardKey(skill.id))
-        .setDisplaySize(58, 82)
+      const col = index % 5;
+      const row = Math.floor(index / 5);
+      const cx = 54 + col * 108;
+      const cy = 783 + row * 62;
+      const art = this.add.image(cx, cy, skillCardKey(skill.id))
+        .setDisplaySize(82, 112)
         .setDepth(201)
         .setInteractive();
       art.on('pointerdown', () => this.equipSkill(skill.id, index % 3));
+
       const grade = skill.grade.toLowerCase();
       const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
-      this.add.image(x + 48, y + 25, frameKey).setDisplaySize(58, 82).setDepth(202);
-      this.add.text(x + 83, y + 8, this.skillLabel(skill), { ...this.textStyle(11, '#f3e7ca'), wordWrap: { width: 58 } }).setDepth(203);
-      this.add.text(x + 83, y + 42, `+${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(11, '#d4a74e')).setDepth(203);
+      this.add.image(cx, cy, frameKey).setDisplaySize(82, 112).setDepth(202);
+      this.add.rectangle(cx, cy + 38, 76, 22, 0x050403, 0.68).setDepth(203);
+      this.add.text(cx, cy + 30, this.skillLabel(skill), {
+        ...this.textStyle(9, '#f3e7ca'),
+        align: 'center',
+        wordWrap: { width: 72 },
+      }).setOrigin(0.5, 0).setDepth(204);
+      const gradeMark = { LOW: '하', MID: '중', HIGH: '상', ULTIMATE: '절' }[skill.grade] ?? '';
+      this.add.text(cx - 29, cy - 44, gradeMark, this.textStyle(12, '#f6d47a')).setOrigin(0.5).setDepth(204);
+      const level = save.skillLevels?.[skill.id] ?? 0;
+      this.add.text(cx + 26, cy + 44, `+${level}`, this.textStyle(10, '#d4a74e')).setOrigin(0.5).setDepth(204);
     });
   }
 

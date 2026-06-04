@@ -118,6 +118,9 @@ export const BACKGROUND_THEMES: readonly BackgroundTheme[] = [
   { id: 'snow', nameKo: '설산', mountainsKey: 'region_03', groundKey: 'region_03', unlockWave: 20 },
   { id: 'desert', nameKo: '사막', mountainsKey: 'region_04', groundKey: 'region_04', unlockWave: 30 },
   { id: 'volcano', nameKo: '화산', mountainsKey: 'region_05', groundKey: 'region_05', unlockWave: 40 },
+  { id: 'coast',        nameKo: '해안',  mountainsKey: 'region_06', groundKey: 'region_06', unlockWave: 50 },
+  { id: 'blood_valley', nameKo: '혈곡',  mountainsKey: 'region_07', groundKey: 'region_07', unlockWave: 60 },
+  { id: 'demon_palace', nameKo: '마천궁', mountainsKey: 'region_08', groundKey: 'region_08', unlockWave: 70 },
 ] as const;
 
 export function getBackgroundForWave(wave: number): BackgroundTheme {

@@ -413,10 +413,13 @@ function createGeneratedSkill(cls: CharacterClass, grade: SkillGrade, index: num
   const gradeBonus = grade === 'LOW' ? 0 : grade === 'MID' ? 0.35 : grade === 'HIGH' ? 0.9 : 1.9;
   const spread = 1 + (index % 5) * 0.06;
 
+  const nameKo = SKILL_NAME_MAP[id] ?? `${meta.ko} ${index}`;
+  const description = SKILL_DESC_MAP[id] ?? `${meta.ko} 계열 자동 생성 무공. 강화할수록 피해량이 상승한다.`;
+
   return {
     id,
     name: `${meta.prefix}-${grade.toLowerCase()}-${index}`,
-    nameKo: `${meta.ko} ${index}`,
+    nameKo,
     grade,
     type: 'ACTIVE',
     category: meta.category,
@@ -442,7 +445,7 @@ function createGeneratedSkill(cls: CharacterClass, grade: SkillGrade, index: num
     upgradeGoldBase: cfg.gold,
     upgradeShardBase: cfg.shard,
     maxLevel: cfg.maxLevel,
-    description: `${meta.ko} 계열 자동 생성 무공. 강화할수록 피해량이 상승한다.`,
+    description,
   };
 }
 
@@ -590,3 +593,203 @@ export const GRADE_COLORS: Readonly<Record<string, number>> = {
 export function getExpToNextLevel(level: number): number {
   return Math.round(50 + (level - 1) * 30 + Math.pow(level, 1.5) * 10);
 }
+
+export const SKILL_NAME_MAP: Readonly<Record<string, string>> = {
+  "sword_low_01": "비연검", "sword_low_02": "낙엽검", "sword_low_03": "풍림검",
+  "sword_low_04": "청죽검", "sword_low_05": "명월검", "sword_low_06": "백운검",
+  "sword_low_07": "한천검", "sword_low_08": "적령검", "sword_low_09": "은파검",
+  "sword_low_10": "모운검", "sword_low_11": "진풍검", "sword_low_12": "석양검",
+  "sword_low_13": "비우검", "sword_low_14": "설산검", "sword_low_15": "화령검",
+  "sword_low_16": "해랑검", "sword_low_17": "야천검", "sword_low_18": "혼원검",
+
+  "sword_mid_01": "청류검법", "sword_mid_02": "적하검법", "sword_mid_03": "낙진검",
+  "sword_mid_04": "풍뢰검법", "sword_mid_05": "빙섬검법", "sword_mid_06": "화염검",
+  "sword_mid_07": "운무검법", "sword_mid_08": "만화검법", "sword_mid_09": "소울검",
+  "sword_mid_10": "은하검", "sword_mid_11": "현령검법", "sword_mid_12": "용문검",
+  "sword_mid_13": "뇌전검", "sword_mid_14": "암야검", "sword_mid_15": "백랑검법",
+  "sword_mid_16": "단예검",
+
+  "sword_high_01": "만화검경", "sword_high_02": "무형검결", "sword_high_03": "천상검도",
+  "sword_high_04": "귀일검법", "sword_high_05": "빙하검경", "sword_high_06": "화천검결",
+  "sword_high_07": "암야검도", "sword_high_08": "용천검법",
+
+  "sword_ultimate_01": "천상비검결", "sword_ultimate_02": "귀일무형검",
+
+  "blade_low_01": "풍래도", "blade_low_02": "열파도", "blade_low_03": "선풍도",
+  "blade_low_04": "혈염도", "blade_low_05": "철벽도", "blade_low_06": "암흑도",
+  "blade_low_07": "뇌화도", "blade_low_08": "참마도", "blade_low_09": "백호도",
+  "blade_low_10": "묵룡도", "blade_low_11": "단암도", "blade_low_12": "사풍도",
+  "blade_low_13": "적진도", "blade_low_14": "잔영도", "blade_low_15": "풍압도",
+  "blade_low_16": "옥쇄도", "blade_low_17": "마풍도", "blade_low_18": "혈인도",
+
+  "blade_mid_01": "혈란도법", "blade_mid_02": "철벽도법", "blade_mid_03": "풍마도",
+  "blade_mid_04": "만파도법", "blade_mid_05": "밀풍도법", "blade_mid_06": "백조도",
+  "blade_mid_07": "암살도법", "blade_mid_08": "진압도법", "blade_mid_09": "분열도",
+  "blade_mid_10": "혈인도법", "blade_mid_11": "마탄도", "blade_mid_12": "음마도",
+  "blade_mid_13": "광란도법", "blade_mid_14": "풍화도", "blade_mid_15": "만력도",
+  "blade_mid_16": "은봉도",
+
+  "blade_high_01": "파천도결", "blade_high_02": "멸마도법", "blade_high_03": "암야도경",
+  "blade_high_04": "혈천도결", "blade_high_05": "만마도법", "blade_high_06": "천파도경",
+  "blade_high_07": "용도도결", "blade_high_08": "진천도법",
+
+  "blade_ultimate_01": "천마멸세도", "blade_ultimate_02": "일도만검파",
+
+  "fist_low_01": "풍뢰권", "fist_low_02": "철산장", "fist_low_03": "백호권",
+  "fist_low_04": "운룡퇴", "fist_low_05": "암격장", "fist_low_06": "금강권",
+  "fist_low_07": "파옥권", "fist_low_08": "벽류퇴", "fist_low_09": "맹호권",
+  "fist_low_10": "비각장", "fist_low_11": "섬광퇴", "fist_low_12": "투운권",
+  "fist_low_13": "천둥장", "fist_low_14": "낙성퇴", "fist_low_15": "연화권",
+  "fist_low_16": "호풍장", "fist_low_17": "명왕권", "fist_low_18": "적열장",
+
+  "fist_mid_01": "벽력장", "fist_mid_02": "운룡퇴법", "fist_mid_03": "만화장",
+  "fist_mid_04": "소산권", "fist_mid_05": "천둥장법", "fist_mid_06": "혈인장",
+  "fist_mid_07": "연환퇴법", "fist_mid_08": "밀풍권법", "fist_mid_09": "암격장법",
+  "fist_mid_10": "백랑권", "fist_mid_11": "진산장", "fist_mid_12": "금강권법",
+  "fist_mid_13": "풍마퇴", "fist_mid_14": "일격장", "fist_mid_15": "암야권",
+  "fist_mid_16": "파옥장법",
+
+  "fist_high_01": "패왕권결", "fist_high_02": "천둥장경", "fist_high_03": "만불장도",
+  "fist_high_04": "항룡장도", "fist_high_05": "백보권결", "fist_high_06": "화천장경",
+  "fist_high_07": "암야권도", "fist_high_08": "혈천장경",
+
+  "fist_ultimate_01": "만불귀일장", "fist_ultimate_02": "패천무상권",
+
+  "spear_low_01": "풍룡창", "spear_low_02": "파천창", "spear_low_03": "백호창",
+  "spear_low_04": "연환창", "spear_low_05": "섬광창", "spear_low_06": "투천창",
+  "spear_low_07": "적진창", "spear_low_08": "모운창", "spear_low_09": "철벽창",
+  "spear_low_10": "비연창", "spear_low_11": "혈인창", "spear_low_12": "명왕창",
+  "spear_low_13": "비각창", "spear_low_14": "파옥창", "spear_low_15": "서광창",
+  "spear_low_16": "화령창", "spear_low_17": "천둥창", "spear_low_18": "암격창",
+
+  "spear_mid_01": "풍룡창법", "spear_mid_02": "백호창법", "spear_mid_03": "연환창법",
+  "spear_mid_04": "만화창", "spear_mid_05": "소산창법", "spear_mid_06": "천둥창",
+  "spear_mid_07": "진산창법", "spear_mid_08": "비천창", "spear_mid_09": "암야창",
+  "spear_mid_10": "파옥창법", "spear_mid_11": "화염창", "spear_mid_12": "운무창법",
+  "spear_mid_13": "만력창", "spear_mid_14": "은파창", "spear_mid_15": "백랑창법",
+  "spear_mid_16": "혈인창법",
+
+  "spear_high_01": "용호창결", "spear_high_02": "파천창경", "spear_high_03": "만화창도",
+  "spear_high_04": "천상창법", "spear_high_05": "혈천창결", "spear_high_06": "멸마창경",
+  "spear_high_07": "암야창도", "spear_high_08": "진천창법",
+
+  "spear_ultimate_01": "천하무적창법", "spear_ultimate_02": "만용귀일창"
+};
+
+export const SKILL_DESC_MAP: Readonly<Record<string, string>> = {
+  "sword_low_01": "제비처럼 날아드는 가벼운 검",
+  "sword_low_02": "낙엽처럼 흩날리는 검초",
+  "sword_low_03": "바람 속 숲처럼 변화무쌍한 검",
+  "sword_low_04": "푸른 대나무처럼 탄력 있는 검",
+  "sword_low_05": "밝은 달빛 아래 펼치는 검",
+  "sword_low_06": "흰 구름처럼 유려한 검",
+  "sword_low_07": "차가운 하늘의 서늘한 검",
+  "sword_low_08": "붉은 영기로 베어내는 검",
+  
+  "sword_mid_01": "맑은 물결처럼 흐르는 검법",
+  "sword_mid_02": "붉은 비처럼 쏟아지는 검법",
+  "sword_mid_03": "낙화진신처럼 떨어지는 검",
+  "sword_mid_04": "바람과 번개가 교차하는 검법",
+  "sword_mid_05": "빙산처럼 차갑게 베는 검법",
+  "sword_mid_06": "화염을 품은 일격 검",
+  "sword_mid_07": "운무처럼 아스라한 검법",
+  "sword_mid_08": "만개한 꽃처럼 화려한 검법",
+  
+  "blade_low_01": "바람처럼 몰아치는 기본 도",
+  "blade_low_02": "열파를 내려치는 묵직한 도",
+  "blade_low_03": "선풍처럼 휘두르는 도",
+  "blade_low_04": "혈염을 품은 붉은 도",
+  "blade_low_05": "철벽을 쪼개는 도",
+  "blade_low_06": "암흑 속에서 번뜩이는 도",
+  "blade_low_07": "벼락을 내려치는 도",
+  "blade_low_08": "마를 베어내는 도",
+  
+  "blade_mid_01": "피비린내 나는 혼란의 도법",
+  "blade_mid_02": "철벽을 부수는 도법",
+  "blade_mid_03": "바람과 마가 얽힌 도",
+  "blade_mid_04": "만파를 쓸어버리는 도법",
+  "blade_mid_05": "밀풍도법",
+  "blade_mid_06": "백조의 깃털처럼 가볍고 날카로운 도",
+  "blade_mid_07": "암살에 특화된 은밀한 도법",
+  "blade_mid_08": "진압하는 힘의 도법",
+
+  "fist_low_01": "바람과 천둥을 담은 기본 권",
+  "fist_low_02": "철산처럼 묵직한 장",
+  "fist_low_03": "백호의 기운을 담은 권",
+  "fist_low_04": "운룡이 승천하듯 차는 퇴",
+  "fist_low_05": "암격으로 찌르는 장",
+  "fist_low_06": "금강처럼 단단한 권",
+  "fist_low_07": "파옥석처럼 부수는 권",
+  "fist_low_08": "벽력처럼 내려찍는 퇴",
+  
+  "fist_mid_01": "벼락처럼 내려치는 장",
+  "fist_mid_02": "운룡이 승천하는 퇴법",
+  "fist_mid_03": "만화처럼 화려한 장",
+  "fist_mid_04": "소산의 기운을 담은 권",
+  "fist_mid_05": "천둥을 내려치는 장법",
+  "fist_mid_06": "혈인을 찍는 장",
+  "fist_mid_07": "연환으로 차는 퇴법",
+  "fist_mid_08": "밀려오는 바람의 권법",
+
+  "spear_low_01": "바람과 용의 기운을 담은 창",
+  "spear_low_02": "하늘을 가르는 창",
+  "spear_low_03": "백호의 기운을 담은 창",
+  "spear_low_04": "연환으로 꿰뚫는 창",
+  "spear_low_05": "번개처럼 번뜩이는 창",
+  "spear_low_06": "하늘을 뚫는 창",
+  "spear_low_07": "적진을 돌파하는 창",
+  "spear_low_08": "구름 속에서 찌르는 창",
+  
+  "spear_mid_01": "바람과 용의 창법",
+  "spear_mid_02": "백호의 기운을 담은 창법",
+  "spear_mid_03": "연환으로 꿰뚫는 창법",
+  "spear_mid_04": "만화처럼 화려한 창",
+  "spear_mid_05": "소산의 기운을 담은 창법",
+  "spear_mid_06": "천둥을 창에 담아",
+  "spear_mid_07": "산을 진압하는 창법",
+  "spear_mid_08": "하늘을 나는 창",
+
+  "sword_high_01": "만화무쌍의 검 경지",
+  "sword_high_02": "형태 없이 베어내는 검결",
+  "sword_high_03": "하늘의 이치를 담은 검도",
+  "sword_high_04": "만법이 하나로 귀일하는 검",
+  "sword_high_05": "빙하처럼 얼어붙은 검 경지",
+  "sword_high_06": "불꽃 하늘을 가르는 검결",
+  "sword_high_07": "어둠 속에서 빛나는 검도",
+  "sword_high_08": "용이 하늘로 오르는 검법",
+  "sword_ultimate_01": "하늘을 비상하는 궁극의 검결",
+  "sword_ultimate_02": "만법귀일 무형의 궁극 검",
+
+  "blade_high_01": "하늘을 가르는 도의 결",
+  "blade_high_02": "마를 멸하는 도법",
+  "blade_high_03": "어둠 속 번뜩이는 도경",
+  "blade_high_04": "피 하늘을 베는 도결",
+  "blade_high_05": "만 마를 쓸어버리는 도법",
+  "blade_high_06": "하늘을 파괴하는 도경",
+  "blade_high_07": "용의 도 결",
+  "blade_high_08": "하늘을 뒤흔드는 도법",
+  "blade_ultimate_01": "천마가 세상을 멸하는 궁극의 도",
+  "blade_ultimate_02": "한 도로 만 검을 파하는 궁극의 도",
+
+  "fist_high_01": "패왕의 권 결",
+  "fist_high_02": "천둥의 장 경지",
+  "fist_high_03": "만 불의 장 도",
+  "fist_high_04": "항룡의 장 도",
+  "fist_high_05": "백 보 권의 결",
+  "fist_high_06": "불꽃 하늘의 장 경지",
+  "fist_high_07": "어둠 속 권의 도",
+  "fist_high_08": "혈천의 장 경지",
+  "fist_ultimate_01": "만 불이 하나로 귀일하는 궁극 장법",
+  "fist_ultimate_02": "하늘을 패하는 무상의 궁극 권법",
+
+  "spear_high_01": "용과 호의 창 결",
+  "spear_high_02": "하늘을 파천하는 창 경지",
+  "spear_high_03": "만화의 창 도",
+  "spear_high_04": "하늘의 창법",
+  "spear_high_05": "혈천의 창 결",
+  "spear_high_06": "마를 멸하는 창 경지",
+  "spear_high_07": "어둠 속 창의 도",
+  "spear_high_08": "하늘을 뒤흔드는 창법",
+  "spear_ultimate_01": "천하에 적이 없는 궁극 창법",
+  "spear_ultimate_02": "만 용이 귀일하는 궁극 창"
+};

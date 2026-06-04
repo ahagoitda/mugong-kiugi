@@ -88,8 +88,11 @@ export class UIScene extends Phaser.Scene {
   private goldText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private modeText!: Phaser.GameObjects.Text;
+  private dashCooldown!: Phaser.GameObjects.Arc;
   private skillLabels: Phaser.GameObjects.Text[] = [];
   private cooldowns: Phaser.GameObjects.Arc[] = [];
+  private progressNodes: Phaser.GameObjects.Arc[] = [];
+  private bossNode!: Phaser.GameObjects.Star;
   private notif!: Phaser.GameObjects.Text;
   private portraitImage!: Phaser.GameObjects.Image;
 
@@ -110,8 +113,11 @@ export class UIScene extends Phaser.Scene {
     battle.events.on('level-up', (level: number) => this.showNotice(`경지 상승 · Lv.${level}`), this);
 
     this.createTopHud();
-    this.createSkillDock();
-    this.createBottomNav();
+    this.createTopResourceStrip();
+    this.createProgressTrack();
+    this.createCombatSkillDockV2();
+    this.createQuickMartialBoard();
+    this.createBottomNavV2();
     this.notif = this.add.text(W / 2, 560, '', this.textStyle(19, '#ffe29a'))
       .setOrigin(0.5).setDepth(500).setStroke('#000000', 5).setAlpha(0);
 
@@ -145,7 +151,36 @@ export class UIScene extends Phaser.Scene {
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
   }
 
-  private createSkillDock(): void {
+  private createTopResourceStrip(): void {
+    const resources = [
+      { x: 302, y: 20, icon: '◎', text: '금화', color: 0xd4a74e },
+      { x: 394, y: 20, icon: '◆', text: '원보', color: 0xffc85a },
+      { x: 486, y: 20, icon: '✦', text: '기운', color: 0x55a7ff },
+    ];
+    resources.forEach(({ x, y, icon, text, color }) => {
+      this.add.rectangle(x, y, 82, 24, 0x0b0907, 0.86)
+        .setStrokeStyle(1, 0x8d6b32)
+        .setDepth(204);
+      this.add.text(x - 26, y, icon, this.textStyle(15, `#${color.toString(16).padStart(6, '0')}`))
+        .setOrigin(0.5)
+        .setDepth(205);
+      this.add.text(x + 2, y, text, this.textStyle(12, '#d9caa8'))
+        .setOrigin(0.5)
+        .setDepth(205);
+      this.add.text(x + 34, y, '+', this.titleStyle(17))
+        .setOrigin(0.5)
+        .setDepth(205);
+    });
+
+    const menu = this.add.circle(W - 30, 78, 23, 0x15110c, 1)
+      .setStrokeStyle(2, GOLD)
+      .setDepth(205)
+      .setInteractive();
+    this.add.text(W - 30, 78, '☰', this.titleStyle(24)).setOrigin(0.5).setDepth(206);
+    menu.on('pointerdown', () => this.openPanel('MISSIONS'));
+  }
+
+  createSkillDock(): void {
     this.add.rectangle(W / 2, 690, W, 140, 0x080706, 0.88).setDepth(200).setStrokeStyle(1, 0x60451f);
     [95, 195, 295, 395].forEach((x, index) => {
       const radius = index === 2 ? 46 : 38;
@@ -162,7 +197,7 @@ export class UIScene extends Phaser.Scene {
     auto.on('pointerdown', () => this.scene.get('BattleScene').events.emit('toggle-battle-mode'));
   }
 
-  private createBottomNav(): void {
+  createBottomNav(): void {
     this.add.rectangle(W / 2, 855, W, 210, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
     const nav: [Panel, string, string][] = [
       ['TRAINING', '수련', '修'], ['EQUIPMENT', '장비', '裝'], ['MARTIAL', '무공', '武'],
@@ -174,6 +209,120 @@ export class UIScene extends Phaser.Scene {
         .setStrokeStyle(panel === 'MARTIAL' ? 3 : 1, panel === 'MARTIAL' ? GOLD : 0x75572b).setDepth(202).setInteractive();
       this.add.text(x, 847, glyph, this.titleStyle(panel === 'MARTIAL' ? 28 : 23)).setOrigin(0.5).setDepth(203);
       this.add.text(x, 898, label, this.textStyle(14, '#d5c6a7')).setOrigin(0.5).setDepth(203);
+      button.on('pointerdown', () => this.openPanel(panel));
+    });
+  }
+
+  private createProgressTrack(): void {
+    const y = 110;
+    this.add.rectangle(W / 2, y, 330, 3, 0x5f4a25, 0.8).setDepth(205);
+    for (let i = 0; i < 6; i++) {
+      const x = 105 + i * 54;
+      const node = this.add.arc(x, y, 10, 0, 360, false, 0x241b12, 1)
+        .setStrokeStyle(2, i < 3 ? GOLD : 0x4d4a43)
+        .setDepth(206);
+      this.progressNodes.push(node);
+    }
+    this.bossNode = this.add.star(W / 2 + 5, y - 1, 8, 16, 28, 0x5b150c, 1)
+      .setStrokeStyle(3, 0xf1b34f)
+      .setDepth(207);
+    this.add.text(W / 2 + 5, y - 1, '魔', this.titleStyle(17)).setOrigin(0.5).setDepth(208);
+  }
+
+  private createCombatSkillDockV2(): void {
+    this.add.rectangle(W / 2, 642, W, 116, 0x080706, 0.9).setDepth(200).setStrokeStyle(1, 0x60451f);
+    const slots = [
+      { x: 56, radius: 35, label: '경공', action: 'dash' as const, color: 0x2f2a16 },
+      { x: 145, radius: 38, label: '무공', action: 0 as const, color: 0x163b64 },
+      { x: 235, radius: 46, label: '절기', action: 1 as const, color: 0x65180f },
+      { x: 325, radius: 38, label: '무공', action: 2 as const, color: 0x163b64 },
+      { x: 415, radius: 35, label: '봉인', action: 'locked' as const, color: 0x152f55 },
+    ];
+
+    slots.forEach((slot) => {
+      const ring = this.add.circle(slot.x, 680, slot.radius, 0x11100e, 1)
+        .setStrokeStyle(slot.radius > 40 ? 4 : 2, slot.radius > 40 ? 0xe2b655 : 0x8d6b32)
+        .setDepth(202)
+        .setInteractive();
+      this.add.circle(slot.x, 680, slot.radius - 7, slot.color, 0.95).setDepth(201);
+      const glow = this.add.circle(slot.x, 680, slot.radius - 14, 0xffffff, slot.radius > 40 ? 0.12 : 0.07).setDepth(202);
+      this.tweens.add({ targets: glow, alpha: 0.02, duration: 900, yoyo: true, repeat: -1 });
+
+      if (slot.action === 'dash') {
+        ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-dash'));
+        this.add.text(slot.x, 680, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 62 } }).setOrigin(0.5).setDepth(204);
+        this.dashCooldown = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
+        return;
+      }
+
+      if (slot.action === 'locked') {
+        this.add.text(slot.x, 680, slot.label, this.textStyle(12, '#7d766a')).setOrigin(0.5).setDepth(204);
+        return;
+      }
+
+      ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-skill', slot.action));
+      this.skillLabels[slot.action] = this.add.text(slot.x, 680, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 74 } }).setOrigin(0.5).setDepth(204);
+      this.cooldowns[slot.action] = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
+    });
+
+    const auto = this.add.circle(488, 680, 34, 0x21170b, 1).setStrokeStyle(2, GOLD).setDepth(202).setInteractive();
+    this.modeText = this.add.text(488, 680, 'AUTO', this.textStyle(13, '#f2d27d')).setOrigin(0.5).setDepth(203);
+    auto.on('pointerdown', () => this.scene.get('BattleScene').events.emit('toggle-battle-mode'));
+  }
+
+  private createQuickMartialBoard(): void {
+    this.add.rectangle(W / 2, 806, W, 214, 0x0a0806, 0.97).setDepth(190).setStrokeStyle(1, 0x60451f);
+    const tabs: [MartialTab, string][] = [['SKILLS', '무공'], ['SYNTH', '합성'], ['UPGRADE', '강화'], ['BOSS', '보스']];
+    tabs.forEach(([tab, label], index) => {
+      const x = 28 + index * 121;
+      const button = this.add.rectangle(x, 718, 112, 36, tab === 'SKILLS' ? 0x6a481a : 0x17120d)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, tab === 'SKILLS' ? GOLD : 0x60451f)
+        .setDepth(202)
+        .setInteractive();
+      button.on('pointerdown', () => { this.martialTab = tab; this.openPanel('MARTIAL'); });
+      this.add.text(x + 56, 736, label, this.textStyle(16, tab === 'SKILLS' ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(203);
+    });
+
+    const save = loadGame();
+    const owned = this.ownedSkills(save);
+    const fallback = [...SKILL_DATABASE.values()].filter(skill => skill.type === 'ACTIVE' && skill.category === this.charClass);
+    const seen = new Set<string>();
+    const skills = [...owned, ...fallback]
+      .filter(skill => {
+        if (seen.has(skill.id)) return false;
+        seen.add(skill.id);
+        return true;
+      })
+      .slice(0, 8);
+    skills.forEach((skill, index) => {
+      const x = 33 + (index % 4) * 123;
+      const y = 764 + Math.floor(index / 4) * 70;
+      const art = this.add.image(x + 48, y + 25, skillCardKey(skill.id))
+        .setDisplaySize(58, 82)
+        .setDepth(201)
+        .setInteractive();
+      art.on('pointerdown', () => this.equipSkill(skill.id, index % 3));
+      const grade = skill.grade.toLowerCase();
+      const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
+      this.add.image(x + 48, y + 25, frameKey).setDisplaySize(58, 82).setDepth(202);
+      this.add.text(x + 83, y + 8, this.skillLabel(skill), { ...this.textStyle(11, '#f3e7ca'), wordWrap: { width: 58 } }).setDepth(203);
+      this.add.text(x + 83, y + 42, `+${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(11, '#d4a74e')).setDepth(203);
+    });
+  }
+
+  private createBottomNavV2(): void {
+    this.add.rectangle(W / 2, 925, W, 70, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
+    const nav: [Panel, string, string][] = [
+      ['TRAINING', '수련', '修'], ['EQUIPMENT', '장비', '裝'], ['MARTIAL', '문파', '門'],
+      ['SECT', '도감', '書'], ['CODEX', '비급', '典'], ['MISSIONS', '임무', '令'],
+    ];
+    nav.forEach(([panel, label, glyph], index) => {
+      const x = 45 + index * 90;
+      const button = this.add.circle(x, 910, panel === 'MARTIAL' ? 31 : 26, 0x17120d, 1)
+        .setStrokeStyle(panel === 'MARTIAL' ? 3 : 1, panel === 'MARTIAL' ? GOLD : 0x75572b).setDepth(202).setInteractive();
+      this.add.text(x, 907, glyph, this.titleStyle(panel === 'MARTIAL' ? 24 : 20)).setOrigin(0.5).setDepth(203);
+      this.add.text(x, 943, label, this.textStyle(13, '#d5c6a7')).setOrigin(0.5).setDepth(203);
       button.on('pointerdown', () => this.openPanel(panel));
     });
   }
@@ -432,11 +581,21 @@ export class UIScene extends Phaser.Scene {
     this.goldText.setText(`${state.gold} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
     this.modeText.setText(state.battleMode === 'AUTO' ? 'AUTO' : '수동');
+    if (this.dashCooldown) this.dashCooldown.setVisible(state.dashCooldownRemaining > 0);
     state.skills.forEach((skill, index) => {
       if (!this.skillLabels[index]) return;
       this.skillLabels[index].setText(this.skillLabel(SKILL_DATABASE.get(skill.id)));
       this.cooldowns[index].setVisible(skill.cooldownRemaining > 0);
     });
+    this.progressNodes.forEach((node, index) => {
+      const active = (state.waveNumber - 1) % 5 >= index || state.isBossWave;
+      node.setFillStyle(active ? GOLD : 0x241b12, 1);
+      node.setStrokeStyle(2, active ? 0xffdf84 : 0x4d4a43);
+    });
+    if (this.bossNode) {
+      this.bossNode.setFillStyle(state.isBossWave ? 0xb92512 : 0x5b150c, 1);
+      this.bossNode.setScale(state.isBossWave ? 1.12 : 1);
+    }
 
     // 초상화 일러스트 실시간 갱신
     const save = loadGame();

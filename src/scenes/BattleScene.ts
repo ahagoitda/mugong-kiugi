@@ -611,7 +611,7 @@ export class BattleScene extends Phaser.Scene {
 
     for (const i of order) {
       if (closestDist <= skills[i].range + 20) {
-        if (this.player.handleAttack(i)) return;
+        if (this.tryUseSkill(i)) return;
       }
     }
   }
@@ -619,7 +619,15 @@ export class BattleScene extends Phaser.Scene {
   private onUseSkill(slotIndex: number): void {
     // AUTO/MANUAL 모드와 무관하게 사용자 입력은 항상 받음.
     // (AUTO 모드는 추가로 가장 가까운 적을 향해 자동 발동)
-    this.player.handleAttack(slotIndex);
+    this.tryUseSkill(slotIndex);
+  }
+
+  private tryUseSkill(slotIndex: number): boolean {
+    const skill = this.player.skills[slotIndex];
+    if (!skill) return false;
+    const used = this.player.handleAttack(slotIndex);
+    if (used) this.showSkillCastTell(skill);
+    return used;
   }
 
   private onUseDash(): void {
@@ -1062,6 +1070,7 @@ export class BattleScene extends Phaser.Scene {
         } else {
           this.showDamageText(enemy.x, enemy.y - 20, damage, false);
         }
+        this.showSkillImpactBurst(enemy.x, enemy.y - (isBoss ? 18 : 8), skill, isBoss);
       }
     }
   }
@@ -1388,6 +1397,56 @@ export class BattleScene extends Phaser.Scene {
 
   // ─── 이펙트 ───
 
+  private showSkillCastTell(skill: SkillData): void {
+    soundSystem.play('skill_cast');
+    let tint = skill.effectColor ?? this.slashColor;
+    if (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
+      tint = Phaser.Display.Color.IntegerToColor(tint).brighten(20).color;
+    }
+
+    const dir = this.player.isFacingRight ? 1 : -1;
+    const x = this.player.x + dir * 34;
+    const y = this.player.y - 8;
+    const gradeScale = skill.grade === 'ULTIMATE' ? 1.5 : skill.grade === 'HIGH' ? 1.25 : 1;
+    const windup = this.add.ellipse(x, y + 6, 28, 12, tint, 0.34)
+      .setDepth(132)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    windup.setStrokeStyle(2, 0xffffff, 0.55);
+
+    this.tweens.add({
+      targets: windup,
+      scaleX: 2.1 * gradeScale,
+      scaleY: 1.45 * gradeScale,
+      alpha: 0,
+      duration: skill.grade === 'ULTIMATE' ? 260 : 180,
+      ease: 'Quad.easeOut',
+      onComplete: () => windup.destroy(),
+    });
+
+    const streaks = skill.grade === 'ULTIMATE' ? 7 : skill.grade === 'HIGH' ? 5 : 3;
+    for (let i = 0; i < streaks; i++) {
+      const sy = y - 24 + Math.random() * 48;
+      const sx = this.player.x - dir * (12 + Math.random() * 18);
+      const line = this.add.rectangle(sx, sy, 28 + Math.random() * 28, 2, tint, 0.72)
+        .setDepth(131)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setRotation((Math.random() - 0.5) * 0.35);
+      this.tweens.add({
+        targets: line,
+        x: sx + dir * (42 + Math.random() * 34),
+        alpha: 0,
+        duration: 120 + Math.random() * 90,
+        ease: 'Cubic.easeOut',
+        onComplete: () => line.destroy(),
+      });
+    }
+
+    if (skill.grade === 'ULTIMATE') {
+      this.showScreenPulse(tint, 0.16, 170);
+      this.cameras.main.shake(90, 0.004);
+    }
+  }
+
   private showSlashEffect(x: number, y: number, skill: SkillData): void {
     // 이펙트 색: 스킬 오버라이드 → 캐릭터 기본색
     let baseTint = skill.effectColor ?? this.slashColor;
@@ -1396,6 +1455,7 @@ export class BattleScene extends Phaser.Scene {
     }
 
     const effectType = skill.effectType ?? 'slash';
+    this.showBladeTrail(x, y, skill, baseTint);
 
     if (effectType === 'multi') {
       this.showMultiSlash(x, y, skill, baseTint);
@@ -1439,6 +1499,28 @@ export class BattleScene extends Phaser.Scene {
         fx.setScale(1);
         this.slashPool.push(fx);
       },
+    });
+  }
+
+  private showBladeTrail(x: number, y: number, skill: SkillData, tint: number): void {
+    const dir = this.player.isFacingRight ? 1 : -1;
+    const length = Phaser.Math.Clamp(skill.hitboxSize.w * 1.15, 48, 150);
+    const width = skill.grade === 'ULTIMATE' ? 8 : skill.grade === 'HIGH' ? 6 : 4;
+    const trail = this.add.rectangle(x - dir * 8, y - 8, length, width, tint, 0.78)
+      .setDepth(134)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setRotation(dir > 0 ? -0.34 : 0.34);
+    trail.setOrigin(dir > 0 ? 0.15 : 0.85, 0.5);
+
+    this.tweens.add({
+      targets: trail,
+      x: x + dir * 28,
+      scaleX: 1.55,
+      scaleY: 0.2,
+      alpha: 0,
+      duration: skill.effectType === 'multi' ? 120 : 170,
+      ease: 'Cubic.easeOut',
+      onComplete: () => trail.destroy(),
     });
   }
 
@@ -1513,6 +1595,100 @@ export class BattleScene extends Phaser.Scene {
 
     // 화면 플래시 (색조 기반)
     this.cameras.main.flash(60, r, g, b, true);
+  }
+
+  private showSkillImpactBurst(x: number, y: number, skill: SkillData, isBoss: boolean): void {
+    let tint = skill.effectColor ?? this.slashColor;
+    if (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
+      tint = Phaser.Display.Color.IntegerToColor(tint).brighten(18).color;
+    }
+
+    const intensity = skill.grade === 'ULTIMATE' ? 1.45 : skill.grade === 'HIGH' ? 1.18 : 1;
+    const ring = this.add.ellipse(x, y, 18, 9, tint, 0.42)
+      .setDepth(137)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    ring.setStrokeStyle(2, 0xffffff, 0.6);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 2.2 * intensity,
+      scaleY: 1.8 * intensity,
+      alpha: 0,
+      duration: 180,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    const shardCount = Math.round((isBoss ? 9 : 6) * intensity);
+    for (let i = 0; i < shardCount; i++) {
+      const shard = this.add.rectangle(x, y, 3, 9 + Math.random() * 10, tint, 0.85)
+        .setDepth(138)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setRotation(Math.random() * Math.PI);
+      const angle = Math.PI * (Math.random() * 0.9 + 0.05);
+      const speed = (28 + Math.random() * 52) * intensity;
+      this.tweens.add({
+        targets: shard,
+        x: x + Math.cos(angle) * speed,
+        y: y - Math.sin(angle) * speed,
+        alpha: 0,
+        duration: 180 + Math.random() * 130,
+        ease: 'Cubic.easeOut',
+        onComplete: () => shard.destroy(),
+      });
+    }
+    this.showBloodSpray(x, y, isBoss, intensity);
+
+    if (skill.grade === 'HIGH') {
+      this.cameras.main.shake(70, 0.0035);
+    } else if (skill.grade === 'ULTIMATE') {
+      this.showScreenPulse(tint, 0.2, 190);
+      this.cameras.main.shake(130, 0.007);
+    }
+  }
+
+  private showBloodSpray(x: number, y: number, isBoss: boolean, intensity: number): void {
+    const count = Math.round((isBoss ? 13 : 8) * intensity);
+    for (let i = 0; i < count; i++) {
+      const drop = this.add.circle(x, y, 1.5 + Math.random() * 2.8, 0x8d100b, 0.82)
+        .setDepth(136);
+      const angle = Math.PI * (0.1 + Math.random() * 0.8);
+      const speed = (18 + Math.random() * 62) * intensity;
+      this.tweens.add({
+        targets: drop,
+        x: x + Math.cos(angle) * speed,
+        y: y - Math.sin(angle) * speed + Math.random() * 16,
+        alpha: 0,
+        scaleX: 0.45,
+        scaleY: 0.45,
+        duration: 260 + Math.random() * 160,
+        ease: 'Quad.easeOut',
+        onComplete: () => drop.destroy(),
+      });
+    }
+
+    const stain = this.add.ellipse(x + 6, GROUND_Y + 30, isBoss ? 28 : 18, isBoss ? 9 : 6, 0x4a0705, 0.46)
+      .setDepth(4);
+    this.tweens.add({
+      targets: stain,
+      alpha: 0,
+      duration: 1600,
+      delay: 600,
+      onComplete: () => stain.destroy(),
+    });
+  }
+
+  private showScreenPulse(tint: number, alpha: number, duration: number): void {
+    const pulse = this.add.rectangle(GAME_W / 2, BATTLE_H / 2, GAME_W, BATTLE_H, tint, alpha)
+      .setScrollFactor(0)
+      .setDepth(180)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0,
+      duration,
+      ease: 'Quad.easeOut',
+      onComplete: () => pulse.destroy(),
+    });
   }
 
   private showDamageText(x: number, y: number, damage: number, isCritical: boolean): void {

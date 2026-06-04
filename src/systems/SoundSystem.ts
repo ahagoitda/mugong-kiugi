@@ -30,6 +30,7 @@ type SoundId =
   | 'equip'        // 무공 장착
   | 'game_over'    // 게임 오버
   | 'revive'       // 부활
+  | 'skill_cast'    // 무공 시전
   | 'boss_appear'; // 보스 등장
 
 class SoundSystem {
@@ -84,6 +85,7 @@ class SoundSystem {
       case 'game_over':    this.playGameOver(ctx);                    break;
       case 'revive':       this.playRevive(ctx);                      break;
       case 'boss_appear':  this.playBossAppear(ctx);                  break;
+      case 'skill_cast':   this.playSkillCast(ctx);                   break;
     }
   }
 
@@ -153,6 +155,32 @@ class SoundSystem {
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.15);
     osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  }
+
+  private playSkillCast(ctx: AudioContext): void {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(520, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(980, ctx.currentTime + 0.09);
+    osc.frequency.exponentialRampToValueAtTime(260, ctx.currentTime + 0.18);
+
+    filter.type = 'bandpass';
+    filter.frequency.value = 1100;
+    filter.Q.value = 5;
+
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.22, ctx.currentTime + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain!);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.2);
+    osc.onended = () => { osc.disconnect(); filter.disconnect(); gain.disconnect(); };
   }
 
   private playDie(ctx: AudioContext, freq: number, duration: number): void {

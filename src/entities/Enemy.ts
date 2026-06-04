@@ -89,12 +89,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   // 드랍 결과를 외부에서 읽기 위한 필드
   private pendingDrop: DropEntry | null = null;
+  private hpBarBg: Phaser.GameObjects.Graphics;
+  private hpBarFill: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'enemy_art_01');
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
+    this.hpBarBg = scene.add.graphics().setDepth(32).setVisible(false);
+    this.hpBarFill = scene.add.graphics().setDepth(33).setVisible(false);
 
     this.setDisplaySize(170, 170);
 
@@ -216,6 +220,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
     body.setVelocity(0, 0);
+    this.hpBarBg.setVisible(true);
+    this.hpBarFill.setVisible(true);
+    this.updateHpBar();
   }
 
   /**
@@ -229,6 +236,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.enemyData = null;
     this.stunned = false;
     this.speedMultiplier = 1.0;
+    this.hpBarBg.clear().setVisible(false);
+    this.hpBarFill.clear().setVisible(false);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
@@ -244,6 +253,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     this._hp = Math.max(0, this._hp - amount);
     this.setTint(0xff8888);
+    this.updateHpBar();
 
     // 피격 경직
     this.knockbackTimer = 200;
@@ -297,6 +307,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    */
   update(_time: number, delta: number): void {
     if (!this.active || !this.enemyData) return;
+    this.updateHpBar();
 
     // 기절 상태면 모든 행동 중지
     if (this.stunned) return;
@@ -353,6 +364,29 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.performAttack(data);
       }
     }
+  }
+
+  private updateHpBar(): void {
+    const data = this.enemyData;
+    if (!this.active || !data) return;
+
+    const isBoss = data.rank === 'BOSS';
+    const width = isBoss ? 86 : 58;
+    const height = isBoss ? 7 : 5;
+    const x = this.x - width / 2;
+    const y = this.y - (isBoss ? 108 : 78);
+    const ratio = Phaser.Math.Clamp(this._hp / Math.max(1, data.hp), 0, 1);
+    const fillColor = ratio < 0.3 ? 0xd9211b : isBoss ? 0xff3b21 : 0xe4432d;
+
+    this.hpBarBg.clear();
+    this.hpBarBg.fillStyle(0x090706, 0.82);
+    this.hpBarBg.fillRoundedRect(x - 2, y - 2, width + 4, height + 4, 2);
+    this.hpBarBg.lineStyle(1, 0x2b2015, 0.9);
+    this.hpBarBg.strokeRoundedRect(x - 2, y - 2, width + 4, height + 4, 2);
+
+    this.hpBarFill.clear();
+    this.hpBarFill.fillStyle(fillColor, 1);
+    this.hpBarFill.fillRoundedRect(x, y, width * ratio, height, 2);
   }
 
   /**

@@ -113,6 +113,8 @@ export class UIScene extends Phaser.Scene {
   private goldText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private modeText!: Phaser.GameObjects.Text;
+  private modeButton!: Phaser.GameObjects.Arc;
+  private modeGlow!: Phaser.GameObjects.Arc;
   private dashCooldown!: Phaser.GameObjects.Arc;
   private dashCooldownText!: Phaser.GameObjects.Text;
   private skillLabels: Phaser.GameObjects.Text[] = [];
@@ -310,7 +312,12 @@ export class UIScene extends Phaser.Scene {
       this.cooldownTexts[slot.action] = this.add.text(slot.x, 680, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
     });
 
+    this.modeGlow = this.add.circle(488, 680, 40, 0xffc45a, 0.12)
+      .setDepth(201)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: this.modeGlow, alpha: 0.04, scaleX: 1.1, scaleY: 1.1, duration: 900, yoyo: true, repeat: -1 });
     const auto = this.add.circle(488, 680, 34, 0x21170b, 1).setStrokeStyle(2, GOLD).setDepth(202).setInteractive();
+    this.modeButton = auto;
     this.modeText = this.add.text(488, 680, 'AUTO', this.textStyle(13, '#f2d27d')).setOrigin(0.5).setDepth(203);
     auto.on('pointerdown', () => this.scene.get('BattleScene').events.emit('toggle-battle-mode'));
   }
@@ -671,7 +678,15 @@ export class UIScene extends Phaser.Scene {
     this.levelText.setText(`Lv.${state.level}`);
     this.goldText.setText(`${state.gold} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
-    this.modeText.setText(state.battleMode === 'AUTO' ? 'AUTO' : '수동');
+    const isAuto = state.battleMode === 'AUTO';
+    this.modeText.setText(isAuto ? 'AUTO' : '수동');
+    if (this.modeButton) {
+      this.modeButton.setFillStyle(isAuto ? 0x2a1908 : 0x161310, 1);
+      this.modeButton.setStrokeStyle(2, isAuto ? 0xffd56b : 0x75572b);
+    }
+    if (this.modeGlow) {
+      this.modeGlow.setFillStyle(isAuto ? 0xffc45a : 0x4f4536, isAuto ? 0.12 : 0.05);
+    }
     if (this.dashCooldown) {
       this.updateCooldown(this.dashCooldown, this.dashCooldownText, state.dashCooldownRemaining, state.dashCooldown);
     }

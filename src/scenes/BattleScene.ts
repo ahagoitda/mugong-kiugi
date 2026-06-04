@@ -161,8 +161,9 @@ export class BattleScene extends Phaser.Scene {
   private slashPool: Phaser.GameObjects.Sprite[] = [];
 
   // 배경 레이어 (패럴랙스)
-  private bgMountains: Phaser.GameObjects.TileSprite | null = null;
-  private bgGround: Phaser.GameObjects.TileSprite | null = null;
+  private bgLayerBg: Phaser.GameObjects.TileSprite | null = null;
+  private bgLayerMg: Phaser.GameObjects.TileSprite | null = null;
+  private bgLayerFg: Phaser.GameObjects.TileSprite | null = null;
   private currentBgTheme: BackgroundTheme | null = null;
 
   // 상태이상 추적
@@ -871,14 +872,11 @@ export class BattleScene extends Phaser.Scene {
     if (this.currentBgTheme && this.currentBgTheme.id === theme.id) return;
 
     this.currentBgTheme = theme;
+    const id = theme.mountainsKey;
 
-    if (this.bgMountains) {
-      this.bgMountains.setTexture(theme.mountainsKey);
-      this.bgMountains.setSize(GAME_W, BATTLE_H);
-    }
-    if (this.bgGround) {
-      this.bgGround.setTexture(theme.groundKey);
-    }
+    if (this.bgLayerBg) this.bgLayerBg.setTexture(`${id}_bg`);
+    if (this.bgLayerMg) this.bgLayerMg.setTexture(`${id}_mg`);
+    if (this.bgLayerFg) this.bgLayerFg.setTexture(`${id}_fg`);
 
     if (this.waveNumber > 1) {
       this.cameras.main.flash(200, 255, 255, 255, true);
@@ -1340,18 +1338,34 @@ export class BattleScene extends Phaser.Scene {
   private createBackground(): void {
     const theme = getBackgroundForWave(this.waveNumber);
     this.currentBgTheme = theme;
+    const id = theme.mountainsKey;
 
-    this.bgMountains = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, 'background_main')
+    this.bgLayerBg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_bg`)
       .setOrigin(0, 0)
-      .setScrollFactor(0);
+      .setScrollFactor(0)
+      .setDepth(1);
+    this.bgLayerBg.tileScaleX = GAME_W / 1024;
+    this.bgLayerBg.tileScaleY = BATTLE_H / 1024;
 
-    this.bgGround = null;
+    this.bgLayerMg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_mg`)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(2);
+    this.bgLayerMg.tileScaleX = GAME_W / 1024;
+    this.bgLayerMg.tileScaleY = BATTLE_H / 1024;
+
+    this.bgLayerFg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_fg`)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(3);
+    this.bgLayerFg.tileScaleX = GAME_W / 1024;
+    this.bgLayerFg.tileScaleY = BATTLE_H / 1024;
   }
 
   private updateBackground(): void {
-    // 패럴랙스 효과: 산은 느리게, 바닥은 빠르게
-    if (this.bgMountains) this.bgMountains.tilePositionX = this.scrollX * 0.15;
-    if (this.bgGround) this.bgGround.tilePositionX = this.scrollX * 1.0;
+    if (this.bgLayerBg) this.bgLayerBg.tilePositionX = this.scrollX * 0.1;
+    if (this.bgLayerMg) this.bgLayerMg.tilePositionX = this.scrollX * 0.45;
+    if (this.bgLayerFg) this.bgLayerFg.tilePositionX = this.scrollX * 1.0;
   }
 
   // ─── 이펙트 ───

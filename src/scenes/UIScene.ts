@@ -7,8 +7,10 @@ import {
   equippedItems, equipmentSetBonus, dominantSetId,
 } from '../data/equipment';
 import { skillCardKey } from '../data/assets';
-import { claimOfflineReward, loadGame, saveGame } from '../systems/SaveSystem';
+import { claimOfflineReward, loadGame, saveGame, deleteSave } from '../systems/SaveSystem';
 import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
+import { soundSystem } from '../systems/SoundSystem';
+import { bgmSystem } from '../systems/BgmSystem';
 
 const W = 540;
 const H = 960;
@@ -39,7 +41,7 @@ const UI = {
   offline: '\uC624\uD504\uB77C\uC778 \uBCF4\uC0C1',
 };
 
-type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS';
+type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS' | 'SETTINGS' | 'SHOP';
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
 type EquipmentFilter = 'ALL' | 'SET' | EquipmentGrade;
 
@@ -58,6 +60,8 @@ const PANEL_TITLES: Record<Panel, string> = {
   SECT: '문파',
   CODEX: '도감',
   MISSIONS: '임무',
+  SETTINGS: '설정',
+  SHOP: '상점',
 };
 
 const CLASS_KO: Record<CharacterClass, string> = {
@@ -127,6 +131,8 @@ export class UIScene extends Phaser.Scene {
   private bossNode!: Phaser.GameObjects.Star;
   private notif!: Phaser.GameObjects.Text;
   private portraitImage!: Phaser.GameObjects.Image;
+  private shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
+  private tutorialOverlay: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -155,6 +161,11 @@ export class UIScene extends Phaser.Scene {
 
     const reward = claimOfflineReward();
     if (reward.minutes > 0) this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}`);
+
+    const saveData = loadGame();
+    if (!saveData.tutorialCompleted) {
+      this.time.delayedCall(800, () => this.showTutorial(0));
+    }
   }
 
   private createTopHud(): void {
@@ -214,7 +225,7 @@ export class UIScene extends Phaser.Scene {
       .setDepth(205)
       .setInteractive();
     this.add.text(W - 30, 78, '\u2630', this.titleStyle(24)).setOrigin(0.5).setDepth(206);
-    menu.on('pointerdown', () => this.openPanel('MISSIONS'));
+    menu.on('pointerdown', () => this.openPanel('SETTINGS'));
   }
 
   createSkillDock(): void {
@@ -414,15 +425,21 @@ export class UIScene extends Phaser.Scene {
   private createBottomNavV2(): void {
     this.add.rectangle(W / 2, 925, W, 70, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
     const nav: [Panel, string, string][] = [
-      ['TRAINING', UI.training, '\u4FEE'], ['EQUIPMENT', UI.equipment, '\u88DD'], ['MARTIAL', UI.sect, '\u9580'],
-      ['SECT', UI.codex, '\u66F8'], ['CODEX', UI.secret, '\u5178'], ['MISSIONS', UI.mission, '\u4EE4'],
+      ['TRAINING', UI.training, '\u4FEE'],
+      ['EQUIPMENT', UI.equipment, '\u88DD'],
+      ['SHOP', '\uC0C1\uC810', '\u5546'],
+      ['MARTIAL', UI.sect, '\u9580'],
+      ['SECT', UI.codex, '\u66F8'],
+      ['CODEX', UI.secret, '\u5178'],
+      ['MISSIONS', UI.mission, '\u4EE4'],
     ];
     nav.forEach(([panel, label, glyph], index) => {
-      const x = 45 + index * 90;
-      const button = this.add.circle(x, 910, panel === 'MARTIAL' ? 31 : 26, 0x17120d, 1)
-        .setStrokeStyle(panel === 'MARTIAL' ? 3 : 1, panel === 'MARTIAL' ? GOLD : 0x75572b).setDepth(202).setInteractive();
-      this.add.text(x, 907, glyph, this.titleStyle(panel === 'MARTIAL' ? 24 : 20)).setOrigin(0.5).setDepth(203);
-      this.add.text(x, 943, label, this.textStyle(13, '#d5c6a7')).setOrigin(0.5).setDepth(203);
+      const x = 38 + index * 77;
+      const isMain = panel === 'MARTIAL';
+      const button = this.add.circle(x, 910, isMain ? 28 : 23, 0x17120d, 1)
+        .setStrokeStyle(isMain ? 3 : 1, isMain ? GOLD : 0x75572b).setDepth(202).setInteractive();
+      this.add.text(x, 907, glyph, this.titleStyle(isMain ? 20 : 17)).setOrigin(0.5).setDepth(203);
+      this.add.text(x, 940, label, this.textStyle(10, '#d5c6a7')).setOrigin(0.5).setDepth(203);
       button.on('pointerdown', () => this.openPanel(panel));
     });
   }
@@ -442,6 +459,8 @@ export class UIScene extends Phaser.Scene {
     if (panel === 'SECT') this.buildSect(items);
     if (panel === 'CODEX') this.buildCodex(items);
     if (panel === 'MISSIONS') this.buildMissions(items);
+    if (panel === 'SETTINGS') this.buildSettings(items);
+    if (panel === 'SHOP') this.buildShop(items);
     this.overlay = this.add.container(0, 0, items).setDepth(700);
   }
 
@@ -1147,6 +1166,314 @@ export class UIScene extends Phaser.Scene {
   private closePanel(): void {
     this.overlay?.destroy(true);
     this.overlay = null;
+  }
+
+  // ─── Settings Panel ───────────────────────────────────────────────────────
+
+  private buildSettings(items: Phaser.GameObjects.GameObject[]): void {
+    const save = loadGame();
+    let bgmVol = bgmSystem.volume;
+    let sfxVol = soundSystem.volume;
+
+    const row = (y: number, label: string, value: number, onMinus: () => void, onPlus: () => void) => {
+      items.push(
+        this.add.text(55, y, label, this.titleStyle(18)).setDepth(703),
+      );
+      const valText = this.add.text(W / 2, y + 2, `${Math.round(value * 100)}%`,
+        this.textStyle(17, '#e8c36a')).setOrigin(0.5).setDepth(703);
+      items.push(valText);
+      const minus = this.add.text(W / 2 - 70, y, '◀', this.titleStyle(20)).setOrigin(0.5)
+        .setInteractive().setDepth(703);
+      const plus  = this.add.text(W / 2 + 70, y, '▶', this.titleStyle(20)).setOrigin(0.5)
+        .setInteractive().setDepth(703);
+      minus.on('pointerdown', () => { onMinus(); });
+      plus.on('pointerdown', () => { onPlus(); });
+      items.push(minus, plus);
+      return valText;
+    };
+
+    const bgmText = row(160, '배경음악', bgmVol,
+      () => { bgmVol = Math.max(0, bgmVol - 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
+      () => { bgmVol = Math.min(1, bgmVol + 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
+    );
+    const sfxText = row(230, '효과음', sfxVol,
+      () => { sfxVol = Math.max(0, sfxVol - 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
+      () => { sfxVol = Math.min(1, sfxVol + 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
+    );
+
+    // Divider
+    items.push(this.add.rectangle(W / 2, 300, W - 60, 1, 0x60451f).setDepth(703));
+
+    // Tutorial restart
+    const tutBtn = this.add.rectangle(W / 2, 350, 300, 48, 0x2a1f0e).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+    const tutLabel = this.add.text(W / 2, 350, '튜토리얼 다시 보기', this.textStyle(16, '#e8c36a')).setOrigin(0.5).setDepth(704);
+    tutBtn.on('pointerdown', () => {
+      this.closePanel();
+      this.time.delayedCall(100, () => this.showTutorial(0));
+    });
+    items.push(tutBtn, tutLabel);
+
+    // Reset save
+    const resetBtn = this.add.rectangle(W / 2, 430, 300, 48, 0x2a1f0e).setStrokeStyle(1, 0x9c3b28).setInteractive().setDepth(703);
+    const resetLabel = this.add.text(W / 2, 430, '세이브 초기화', this.textStyle(16, '#e05050')).setOrigin(0.5).setDepth(704);
+    resetBtn.on('pointerdown', () => this.confirmReset(items));
+    items.push(resetBtn, resetLabel);
+
+    // Version
+    items.push(this.add.text(W / 2, 520, '무공키우기 v1.0.0', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703));
+
+    // Unused save reference to suppress lint warning
+    void save;
+  }
+
+  private confirmReset(items: Phaser.GameObjects.GameObject[]): void {
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(800);
+    const box = this.add.rectangle(W / 2, H / 2, 380, 220, 0x110c07).setStrokeStyle(2, 0x9c3b28).setDepth(801);
+    const msg = this.add.text(W / 2, H / 2 - 60, '정말 초기화하시겠습니까?\n모든 진행이 삭제됩니다.', {
+      ...this.textStyle(16, '#e8c36a'), align: 'center',
+    }).setOrigin(0.5).setDepth(802);
+    const yes = this.add.text(W / 2 - 70, H / 2 + 50, '초기화', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(802);
+    const no = this.add.text(W / 2 + 70, H / 2 + 50, '취소', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(802);
+    yes.on('pointerdown', () => {
+      deleteSave();
+      items.push(overlay, box, msg, yes, no);
+      this.scene.restart();
+    });
+    no.on('pointerdown', () => {
+      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+    });
+    items.push(overlay, box, msg, yes, no);
+  }
+
+  // ─── Shop Panel ───────────────────────────────────────────────────────────
+
+  private buildShop(items: Phaser.GameObjects.GameObject[]): void {
+    const save = loadGame();
+    const today = new Date().toLocaleDateString('en-CA');
+    const TABS: ['DAILY' | 'SKILLS' | 'GEMS', string][] = [['DAILY', '일일상점'], ['SKILLS', '무공구매'], ['GEMS', '원보']];
+
+    TABS.forEach(([tab, label], i) => {
+      const x = 90 + i * 130;
+      const btn = this.add.rectangle(x, 115, 115, 36, this.shopTab === tab ? 0x4a3520 : 0x1e1409)
+        .setStrokeStyle(1, this.shopTab === tab ? GOLD : 0x60451f).setInteractive().setDepth(703);
+      const txt = this.add.text(x, 115, label, this.textStyle(14, this.shopTab === tab ? '#e8c36a' : '#8a7a60'))
+        .setOrigin(0.5).setDepth(704);
+      btn.on('pointerdown', () => {
+        this.shopTab = tab;
+        this.closePanel();
+        this.openPanel('SHOP');
+      });
+      items.push(btn, txt);
+    });
+
+    const contentY = 150;
+
+    if (this.shopTab === 'DAILY') {
+      const purchased = save.shopLastReset === today ? (save.shopDailyPurchased ?? []) : [];
+      const dailyItems: Array<{ id: string; name: string; cost: number; reward: string }> = [
+        { id: 'daily_gold_sm', name: '소 금괴', cost: 10, reward: '금화 500' },
+        { id: 'daily_gold_lg', name: '대 금괴', cost: 50, reward: '금화 3000' },
+        { id: 'daily_exp_sm', name: '수련서 (소)', cost: 15, reward: 'EXP 2000' },
+        { id: 'daily_exp_lg', name: '수련서 (대)', cost: 80, reward: 'EXP 15000' },
+        { id: 'daily_skill_scroll', name: '무공 비급', cost: 30, reward: '무공 해금 1회' },
+      ];
+
+      items.push(this.add.text(W / 2, contentY + 10, `일일 초기화: ${today}`, this.textStyle(12, '#7a6a50')).setOrigin(0.5).setDepth(703));
+
+      dailyItems.forEach((item, i) => {
+        const y = contentY + 55 + i * 100;
+        const bought = purchased.includes(item.id);
+        const card = this.add.rectangle(W / 2, y, W - 60, 86, bought ? 0x111111 : 0x1e1409)
+          .setStrokeStyle(1, bought ? 0x333333 : 0x60451f).setDepth(703);
+        const name = this.add.text(80, y - 20, item.name, this.titleStyle(16)).setDepth(704);
+        const reward = this.add.text(80, y + 5, item.reward, this.textStyle(13, '#a0e080')).setDepth(704);
+        const costTxt = this.add.text(W - 120, y - 20, `💎 ${item.cost}`, this.textStyle(14, '#a0c8ff')).setDepth(704);
+        const buyBtn = this.add.rectangle(W - 100, y + 15, 90, 30, bought ? 0x333333 : 0x2d4d1e)
+          .setStrokeStyle(1, bought ? 0x444444 : 0x5a9d2f).setInteractive().setDepth(703);
+        const buyTxt = this.add.text(W - 100, y + 15, bought ? '구매완료' : '구매', this.textStyle(13, bought ? '#555555' : '#a0e080'))
+          .setOrigin(0.5).setDepth(704);
+        if (!bought) {
+          buyBtn.on('pointerdown', () => {
+            const gems = save.gems ?? 0;
+            if (gems < item.cost) { this.showNotice('원보가 부족합니다'); return; }
+            save.gems = gems - item.cost;
+            if (item.id === 'daily_gold_sm') save.gold += 500;
+            else if (item.id === 'daily_gold_lg') save.gold += 3000;
+            else if (item.id === 'daily_exp_sm') save.exp += 2000;
+            else if (item.id === 'daily_exp_lg') save.exp += 15000;
+            else if (item.id === 'daily_skill_scroll') {
+              const locked = [...SKILL_DATABASE.values()].filter(s => !save.unlockedSkills.includes(s.id));
+              if (locked.length > 0) {
+                const random = locked[Math.floor(Math.random() * locked.length)];
+                save.unlockedSkills.push(random.id);
+                save.inventory[random.id] = (save.inventory[random.id] ?? 0) + 1;
+              }
+            }
+            save.shopLastReset = today;
+            save.shopDailyPurchased = [...purchased, item.id];
+            saveGame(save);
+            soundSystem.play('synth_ok');
+            this.closePanel();
+            this.openPanel('SHOP');
+          });
+        }
+        items.push(card, name, reward, costTxt, buyBtn, buyTxt);
+      });
+    } else if (this.shopTab === 'SKILLS') {
+      const grades: Array<{ grade: string; label: string; cost: number }> = [
+        { grade: 'LOW',      label: '하급 무공 비급',  cost: 20  },
+        { grade: 'MID',      label: '중급 무공 비급',  cost: 80  },
+        { grade: 'HIGH',     label: '상급 무공 비급',  cost: 250 },
+        { grade: 'ULTIMATE', label: '절기 무공 비급',  cost: 800 },
+      ];
+      items.push(this.add.text(W / 2, contentY + 10, '원보로 무공 비급 구매', this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703));
+      grades.forEach((g, i) => {
+        const y = contentY + 70 + i * 110;
+        const color = this.skillGradeColor(g.grade as SkillData['grade']);
+        const colorHex = `#${color.toString(16).padStart(6, '0')}`;
+        const card = this.add.rectangle(W / 2, y, W - 60, 94, 0x1e1409).setStrokeStyle(2, color).setDepth(703);
+        const lbl = this.add.text(80, y - 22, g.label, { ...this.titleStyle(17), color: colorHex }).setDepth(704);
+        const sub = this.add.text(80, y + 4, '무작위 해당 등급 무공 해금', this.textStyle(13, '#a0a090')).setDepth(704);
+        const cost = this.add.text(W - 115, y - 22, `💎 ${g.cost}`, this.textStyle(14, '#a0c8ff')).setDepth(704);
+        const btn = this.add.rectangle(W - 100, y + 18, 90, 30, 0x2d4d1e).setStrokeStyle(1, 0x5a9d2f).setInteractive().setDepth(703);
+        const btnTxt = this.add.text(W - 100, y + 18, '구매', this.textStyle(13, '#a0e080')).setOrigin(0.5).setDepth(704);
+        btn.on('pointerdown', () => {
+          const gems = save.gems ?? 0;
+          if (gems < g.cost) { this.showNotice('원보가 부족합니다'); return; }
+          const pool = [...SKILL_DATABASE.values()].filter(s => s.grade === g.grade && !save.unlockedSkills.includes(s.id));
+          if (pool.length === 0) { this.showNotice('해금할 무공이 없습니다'); return; }
+          const skill = pool[Math.floor(Math.random() * pool.length)];
+          save.gems = gems - g.cost;
+          save.unlockedSkills.push(skill.id);
+          save.inventory[skill.id] = (save.inventory[skill.id] ?? 0) + 1;
+          saveGame(save);
+          soundSystem.play('synth_ok');
+          this.showNotice(`${skill.nameKo} 획득!`);
+          this.closePanel();
+          this.openPanel('SHOP');
+        });
+        items.push(card, lbl, sub, cost, btn, btnTxt);
+      });
+    } else {
+      // GEMS tab
+      const gems = save.gems ?? 0;
+      items.push(
+        this.add.text(W / 2, contentY + 10, `보유 원보: 💎 ${gems}`, this.titleStyle(18)).setOrigin(0.5).setDepth(703),
+        this.add.text(W / 2, contentY + 46, '(매일 무료 원보 지급 예정)', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703),
+      );
+      const freeKey = `gem_free_${today}`;
+      const gotFree = (save.shopDailyPurchased ?? []).includes(freeKey);
+      const freeBtn = this.add.rectangle(W / 2, contentY + 100, 260, 52, gotFree ? 0x111111 : 0x1a2d0e)
+        .setStrokeStyle(1, gotFree ? 0x333333 : GOLD).setInteractive().setDepth(703);
+      const freeTxt = this.add.text(W / 2, contentY + 100, gotFree ? '오늘 이미 수령함' : '💎 무료 원보 10개 받기', this.textStyle(15, gotFree ? '#555' : '#a0c8ff'))
+        .setOrigin(0.5).setDepth(704);
+      if (!gotFree) {
+        freeBtn.on('pointerdown', () => {
+          save.gems = (save.gems ?? 0) + 10;
+          save.shopLastReset = today;
+          save.shopDailyPurchased = [...(save.shopDailyPurchased ?? []), freeKey];
+          saveGame(save);
+          soundSystem.play('synth_ok');
+          this.showNotice('💎 원보 10개 획득!');
+          this.closePanel();
+          this.openPanel('SHOP');
+        });
+      }
+      items.push(freeBtn, freeTxt);
+      items.push(this.add.text(W / 2, contentY + 180, '원보 획득 방법:', this.titleStyle(16)).setOrigin(0.5).setDepth(703));
+      const tips = ['• 임무 완료 보상', '• 보스 첫 격파 시', '• 매일 무료 수령', '• 업적 달성 보상'];
+      tips.forEach((tip, i) => {
+        items.push(this.add.text(W / 2, contentY + 220 + i * 36, tip, this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703));
+      });
+    }
+  }
+
+  // ─── Tutorial System ──────────────────────────────────────────────────────
+
+  private showTutorial(step: number): void {
+    this.tutorialOverlay?.destroy(true);
+    this.tutorialOverlay = null;
+
+    const steps: Array<{ title: string; body: string; highlight?: { x: number; y: number; r: number } }> = [
+      {
+        title: '⚔ 무공키우기에 오신 것을 환영합니다!',
+        body: '화면을 터치하면 자동으로 전투합니다.\n적을 처치해 경험치와 금화를 획득하세요.',
+      },
+      {
+        title: '🎯 스킬 사용하기',
+        body: '하단 스킬 버튼을 눌러 무공을 시전하세요.\n쿨다운이 차면 자동으로 사용됩니다.',
+        highlight: { x: W / 2, y: 860, r: 60 },
+      },
+      {
+        title: '💨 경공 (회피)',
+        body: '경공 버튼으로 적의 공격을 피하세요.\n무적 시간이 있어 피격을 무효화합니다.',
+        highlight: { x: W - 60, y: 860, r: 40 },
+      },
+      {
+        title: '🔰 수련',
+        body: '수련 패널에서 능력치를 강화하세요.\n공격력, 체력, 금화 획득량 등을 올릴 수 있습니다.',
+        highlight: { x: 38, y: 910, r: 32 },
+      },
+      {
+        title: '⚗ 무공 합성',
+        body: '무공 관리 → 합성 탭에서 상위 무공을 만드세요.\n같은 무공 3개를 합성하면 상위 등급이 됩니다.',
+        highlight: { x: W / 2 - 77, y: 910, r: 32 },
+      },
+      {
+        title: '🏯 문파 & 도감',
+        body: '문파에서 시설을 업그레이드하고,\n도감에서 수집한 정보를 확인하세요.',
+        highlight: { x: W / 2 + 77, y: 910, r: 32 },
+      },
+      {
+        title: '✅ 준비 완료!',
+        body: '이제 강호를 평정할 준비가 되었습니다.\n무공을 갈고 닦아 천하제일이 되세요!',
+      },
+    ];
+
+    const s = steps[Math.min(step, steps.length - 1)];
+    const items: Phaser.GameObjects.GameObject[] = [];
+
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.78).setInteractive().setDepth(900);
+    items.push(dim);
+
+    if (s.highlight) {
+      const { x, y, r } = s.highlight;
+      const hole = this.add.circle(x, y, r + 8, 0x000000, 0)
+        .setStrokeStyle(3, GOLD).setDepth(901);
+      this.tweens.add({ targets: hole, scaleX: 1.15, scaleY: 1.15, duration: 600, yoyo: true, repeat: -1 });
+      items.push(hole);
+    }
+
+    const boxY = s.highlight && s.highlight.y < H / 2 ? H * 0.72 : H * 0.38;
+    const box = this.add.rectangle(W / 2, boxY, W - 60, 220, 0x0d0905).setStrokeStyle(2, GOLD).setDepth(901);
+    const title = this.add.text(W / 2, boxY - 75, s.title, { ...this.titleStyle(18), align: 'center' }).setOrigin(0.5).setDepth(902);
+    const body  = this.add.text(W / 2, boxY - 10, s.body, { ...this.textStyle(15, '#c8b89a'), align: 'center', wordWrap: { width: W - 100 } }).setOrigin(0.5).setDepth(902);
+
+    const isLast = step >= steps.length - 1;
+    const nextBtn = this.add.rectangle(W / 2, boxY + 80, 220, 44, 0x2a1f0e).setStrokeStyle(2, GOLD).setInteractive().setDepth(902);
+    const nextTxt = this.add.text(W / 2, boxY + 80, isLast ? '시작!' : `다음 (${step + 1}/${steps.length})`, this.titleStyle(18)).setOrigin(0.5).setDepth(903);
+
+    nextBtn.on('pointerdown', () => {
+      items.forEach(o => o.destroy());
+      this.tutorialOverlay = null;
+      if (isLast) {
+        const save = loadGame();
+        save.tutorialCompleted = true;
+        saveGame(save);
+      } else {
+        this.showTutorial(step + 1);
+      }
+    });
+
+    const stepDots = steps.map((_, i) => {
+      const dot = this.add.circle(W / 2 - (steps.length - 1) * 12 + i * 24, boxY + 110, 5, i === step ? GOLD : 0x5a4a30).setDepth(903);
+      return dot;
+    });
+
+    items.push(box, title, body, nextBtn, nextTxt, ...stepDots);
+    this.tutorialOverlay = this.add.container(0, 0, items).setDepth(900);
   }
 
   private skillLabel(skill: SkillData | undefined): string {

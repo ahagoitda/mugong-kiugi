@@ -18,6 +18,17 @@ import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
 
+const BOSS_DIALOGUES: Record<string, string[]> = {
+  boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
+  boss_danju:   ['약자는 강자의 양식이다.', '내 앞에 무릎 꿇어라!'],
+  boss_gakju:   ['혈교의 힘을 보여주지.', '너 같은 하찮은 자가 감히!'],
+  boss_magun:   ['마기를 두려워하지 않는 자가 왔군.', '그 용기, 여기서 끝내주마!'],
+  boss_hobup:   ['멈춰라. 이 이상은 허용하지 않겠다.', '내 법도가 네 최후가 되리라!'],
+  boss_saja:    ['혈교의 사자가 출동했다.', '이 세상에서 사라져라!'],
+  boss_bugyoju: ['오랜만에 재미있는 상대로군.', '혈교 부교주를 상대하다니 영광이지!'],
+  boss_hyeolma: ['드디어 이 자리까지 왔군...', '혈마의 힘 앞에 모든 것이 사라진다!'],
+};
+
 /**
  * BattleScene - 상단 횡스크롤 자동전투 씬
  *
@@ -806,6 +817,7 @@ export class BattleScene extends Phaser.Scene {
     this.showBossHpUI(scaledBossData);
     soundSystem.play('boss_appear');
     this.cameras.main.shake(400, 0.01);
+    this.showBossCutscene(bossId, bossData.name);
 
     // 보스 등장 경고 텍스트
     const rankName = BOSS_RANK_NAMES[bossData.bossRank ?? ''] ?? 'BOSS';
@@ -2063,6 +2075,58 @@ export class BattleScene extends Phaser.Scene {
 
   private toggleBattleMode(): void {
     this.battleMode = this.battleMode === 'AUTO' ? 'MANUAL' : 'AUTO';
+  }
+
+  private showBossCutscene(bossId: string, bossName: string): void {
+    const lines = BOSS_DIALOGUES[bossId] ?? [`${bossName}이(가) 나타났다!`];
+    const GAME_W = this.scale.width;
+    const GAME_H = this.scale.height;
+
+    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0)
+      .setScrollFactor(0).setDepth(300).setInteractive();
+    this.tweens.add({ targets: overlay, alpha: 0.75, duration: 300 });
+
+    const redFlash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x8b0000, 0.3)
+      .setScrollFactor(0).setDepth(301);
+    this.tweens.add({ targets: redFlash, alpha: 0, duration: 600, delay: 200, onComplete: () => redFlash.destroy() });
+
+    const nameText = this.add.text(GAME_W / 2, GAME_H / 2 - 60, bossName, {
+      fontSize: '28px', color: '#e05050', fontFamily: 'serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(302).setAlpha(0);
+    this.tweens.add({ targets: nameText, alpha: 1, y: GAME_H / 2 - 80, duration: 500, ease: 'Power2' });
+
+    let lineIndex = 0;
+    const dialogText = this.add.text(GAME_W / 2, GAME_H / 2 + 10, '', {
+      fontSize: '18px', color: '#e8c36a', fontFamily: 'serif',
+      stroke: '#000000', strokeThickness: 3, align: 'center',
+      wordWrap: { width: GAME_W - 80 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(302).setAlpha(0);
+
+    const tapHint = this.add.text(GAME_W / 2, GAME_H / 2 + 80, '(탭하여 계속)', {
+      fontSize: '14px', color: '#7a6a50', fontFamily: 'sans-serif',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(302).setAlpha(0);
+    this.tweens.add({ targets: tapHint, alpha: 1, duration: 400, delay: 800, yoyo: true, repeat: -1 });
+
+    const showLine = (i: number) => {
+      dialogText.setText(lines[i]).setAlpha(0);
+      this.tweens.add({ targets: dialogText, alpha: 1, duration: 300 });
+    };
+    this.time.delayedCall(500, () => showLine(0));
+
+    const dismiss = () => {
+      if (lineIndex < lines.length - 1) {
+        lineIndex++;
+        showLine(lineIndex);
+        return;
+      }
+      overlay.off('pointerdown', dismiss);
+      [overlay, nameText, dialogText, tapHint].forEach(o => {
+        this.tweens.add({ targets: o, alpha: 0, duration: 300, onComplete: () => o.destroy() });
+      });
+    };
+    overlay.on('pointerdown', dismiss);
+    this.time.delayedCall(4000, () => dismiss());
   }
 
   private emitState(): void {

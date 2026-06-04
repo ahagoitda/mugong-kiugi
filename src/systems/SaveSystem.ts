@@ -53,6 +53,10 @@ export function createDefaultSave(): SaveData {
     missionClaims: [],
     dailyMissionDate: new Date().toLocaleDateString('en-CA'),
     storyRegion: 1,
+    tutorialCompleted: false,
+    gems: 30,
+    shopLastReset: '',
+    shopDailyPurchased: [],
   };
 }
 
@@ -179,6 +183,10 @@ function migrateSave(oldData: SaveData): SaveData {
     missionClaims: oldData.missionClaims ?? [],
     dailyMissionDate: oldData.dailyMissionDate ?? new Date().toLocaleDateString('en-CA'),
     storyRegion: oldData.storyRegion ?? 1,
+    tutorialCompleted: oldData.tutorialCompleted ?? false,
+    gems: oldData.gems ?? 30,
+    shopLastReset: oldData.shopLastReset ?? '',
+    shopDailyPurchased: oldData.shopDailyPurchased ?? [],
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);

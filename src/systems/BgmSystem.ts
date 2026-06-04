@@ -60,6 +60,15 @@ class BgmSystem {
     }
   }
 
+  setVolume(v: number): void {
+    this._volume = Math.max(0, Math.min(1, v)) * 0.15;
+    this._muted = v <= 0;
+    if (this.masterGain) {
+      this.masterGain.gain.value = this._muted ? 0 : this._volume;
+    }
+  }
+  get volume(): number { return this._muted ? 0 : this._volume / 0.15; }
+
   /**
    * BGM 모드를 전환합니다.
    * 같은 모드면 무시, 다른 모드면 크로스페이드합니다.

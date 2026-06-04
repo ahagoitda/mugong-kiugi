@@ -67,6 +67,16 @@ class SoundSystem {
     }
   }
 
+  setVolume(v: number): void {
+    this._muted = v <= 0;
+    if (this.masterGain) {
+      this.masterGain.gain.value = Math.max(0, Math.min(1, v)) * 0.4;
+    }
+  }
+  get volume(): number {
+    return this._muted ? 0 : (this.masterGain?.gain.value ?? 0.4) / 0.4;
+  }
+
   play(id: SoundId): void {
     const ctx = this.getCtx();
     if (!ctx || !this.masterGain) return;

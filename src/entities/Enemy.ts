@@ -90,7 +90,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   // 드랍 결과를 외부에서 읽기 위한 필드
   private pendingDrop: DropEntry | null = null;
   private hpBarBg: Phaser.GameObjects.Graphics;
+  private hpBarLag: Phaser.GameObjects.Graphics;
   private hpBarFill: Phaser.GameObjects.Graphics;
+  private hpBarShine: Phaser.GameObjects.Graphics;
+  private hpBarLagRatio = 1;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'enemy_art_01');
@@ -98,7 +101,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.hpBarBg = scene.add.graphics().setDepth(32).setVisible(false);
-    this.hpBarFill = scene.add.graphics().setDepth(33).setVisible(false);
+    this.hpBarLag = scene.add.graphics().setDepth(33).setVisible(false);
+    this.hpBarFill = scene.add.graphics().setDepth(34).setVisible(false);
+    this.hpBarShine = scene.add.graphics().setDepth(35).setVisible(false);
 
     this.setDisplaySize(170, 170);
 
@@ -220,8 +225,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
     body.setVelocity(0, 0);
+    this.hpBarLagRatio = 1;
     this.hpBarBg.setVisible(true);
+    this.hpBarLag.setVisible(true);
     this.hpBarFill.setVisible(true);
+    this.hpBarShine.setVisible(true);
     this.updateHpBar();
   }
 
@@ -237,7 +245,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.stunned = false;
     this.speedMultiplier = 1.0;
     this.hpBarBg.clear().setVisible(false);
+    this.hpBarLag.clear().setVisible(false);
     this.hpBarFill.clear().setVisible(false);
+    this.hpBarShine.clear().setVisible(false);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
@@ -251,7 +261,17 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   takeDamage(amount: number): boolean {
     if (!this.active || !this.enemyData) return false;
 
+    const prevRatio = Phaser.Math.Clamp(this._hp / Math.max(1, this.enemyData.hp), 0, 1);
     this._hp = Math.max(0, this._hp - amount);
+    const nextRatio = Phaser.Math.Clamp(this._hp / Math.max(1, this.enemyData.hp), 0, 1);
+    this.hpBarLagRatio = Math.max(this.hpBarLagRatio, prevRatio);
+    this.scene.tweens.add({
+      targets: this,
+      hpBarLagRatio: nextRatio,
+      duration: 430,
+      delay: 80,
+      ease: 'Cubic.easeOut',
+    });
     this.setTint(0xff8888);
     this.updateHpBar();
 
@@ -381,12 +401,30 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.hpBarBg.clear();
     this.hpBarBg.fillStyle(0x090706, 0.82);
     this.hpBarBg.fillRoundedRect(x - 2, y - 2, width + 4, height + 4, 2);
-    this.hpBarBg.lineStyle(1, 0x2b2015, 0.9);
+    this.hpBarBg.lineStyle(1, isBoss ? 0xb78238 : 0x2b2015, 0.9);
     this.hpBarBg.strokeRoundedRect(x - 2, y - 2, width + 4, height + 4, 2);
+
+    const lagRatio = Phaser.Math.Clamp(this.hpBarLagRatio, ratio, 1);
+    this.hpBarLag.clear();
+    if (lagRatio > ratio) {
+      this.hpBarLag.fillStyle(isBoss ? 0xffd05c : 0xff8a3d, 0.78);
+      this.hpBarLag.fillRoundedRect(x + width * ratio, y, width * (lagRatio - ratio), height, 2);
+    }
 
     this.hpBarFill.clear();
     this.hpBarFill.fillStyle(fillColor, 1);
     this.hpBarFill.fillRoundedRect(x, y, width * ratio, height, 2);
+
+    this.hpBarShine.clear();
+    this.hpBarShine.fillStyle(0xffffff, isBoss ? 0.24 : 0.18);
+    this.hpBarShine.fillRect(x + 1, y + 1, Math.max(0, width * ratio - 2), 1);
+    if (isBoss) {
+      this.hpBarShine.lineStyle(1, 0x090706, 0.72);
+      for (let i = 1; i < 4; i++) {
+        const tickX = x + (width / 4) * i;
+        this.hpBarShine.lineBetween(tickX, y - 1, tickX, y + height + 1);
+      }
+    }
   }
 
   /**

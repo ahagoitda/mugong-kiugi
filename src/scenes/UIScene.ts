@@ -151,8 +151,10 @@ export class UIScene extends Phaser.Scene {
   }
 
   private createTopHud(): void {
-    this.add.rectangle(W / 2, 50, W, 100, 0x080706, 0.88).setDepth(200);
-    this.add.rectangle(62, 50, 82, 82, 0x15110c, 1).setStrokeStyle(2, GOLD).setDepth(201);
+    this.add.rectangle(W / 2, 50, W, 100, 0x080706, 0.9).setDepth(200);
+    this.add.rectangle(W / 2, 99, W, 2, 0x916c35, 0.72).setDepth(202);
+    this.add.circle(62, 50, 47, 0x070504, 1).setStrokeStyle(2, 0x8b672f).setDepth(201);
+    this.add.circle(62, 50, 41, 0x15110c, 1).setStrokeStyle(2, GOLD).setDepth(201);
     
     const save = loadGame();
     const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
@@ -160,17 +162,20 @@ export class UIScene extends Phaser.Scene {
     const charId = save.selectedCharacter ?? 'sword_male';
     const portraitKey = dominantSet ? `hero_set_${charId}_${dominantSet}` : `hero_${charId}`;
 
-    this.portraitImage = this.add.image(62, 50, portraitKey).setDisplaySize(80, 80).setDepth(202);
+    this.portraitImage = this.add.image(62, 50, portraitKey).setDisplaySize(82, 82).setDepth(202);
     
     // 무협 느낌의 용/호랑이 테두리 프레임 적용 (여성이면 호랑이, 남성이면 용)
     const frameKey = charId.includes('female') ? 'ui_frame_tiger' : 'ui_frame_dragon';
     this.add.image(62, 50, frameKey).setDisplaySize(84, 84).setDepth(203);
     
-    this.add.rectangle(198, 34, 220, 17, 0x21120d, 1).setOrigin(0, 0.5).setDepth(201);
-    this.add.rectangle(198, 58, 190, 12, 0x07141c, 1).setOrigin(0, 0.5).setDepth(201);
-    this.hpFill = this.add.rectangle(198, 34, 220, 13, 0xb82922).setOrigin(0, 0.5).setDepth(202);
+    this.add.rectangle(194, 33, 230, 21, 0x070403, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x7d5a2a).setDepth(201);
+    this.add.rectangle(194, 58, 202, 15, 0x050708, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x516b82).setDepth(201);
+    this.hpFill = this.add.rectangle(198, 33, 220, 13, 0xb82922).setOrigin(0, 0.5).setDepth(202);
     this.spFill = this.add.rectangle(198, 58, 190, 8, 0x218ac4).setOrigin(0, 0.5).setDepth(202);
-    this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(203);
+    this.add.rectangle(198, 27, 220, 3, 0xff7258, 0.38).setOrigin(0, 0.5).setDepth(203);
+    this.add.rectangle(198, 54, 190, 2, 0x8ce8ff, 0.38).setOrigin(0, 0.5).setDepth(203);
+    this.add.circle(62, 87, 18, 0x120b04, 1).setStrokeStyle(2, GOLD).setDepth(203);
+    this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(204);
     this.goldText = this.add.text(430, 32, '0 금화', this.textStyle(16, '#f2d27d')).setOrigin(0.5).setDepth(203);
     this.waveText = this.add.text(430, 60, '1 웨이브', this.textStyle(15, '#e8dfce')).setOrigin(0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
@@ -240,18 +245,23 @@ export class UIScene extends Phaser.Scene {
 
   private createProgressTrack(): void {
     const y = 110;
-    this.add.rectangle(W / 2, y, 330, 3, 0x5f4a25, 0.8).setDepth(205);
-    for (let i = 0; i < 6; i++) {
-      const x = 105 + i * 54;
+    this.add.rectangle(W / 2, y, 340, 4, 0x1a1712, 1).setDepth(204);
+    this.add.rectangle(W / 2, y, 340, 2, 0x7a5d2d, 0.85).setDepth(205);
+    const nodeXs = [112, 154, 196, 344, 386, 428];
+    for (let i = 0; i < nodeXs.length; i++) {
+      const x = nodeXs[i];
+      this.add.circle(x, y, 15, 0x070504, 1).setStrokeStyle(1, 0x4a3a24).setDepth(205);
       const node = this.add.arc(x, y, 10, 0, 360, false, 0x241b12, 1)
-        .setStrokeStyle(2, i < 3 ? GOLD : 0x4d4a43)
+        .setStrokeStyle(2, 0x4d4a43)
         .setDepth(206);
+      this.add.text(x, y, '\u25C8', this.textStyle(10, '#31281b')).setOrigin(0.5).setDepth(207);
       this.progressNodes.push(node);
     }
-    this.bossNode = this.add.star(W / 2 + 5, y - 1, 8, 16, 28, 0x5b150c, 1)
+    this.add.circle(W / 2, y, 36, 0x070504, 1).setStrokeStyle(2, 0x8c642d).setDepth(206);
+    this.bossNode = this.add.star(W / 2, y - 1, 8, 17, 31, 0x5b150c, 1)
       .setStrokeStyle(3, 0xf1b34f)
       .setDepth(207);
-    this.add.text(W / 2 + 5, y - 1, '\u9B54', this.titleStyle(17)).setOrigin(0.5).setDepth(208);
+    this.add.text(W / 2, y - 1, '\u9B54', this.titleStyle(18)).setOrigin(0.5).setDepth(208);
   }
 
   private createCombatSkillDockV2(): void {
@@ -651,10 +661,12 @@ export class UIScene extends Phaser.Scene {
       this.skillLabels[index].setText(this.skillLabel(SKILL_DATABASE.get(skill.id)));
       this.cooldowns[index].setVisible(skill.cooldownRemaining > 0);
     });
+    const activeProgress = state.isBossWave ? this.progressNodes.length : (state.waveNumber - 1) % this.progressNodes.length;
     this.progressNodes.forEach((node, index) => {
-      const active = (state.waveNumber - 1) % 5 >= index || state.isBossWave;
+      const active = activeProgress > index;
       node.setFillStyle(active ? GOLD : 0x241b12, 1);
       node.setStrokeStyle(2, active ? 0xffdf84 : 0x4d4a43);
+      node.setScale(active ? 1.12 : 1);
     });
     if (this.bossNode) {
       this.bossNode.setFillStyle(state.isBossWave ? 0xb92512 : 0x5b150c, 1);

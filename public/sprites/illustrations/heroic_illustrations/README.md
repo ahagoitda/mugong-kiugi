@@ -13,29 +13,48 @@
 ## 포함 일러스트 (현재 18장)
 
 ### 여성 영웅 Heroic 12+ 버전 (4)
-- `15plus_sword_female.jpg` - 여검객 (청운검문 스타일, 푸른 오라)
-- `15plus_dao_female.jpg` - 여도객 (호풍도문, 붉은 기운)
-- `15plus_fist_female.jpg` - 여권사 (비룡권문, 금빛)
-- `15plus_spear_female.jpg` - 여창객 (운령창문, 녹색)
+- `sword_female.jpg` - 여검객 (청운검문 스타일, 푸른 오라)
+- `dao_female.jpg` - 여도객 (호풍도문, 붉은 기운)
+- `fist_female.jpg` - 여권사 (비룡권문, 금빛)
+- `spear_female.jpg` - 여창객 (운령창문, 녹색)
 
-### 여성 Blood Set / 타락 12+ (5)
-- `15plus_sword_female_blood.jpg`
-- `15plus_dao_female_blood.jpg`
-- `15plus_fist_female_blood.jpg`
-- `15plus_spear_female_blood.jpg`
-- `15plus_spear_female_blood_extra.jpg`
-- `15plus_dao_female_blood_extra.jpg` (추가 변형)
+### 여성 Blood Set / 타락 12+ (6)
+- `sword_female_blood.jpg`
+- `dao_female_blood.jpg`
+- `fist_female_blood.jpg`
+- `spear_female_blood.jpg`
+- `spear_female_blood_extra.jpg`
+- `dao_female_blood_extra.jpg` (추가 변형)
+- `fist_female_backish.jpg` (동적 각도)
 
 ### 점소이 (Jeomsoyi) NPC 12+
-- `15plus_jeomsoyi.jpg` - 기본 tavern girl
-- `15plus_jeomsoyi_blood.jpg` - Blood corrupted tavern girl
+- `jeomsoyi.jpg` - 기본 tavern girl
+- `jeomsoyi_blood.jpg` - Blood corrupted tavern girl
 
 ### 남성 영웅 버전 (12+ / Heroic 스타일)
-- `15plus_sword_male.jpg` - 검객 (쿨하고 멋진 영웅 스타일, 로브 제대로 착용)
-- `15plus_dao_male.jpg` - 도객
-- `15plus_fist_male.jpg` - 권사
-- `15plus_spear_male.jpg` - 창객
-- `15plus_fist_male_bare.jpg` - 권사 상체 노출 버전 (수련 느낌, 여전히 12+ 수준으로 조정)
+- `sword_male.jpg` - 검객 (쿨하고 멋진 영웅 스타일, 로브 제대로 착용)
+- `dao_male.jpg` - 도객
+- `fist_male.jpg` - 권사
+- `spear_male.jpg` - 창객
+- `fist_male_bare.jpg` - 권사 상체 노출 버전 (수련 느낌, 12+ 수준)
+
+## 무공 모션 고화질 일러스트 (motions/ 폴더)
+픽셀 스프라이트가 아닌, 각 캐릭터의 무공(검법/도법/권법/창법) 모션을 고화질 일러스트로 제작.
+- 스타일: 기존 heroic 12+ 캐릭터 포트레이트와 동일 (우아한 무협 스타일, 정돈된 의상, 클래스별 원소 오라)
+- 목적: 스킬 카드, 도감, 이벤트 CG, 컨셉 아트 등으로 활용 가능
+- 현재 포함 예시 (대표 무공):
+  - sword_female_samjae.jpg (기본 검)
+  - sword_female_maehwa.jpg (매화검법)
+  - sword_female_changung.jpg (창궁무애검법 궁극)
+  - dao_male_baldo.jpg (발도술)
+  - dao_female_paewang.jpg (패왕도법)
+  - fist_female_yeonhwante.jpg (연환퇴)
+  - fist_male_taejo.jpg (태조장권)
+  - fist_male_yeorae.jpg (여래신장 궁극)
+  - spear_male_yongchang.jpg (용창구식)
+  - spear_female_hoeseon.jpg (회선창)
+
+추가 모션은 specs의 176개 무공명 (비연검, 혈란도법, 항룡십팔장, 용호창결 등) 기반으로 요청 시 더 제작 가능.
 
 ## 사용 제안
 - 캐릭터 선택 화면 대체 아트 또는 갤러리/도감 특수 일러스트로 사용 가능

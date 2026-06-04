@@ -325,26 +325,26 @@ export class UIScene extends Phaser.Scene {
       const col = index % 5;
       const row = Math.floor(index / 5);
       const cx = 54 + col * 108;
-      const cy = 783 + row * 62;
+      const cy = 780 + row * 78;
       const art = this.add.image(cx, cy, skillCardKey(skill.id))
-        .setDisplaySize(82, 112)
+        .setDisplaySize(82, 74)
         .setDepth(201)
         .setInteractive();
       art.on('pointerdown', () => this.equipSkill(skill.id, index % 3));
 
       const grade = skill.grade.toLowerCase();
       const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
-      this.add.image(cx, cy, frameKey).setDisplaySize(82, 112).setDepth(202);
-      this.add.rectangle(cx, cy + 38, 76, 22, 0x050403, 0.68).setDepth(203);
-      this.add.text(cx, cy + 30, this.skillLabel(skill), {
+      this.add.image(cx, cy, frameKey).setDisplaySize(82, 74).setDepth(202);
+      this.add.rectangle(cx, cy + 21, 76, 24, 0x050403, 0.72).setDepth(203);
+      this.add.text(cx, cy + 12, this.skillLabel(skill), {
         ...this.textStyle(9, '#f3e7ca'),
         align: 'center',
         wordWrap: { width: 72 },
       }).setOrigin(0.5, 0).setDepth(204);
-      const gradeMark = { LOW: '하', MID: '중', HIGH: '상', ULTIMATE: '절' }[skill.grade] ?? '';
-      this.add.text(cx - 29, cy - 44, gradeMark, this.textStyle(12, '#f6d47a')).setOrigin(0.5).setDepth(204);
+      const gradeMark = { LOW: '\uD558', MID: '\uC911', HIGH: '\uC0C1', ULTIMATE: '\uC808' }[skill.grade] ?? '';
+      this.add.text(cx - 29, cy - 25, gradeMark, this.textStyle(12, '#f6d47a')).setOrigin(0.5).setDepth(204);
       const level = save.skillLevels?.[skill.id] ?? 0;
-      this.add.text(cx + 26, cy + 44, `+${level}`, this.textStyle(10, '#d4a74e')).setOrigin(0.5).setDepth(204);
+      this.add.text(cx + 26, cy + 27, `+${level}`, this.textStyle(10, '#d4a74e')).setOrigin(0.5).setDepth(204);
     });
   }
 

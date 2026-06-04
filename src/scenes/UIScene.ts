@@ -114,8 +114,10 @@ export class UIScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private modeText!: Phaser.GameObjects.Text;
   private dashCooldown!: Phaser.GameObjects.Arc;
+  private dashCooldownText!: Phaser.GameObjects.Text;
   private skillLabels: Phaser.GameObjects.Text[] = [];
   private cooldowns: Phaser.GameObjects.Arc[] = [];
+  private cooldownTexts: Phaser.GameObjects.Text[] = [];
   private progressNodes: Phaser.GameObjects.Arc[] = [];
   private bossNode!: Phaser.GameObjects.Star;
   private notif!: Phaser.GameObjects.Text;
@@ -287,6 +289,7 @@ export class UIScene extends Phaser.Scene {
         ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-dash'));
         this.add.text(slot.x, 680, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 62 } }).setOrigin(0.5).setDepth(204);
         this.dashCooldown = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
+        this.dashCooldownText = this.add.text(slot.x, 680, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
         return;
       }
 
@@ -298,6 +301,7 @@ export class UIScene extends Phaser.Scene {
       ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-skill', slot.action));
       this.skillLabels[slot.action] = this.add.text(slot.x, 680, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 74 } }).setOrigin(0.5).setDepth(204);
       this.cooldowns[slot.action] = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
+      this.cooldownTexts[slot.action] = this.add.text(slot.x, 680, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
     });
 
     const auto = this.add.circle(488, 680, 34, 0x21170b, 1).setStrokeStyle(2, GOLD).setDepth(202).setInteractive();
@@ -655,11 +659,13 @@ export class UIScene extends Phaser.Scene {
     this.goldText.setText(`${state.gold} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
     this.modeText.setText(state.battleMode === 'AUTO' ? 'AUTO' : '수동');
-    if (this.dashCooldown) this.dashCooldown.setVisible(state.dashCooldownRemaining > 0);
+    if (this.dashCooldown) {
+      this.updateCooldown(this.dashCooldown, this.dashCooldownText, state.dashCooldownRemaining, state.dashCooldown);
+    }
     state.skills.forEach((skill, index) => {
       if (!this.skillLabels[index]) return;
       this.skillLabels[index].setText(this.skillLabel(SKILL_DATABASE.get(skill.id)));
-      this.cooldowns[index].setVisible(skill.cooldownRemaining > 0);
+      this.updateCooldown(this.cooldowns[index], this.cooldownTexts[index], skill.cooldownRemaining, skill.cooldown);
     });
     const activeProgress = state.isBossWave ? this.progressNodes.length : (state.waveNumber - 1) % this.progressNodes.length;
     this.progressNodes.forEach((node, index) => {
@@ -842,6 +848,24 @@ export class UIScene extends Phaser.Scene {
 
   private gradeColor(item: EquipmentItem): number {
     return { COMMON: 0x777777, RARE: 0x3c8ed0, EPIC: 0x9a57d1, LEGENDARY: 0xd5a633 }[item.grade];
+  }
+
+  private updateCooldown(
+    arc: Phaser.GameObjects.Arc | undefined,
+    text: Phaser.GameObjects.Text | undefined,
+    remaining: number,
+    total: number,
+  ): void {
+    if (!arc || !text) return;
+    const active = remaining > 0;
+    arc.setVisible(active);
+    text.setVisible(active);
+    if (!active) return;
+
+    const ratio = Phaser.Math.Clamp(remaining / Math.max(1, total), 0, 1);
+    arc.setStartAngle(-90);
+    arc.setEndAngle(-90 + 360 * ratio);
+    text.setText((remaining / 1000).toFixed(1));
   }
 
   private skillGradeColor(grade: SkillData['grade']): number {

@@ -1,105 +1,164 @@
-# 무공키우기
+# 무공키우기 (Mugong Kiugi)
 
-2D 횡스크롤 도트 액션 게임 - 무공 비급을 수집하고 합성하여 강해지자!
+**무공키우기**는 540x960 세로형 종횡비를 지원하는 Phaser 3 + Capacitor 기반의 **무협 방치형 RPG** 게임입니다.  
+이름 없는 무인이 되어 정파 사대문파의 잃어버린 비급을 습득하고, 중원을 위협하는 혈교(血敎)의 여덟 층위 보스를 토벌하는 강호 여정을 담고 있습니다.
 
-## 게임 구조
+---
 
+## 1. 게임 구조 및 기술 스택
+
+### 1.1 게임 인터페이스 레이아웃
 ```
 ┌─────────────────────────────┐
-│  [상단 60%] 횡스크롤 전투     │  ← 자동/수동 전투
-│  캐릭터 자동 진행 + 적 처치   │
+│  [상단 60%] 횡스크롤 전투     │  ← 3단 패럴랙스 배경 스크롤링
+│  캐릭터 자동 진행 + 적 처치   │  ← 자동/수동 무공 시전 및 대시
 ├─────────────────────────────┤
-│  [하단 40%] 무공 관리         │  ← 장착/합성/도감
-│  비급 슬롯, 합성, 스탯       │
+│  [하단 40%] 관리 UI 패널      │  ← 무공 관리 (장착/합성/강화)
+│  비급 슬롯, 합성, 스탯, 임무  │  ← 수련, 장비 세트 장착, 문파/도감
 └─────────────────────────────┘
 ```
 
-## 기술 스택
+### 1.2 핵심 기술 스택
+- **Game Engine**: Phaser v3.90.0 (WebGL / Canvas 2D 60fps)
+- **Language**: TypeScript v6.0.3 (정적 타입 안정성)
+- **Build Tool**: Vite v8.0.11
+- **Wrapper**: Capacitor v8.3.3 (네이티브 Android APK 패키징 및 하드웨어 동기화)
+- **Image Processor**: Sharp v0.34.5 (Chroma keying 및 포맷 변환 자동화)
 
-| 기술 | 용도 |
-|---|---|
-| Phaser 3 (WebGL) | 2D 게임 엔진, 60fps 렌더링 |
-| TypeScript | 종단간 타입 안전성 |
-| Vite | 빌드 도구 |
-| Capacitor | 네이티브 Android APK 래핑 |
+---
 
-## 개발 환경 실행
+## 2. 세계관 및 8장 스토리
 
+### 2.1 시놉시스
+> 혈교가 중원을 침략하자 정파 사대문파(청운검문, 호풍도문, 비룡권문, 운령창문)는 궤멸 직전에 이르렀습니다.  
+> 강호에 홀연히 나선 이름 없는 무인은 실종된 장문인들의 비급을 이어받아 혈교의 여덟 층위 보스(대주부터 최종 무령 혈마까지)를 차례로 파해하고, 강호의 화평을 실현해 나갑니다.
+
+### 2.2 8개 장(지역) 테마 및 스토리라인
+게임은 총 8개 장으로 구성되며, 해금 웨이브에 따라 3단 패럴랙스 배경과 보스 몬스터가 교체됩니다.
+
+| 장 | 지역 id | 지역명 | 해금 웨이브 | 주요 보스 | 보스 기술 |
+|----|--------|--------|------------|-----------|-----------|
+| 1장 | `forest` | 녹림 | 1 | 혈예 대주 (DAEJU) | 혈예 진각 (지면 파동) |
+| 2장 | `bamboo` | 죽림 | 10 | 적월 단주 (DANJU) | 적월 혈창 (투사체 참격) |
+| 3장 | `snow` | 설산 | 20 | 유영 각주 (GAKJU) | 유영환검 (다각 환영격) |
+| 4장 | `desert` | 사막 | 30 | 비천 마군 (MAGUN) | 비천강림 (공중 낙하검) |
+| 5장 | `volcano` | 화산 | 40 | 금강 호법 (HOBUP) | 금강지진 (연속 진각) |
+| 6장 | `coast` | 해안 | 50 | 묵운 사자 (SAJA) | 묵운산탄 (암흑 탄환) |
+| 7장 | `blood_valley` | 혈곡 | 60 | 혈마 부교주 (BUGYOJU) | 혈우 (광역 뇌우) |
+| 8장 | `demon_palace` | 마천궁 | 70 | 무령 혈마 (HYEOLMA) | 혈마강세 (심연 대폭발) |
+
+---
+
+## 3. 무공 및 장비 세트 확장 사양
+
+### 3.1 4대 정파 계열 및 보법
+무공은 고무(古武)의 철학을 기반으로 4대 계열로 세분화되며, 기동을 위한 보법이 존재합니다.
+- **검법 (SWORD)**: 변화(變化)의 미학. 다양한 디버프와 유려한 밸런스 전투 스타일.
+- **도법 (BLADE)**: 파괴(破壞)의 물리. 묵직하고 강맹한 한 방 och 넉백/기절 중심 스타일.
+- **권법 (FIST)**: 연타(連打)의 폭발. 초근접 빠른 공격 속도와 지속 출혈/둔화 스타일.
+- **창법 (SPEAR)**: 제압(制壓)의 사거리. 넓은 판정의 범위 공격과 적 군중 제어 스타일.
+- **보법 (MOVEMENT)**: 기동(機動)의 핵심. 무적 대시(초상비)를 통한 수동 회피 기능.
+
+### 3.2 등급별 이름/설명 자동 매핑
+무공 비급은 **LOW(하급), MID(중급), HIGH(상급), ULTIMATE(절기)** 등급을 가지며, 기획서의 Wuxia 마스터 데이터 테이블([contents_plan.md](file:///C:/Users/ahago/.gemini/antigravity/scratch/mugong-kiugi/docs/contents_plan.md))에 근거하여 인게임 자동 무공 생성기에서 한자식 한국어 무명(예: 비연검, 파천도결, 벽력장, 용호창결)과 컨셉에 어울리는 풍부한 묘사 문구로 자동 맵핑되도록 구현되어 있습니다.
+
+### 3.3 장비 세트 8종
+여덟 보스를 격파하고 획득하는 전리품 세트로, 틴팅 오라를 동반한 세트 효과(2/4/6세트 분기별 데미지 및 골드 버프 제공)가 구현되어 있습니다.
+- **세트 종류**: 혈예 세트(1장), 적월 세트(2장), 유영 세트(3장), 비천 세트(4장), 금강 세트(5장), 묵운 세트(6장), 혈마 세트(7장), 무령 세트(8장)
+
+---
+
+## 4. 그래픽 자산 및 이미지 프로세싱 파이프라인
+
+게임의 시각적 완성도 향상을 위해 3단 패럴랙스 배경 및 투명화 이미지 처리 스크립트가 구축되어 있습니다.
+
+### 4.1 3단 패럴랙스 스크롤링 (Parallax Scrolling)
+상단 전투 화면의 단조로움을 극복하기 위해 배경을 3단으로 쪼개어 깊이감(Depth)과 운동감을 다르게 적용했습니다.
+1.  **bg (원경/하늘)**: `scrollX * 0.1` 속도 (아주 느린 흐름)
+2.  **mg (중경/오브젝트)**: `scrollX * 0.45` 속도 (대나무 줄기, 사막 유적 등)
+3.  **fg (근경/지면)**: `scrollX * 1.0` 속도 (캐릭터가 딛는 지면 및 풀밭, 이동 속도와 일대일 매칭)
+
+### 4.2 크로마키(Chroma Keying) 자동 처리 파이프라인
+단색 크로마키 배경(그린스크린 또는 블랙스크린)에서 생성된 그래픽 소스를 웹에 최적화된 투명 알파 PNG/WebP로 변환해 주는 이미지 자동 가공 프로세서가 내장되어 있습니다.
+
+- **그린스크린 제거**: $G$ 채널이 $R$ 및 $B$보다 현저히 높은 픽셀 영역 검출 및 경계면 안티앨리어싱 desaturation(녹색 후광 제거).
+- **블랙스크린 제거**: $\max(R,G,B)$가 문턱값보다 낮은 암흑 영역을 투명 알파 처리(주로 UI 카드 테두리에 사용).
+- **포맷 최적화**: 배경 이미지 파일은 압축률이 높은 `.webp`로 변환, 캐릭터 스킨 및 UI는 투명 채널 보존을 위해 `.png`로 변환 배포.
+
+---
+
+## 5. 프로젝트 디렉터리 구조
+
+```
+mugong-kiugi/
+├── docs/
+│   └── contents_plan.md      # 마스터 기획서 (세계관/스토리/무공명칭)
+├── scripts/
+│   ├── fallback-assets.js    # 미생성 그래픽 자산 템플릿 복제/생성 헬퍼
+│   └── process-assets.js     # sharp 기반 크로마키 투명화 & WebP 변환기
+├── public/
+│   └── sprites/
+│       ├── originals/        # 크로마키 배경을 가진 원본 그래픽 (70장)
+│       └── generated/runtime/ # 가공 배포된 인게임 최종 자산 경로 (70장)
+├── src/
+│   ├── main.ts               # Phaser 3 구성 및 게임 기동 엔트리
+│   ├── data/
+│   │   ├── assets.ts         # 인게임 자산 로딩 테이블 정의
+│   │   ├── characters.ts     # 영웅 캐릭터 목록 및 배경 테마 정의
+│   │   ├── enemies.ts        # 적과 8층위 보스 정보
+│   │   └── skills.ts         # 무공 및 합성 레시피 데이터 ( nameKo 맵 탑재)
+│   ├── scenes/
+│   │   ├── BootScene.ts      # 그래픽 자산 일괄 로딩 및 무구 스킨 오버라이드
+│   │   ├── BattleScene.ts    # 3단 패럴랙스 횡스크롤 전투 (자동 AI 포함)
+│   │   └── UIScene.ts        # 하단 무공/수련/장비/문파/도감 탭 구성
+│   └── systems/
+│       └── SaveSystem.ts     # localStorage 세이브/로드 및 오프라인 보상
+```
+
+---
+
+## 6. 개발 및 빌드 실행 가이드
+
+### 6.1 개발 서버 구동
 ```bash
+# 의존성 패키지 설치 (Windows 환경에서는 npm.cmd 사용 권장)
 npm install
+
+# 로컬 개발용 Vite 서버 기동 (http://localhost:3000)
 npm run dev
 ```
 
-브라우저에서 `http://localhost:3000` 접속
-
-## 프로덕션 빌드
-
+### 6.2 자산 처리 (Chroma keying 가동)
+실제 원본 자산 또는 Fallback 템플릿 이미지를 가공하여 런타임 디렉터리에 배포하려면 아래 순서로 스크립트를 작동하십시오.
 ```bash
-npm run build
+# 1) 원본/fallback 이미지 빌드 준비 (originals 디렉터리 자동 채우기)
+node scripts/fallback-assets.js
+
+# 2) 크로마키 투명화 & WebP 변환 실행 (generated/runtime 디렉터리 배포)
+node scripts/process-assets.js
 ```
 
-## Android APK 빌드 (Kotlin 셸 + Capacitor)
-
-네이티브 안드로이드 프로젝트(`android/`, MainActivity는 Kotlin)는 이미 저장소에 포함돼 있습니다.
-에셋은 앱에 **로컬 번들**되므로 네트워크 로딩이 없어 모바일 웹에서 발생하던 로딩 멈춤이 사라집니다.
-
-**사전 요구**: JDK 21, Android Studio(또는 Android SDK).
-
+### 6.3 프로덕션 빌드 및 Capacitor Android 동기화
+안드로이드 기기 또는 에뮬레이터에서 앱 형태로 테스트하려면, 번들된 자산을 동기화해 주어야 합니다.
 ```bash
-# 1) 의존성 설치
-npm install
+# 웹 프로덕션 빌드 컴파일 및 번들링
+npm run build
 
-# 2) 웹 빌드 + 안드로이드 동기화 (dist → android/app/src/main/assets/public)
+# 웹 빌드 결과물(dist/)을 안드로이드 네이티브 에셋 폴더로 동기화
 npm run android:sync          # = npm run build && npx cap sync android
 
-# 3) Android Studio 열기
+# Android Studio로 프로젝트 기동
 npm run android:open          # = npx cap open android
 ```
 
-Android Studio에서 기기/에뮬레이터로 Run 하거나, APK 빌드:
-
+안드로이드 네이티브 APK 디버그 파일 빌드 실행:
 ```bash
 cd android
-./gradlew assembleDebug       # 산출물: android/app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug       # 출력: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-> 참고: `android/app/src/main/assets/public/`(번들된 웹 자산)와
-> `capacitor-cordova-android-plugins/`(생성 모듈)는 `.gitignore` 대상이라,
-> 클론 직후 반드시 `npm run android:sync`로 재생성해야 합니다.
-> 게임 코드를 수정한 뒤에도 `npm run android:sync`로 자산을 갱신하세요.
+---
 
-## 프로젝트 구조
-
-```
-src/
-├── main.ts              # 엔트리 포인트 (Phaser 설정)
-├── data/
-│   ├── types.ts         # 타입 정의
-│   ├── skills.ts        # 무공 데이터
-│   └── enemies.ts       # 적 데이터
-├── entities/
-│   ├── Player.ts        # 플레이어 (상태머신)
-│   └── Enemy.ts         # 적 (추적 AI)
-├── scenes/
-│   ├── BootScene.ts     # 에셋 로딩
-│   ├── BattleScene.ts   # 횡스크롤 전투
-│   └── UIScene.ts       # 하단 관리 UI
-├── systems/
-│   └── SaveSystem.ts    # localStorage 세이브/로드
-└── utils/
-    ├── ObjectPool.ts    # 오브젝트 풀링 (GC 방지)
-    └── spriteGenerator.ts  # 플레이스홀더 스프라이트
-```
-
-## 무공 체계 (MVP)
-
-| 등급 | 무공 | 획득 방법 |
-|---|---|---|
-| 하급 | 삼재검법, 육합검 | 적 드랍 |
-| 중급 | 매화검법, 청풍검법 | 합성 |
-| 상급 | 태극검법 | 합성 |
-| 최상급 | 창궁무애검법 | 합성 |
-
-## 라이선스
-
-Private - All rights reserved
+## 7. 라이선스
+Private - All rights reserved.
+본 리포지토리의 코드 및 자산은 허가 없이 외부 배포 및 상업적 목적으로 활용할 수 없습니다.

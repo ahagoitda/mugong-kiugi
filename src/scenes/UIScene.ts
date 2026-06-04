@@ -4,7 +4,7 @@ import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 import {
   EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore,
-  equippedItems, equipmentSetBonus,
+  equippedItems, equipmentSetBonus, dominantSetId,
 } from '../data/equipment';
 import { skillCardKey } from '../data/assets';
 import { claimOfflineReward, loadGame, saveGame } from '../systems/SaveSystem';
@@ -13,7 +13,6 @@ import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
 const W = 540;
 const H = 960;
 const GOLD = 0xd4a74e;
-const PANEL = 0x0b0907;
 
 type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS';
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
@@ -92,6 +91,7 @@ export class UIScene extends Phaser.Scene {
   private skillLabels: Phaser.GameObjects.Text[] = [];
   private cooldowns: Phaser.GameObjects.Arc[] = [];
   private notif!: Phaser.GameObjects.Text;
+  private portraitImage!: Phaser.GameObjects.Image;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -122,7 +122,19 @@ export class UIScene extends Phaser.Scene {
   private createTopHud(): void {
     this.add.rectangle(W / 2, 50, W, 100, 0x080706, 0.88).setDepth(200);
     this.add.rectangle(62, 50, 82, 82, 0x15110c, 1).setStrokeStyle(2, GOLD).setDepth(201);
-    this.add.image(62, 50, `hero_${loadGame().selectedCharacter ?? 'sword_male'}`).setDisplaySize(80, 80).setDepth(202);
+    
+    const save = loadGame();
+    const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
+    const dominantSet = dominantSetId(equipped, 4);
+    const charId = save.selectedCharacter ?? 'sword_male';
+    const portraitKey = dominantSet ? `hero_set_${charId}_${dominantSet}` : `hero_${charId}`;
+
+    this.portraitImage = this.add.image(62, 50, portraitKey).setDisplaySize(80, 80).setDepth(202);
+    
+    // 무협 느낌의 용/호랑이 테두리 프레임 적용 (여성이면 호랑이, 남성이면 용)
+    const frameKey = charId.includes('female') ? 'ui_frame_tiger' : 'ui_frame_dragon';
+    this.add.image(62, 50, frameKey).setDisplaySize(84, 84).setDepth(203);
+    
     this.add.rectangle(198, 34, 220, 17, 0x21120d, 1).setOrigin(0, 0.5).setDepth(201);
     this.add.rectangle(198, 58, 190, 12, 0x07141c, 1).setOrigin(0, 0.5).setDepth(201);
     this.hpFill = this.add.rectangle(198, 34, 220, 13, 0xb82922).setOrigin(0, 0.5).setDepth(202);
@@ -170,9 +182,9 @@ export class UIScene extends Phaser.Scene {
     this.overlay?.destroy(true);
     const items: Phaser.GameObjects.GameObject[] = [];
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.82).setInteractive();
-    const bg = this.add.rectangle(W / 2, H / 2, W - 24, H - 40, PANEL, 0.98).setStrokeStyle(2, GOLD);
-    const title = this.add.text(36, 42, PANEL_TITLES[panel], this.titleStyle(28));
-    const close = this.add.text(W - 45, 46, 'X', this.titleStyle(30)).setOrigin(0.5).setInteractive();
+    const bg = this.add.image(W / 2, H / 2, 'ui_dialog_bg').setDisplaySize(W - 24, H - 40).setDepth(701);
+    const title = this.add.text(50, 42, PANEL_TITLES[panel], this.titleStyle(28)).setDepth(702);
+    const close = this.add.text(W - 55, 46, 'X', this.titleStyle(30)).setOrigin(0.5).setInteractive().setDepth(702);
     close.on('pointerdown', () => this.closePanel());
     items.push(shade, bg, title, close);
     if (panel === 'MARTIAL') this.buildMartial(items);
@@ -189,9 +201,9 @@ export class UIScene extends Phaser.Scene {
     tabs.forEach(([tab, label], index) => {
       const x = 38 + index * 124;
       const button = this.add.rectangle(x, 95, 112, 44, tab === this.martialTab ? 0x5a3d18 : 0x17120d)
-        .setOrigin(0, 0).setStrokeStyle(1, GOLD).setInteractive();
+        .setOrigin(0, 0).setStrokeStyle(1, GOLD).setInteractive().setDepth(702);
       button.on('pointerdown', () => { this.martialTab = tab; this.openPanel('MARTIAL'); });
-      items.push(button, this.add.text(x + 56, 117, label, this.textStyle(17, '#f0d493')).setOrigin(0.5));
+      items.push(button, this.add.text(x + 56, 117, label, this.textStyle(17, '#f0d493')).setOrigin(0.5).setDepth(703));
     });
     if (this.martialTab === 'SKILLS') this.buildSkillCards(items);
     if (this.martialTab === 'SYNTH') this.buildSynthesis(items);
@@ -204,11 +216,16 @@ export class UIScene extends Phaser.Scene {
     this.ownedSkills(save).slice(0, 8).forEach((skill, index) => {
       const x = 38 + (index % 4) * 124;
       const y = 165 + Math.floor(index / 4) * 260;
-      const art = this.add.image(x + 55, y + 78, skillCardKey(skill.id)).setDisplaySize(110, 156).setInteractive();
+      const art = this.add.image(x + 55, y + 78, skillCardKey(skill.id)).setDisplaySize(110, 156).setInteractive().setDepth(702);
       art.on('pointerdown', () => this.equipSkill(skill.id, index % 3));
-      items.push(art,
-        this.add.text(x + 55, y + 172, this.skillLabel(skill), { ...this.textStyle(13, '#f3e7ca'), align: 'center', wordWrap: { width: 112 } }).setOrigin(0.5),
-        this.add.text(x + 55, y + 198, `보유 ${save.inventory[skill.id] ?? 0} · +${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(12, '#d4a74e')).setOrigin(0.5));
+
+      const grade = skill.grade.toLowerCase();
+      const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
+      const frame = this.add.image(x + 55, y + 78, frameKey).setDisplaySize(110, 156).setDepth(703);
+
+      items.push(art, frame,
+        this.add.text(x + 55, y + 172, this.skillLabel(skill), { ...this.textStyle(13, '#f3e7ca'), align: 'center', wordWrap: { width: 112 } }).setOrigin(0.5).setDepth(704),
+        this.add.text(x + 55, y + 198, `보유 ${save.inventory[skill.id] ?? 0} · +${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(12, '#d4a74e')).setOrigin(0.5).setDepth(704));
     });
   }
 
@@ -222,9 +239,14 @@ export class UIScene extends Phaser.Scene {
       const result = SKILL_DATABASE.get(recipe.result)!;
       const x = 38 + (index % 4) * 124;
       const y = 165 + Math.floor(index / 4) * 240;
-      const art = this.add.image(x + 55, y + 75, skillCardKey(result.id)).setDisplaySize(110, 156).setInteractive();
+      const art = this.add.image(x + 55, y + 75, skillCardKey(result.id)).setDisplaySize(110, 156).setInteractive().setDepth(702);
       art.on('pointerdown', () => this.synth(recipe.material1, recipe.material2, recipe.result, recipe.goldCost));
-      items.push(art, this.add.text(x + 55, y + 170, `${recipe.goldCost} 금화`, this.textStyle(13, '#d4a74e')).setOrigin(0.5));
+
+      const grade = result.grade.toLowerCase();
+      const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
+      const frame = this.add.image(x + 55, y + 75, frameKey).setDisplaySize(110, 156).setDepth(703);
+
+      items.push(art, frame, this.add.text(x + 55, y + 170, `${recipe.goldCost} 금화`, this.textStyle(13, '#d4a74e')).setOrigin(0.5).setDepth(704));
     });
   }
 
@@ -233,9 +255,14 @@ export class UIScene extends Phaser.Scene {
     this.ownedSkills(save).slice(0, 8).forEach((skill, index) => {
       const x = 38 + (index % 4) * 124;
       const y = 165 + Math.floor(index / 4) * 240;
-      const art = this.add.image(x + 55, y + 75, skillCardKey(skill.id)).setDisplaySize(110, 156).setInteractive();
+      const art = this.add.image(x + 55, y + 75, skillCardKey(skill.id)).setDisplaySize(110, 156).setInteractive().setDepth(702);
       art.on('pointerdown', () => this.upgradeSkill(skill));
-      items.push(art, this.add.text(x + 55, y + 170, `강화 +${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(13, '#d4a74e')).setOrigin(0.5));
+
+      const grade = skill.grade.toLowerCase();
+      const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
+      const frame = this.add.image(x + 55, y + 75, frameKey).setDisplaySize(110, 156).setDepth(703);
+
+      items.push(art, frame, this.add.text(x + 55, y + 170, `강화 +${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(13, '#d4a74e')).setOrigin(0.5).setDepth(704));
     });
   }
 
@@ -266,6 +293,9 @@ export class UIScene extends Phaser.Scene {
         this.add.text(55, y + 16, `${effect} +${level * 2}%`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 120, y, `${cost} 금화`, this.textStyle(15, '#f0d493')).setOrigin(0.5));
     });
+    // 점소이 일러스트 추가
+    const npc = this.add.image(W - 120, 680, 'npc_jeomsoyi').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
+    items.push(npc);
   }
 
   private buildEquipment(items: Phaser.GameObjects.GameObject[]): void {
@@ -311,6 +341,9 @@ export class UIScene extends Phaser.Scene {
         this.add.text(x + 10, y + 10, item.name, { ...this.textStyle(13, '#eee0c1'), wordWrap: { width: 200 } }),
         this.add.text(x + 10, y + 33, `${equipped ? '장착 · ' : ''}전투력 ${equipmentScore(item)}`, this.textStyle(12, '#d4a74e')));
     });
+    // 대장장이 일러스트 배치
+    const npc = this.add.image(W - 90, 440, 'npc_blacksmith').setDisplaySize(160, 160).setDepth(702).setAlpha(0.85);
+    items.push(npc);
   }
 
   private buildSect(items: Phaser.GameObjects.GameObject[]): void {
@@ -344,6 +377,9 @@ export class UIScene extends Phaser.Scene {
     recruit.on('pointerdown', () => this.recruitDisciple(recruitCost));
     items.push(this.add.text(55, 700, `제자 ${discipleCount}명`, this.titleStyle(20)),
       recruit, this.add.text(W / 2, 735, `모집 ${recruitCost}G`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
+    // 문파 장문인 일러스트 배치
+    const npc = this.add.image(W - 95, 750, 'npc_master').setDisplaySize(180, 180).setDepth(702).setAlpha(0.85);
+    items.push(npc);
   }
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
@@ -360,6 +396,9 @@ export class UIScene extends Phaser.Scene {
         this.add.text(x + 110, y + 30, label, this.titleStyle(19)).setOrigin(0.5),
         this.add.text(x + 110, y + 68, value, this.textStyle(18, '#e8dfce')).setOrigin(0.5));
     });
+    // 신비상인 일러스트 배치
+    const npc = this.add.image(W - 120, 680, 'npc_merchant').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
+    items.push(npc);
   }
 
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
@@ -380,6 +419,9 @@ export class UIScene extends Phaser.Scene {
         this.add.text(55, y + 18, `${Math.min(progress, target)} / ${target}`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 115, y, claimed ? '수령 완료' : can ? '보상 수령' : '진행 중', this.textStyle(14, can ? '#f0d493' : '#8f8778')).setOrigin(0.5));
     });
+    // 객잔 주인 일러스트 배치
+    const npc = this.add.image(W - 120, 680, 'npc_innkeeper').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
+    items.push(npc);
   }
 
   private updateHUD(state: PlayerStatePayload): void {
@@ -395,6 +437,16 @@ export class UIScene extends Phaser.Scene {
       this.skillLabels[index].setText(this.skillLabel(SKILL_DATABASE.get(skill.id)));
       this.cooldowns[index].setVisible(skill.cooldownRemaining > 0);
     });
+
+    // 초상화 일러스트 실시간 갱신
+    const save = loadGame();
+    const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
+    const dominantSet = dominantSetId(equipped, 4);
+    const charId = save.selectedCharacter ?? 'sword_male';
+    const portraitKey = dominantSet ? `hero_set_${charId}_${dominantSet}` : `hero_${charId}`;
+    if (this.portraitImage) {
+      this.portraitImage.setTexture(portraitKey);
+    }
   }
 
   private ownedSkills(save: ReturnType<typeof loadGame>): SkillData[] {

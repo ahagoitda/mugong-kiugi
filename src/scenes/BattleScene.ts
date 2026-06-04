@@ -821,6 +821,24 @@ export class BattleScene extends Phaser.Scene {
       strokeThickness: 2,
     }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
 
+    // 보스 경고 프레임(ui_boss_warn_border) 연출 추가
+    const warnBorder = this.add.image(GAME_W / 2, BATTLE_H / 2, 'ui_boss_warn_border')
+      .setDisplaySize(GAME_W, BATTLE_H)
+      .setScrollFactor(0)
+      .setDepth(190)
+      .setAlpha(0);
+
+    this.tweens.add({
+      targets: warnBorder,
+      alpha: 0.82,
+      duration: 400,
+      yoyo: true,
+      repeat: 3,
+      onComplete: () => {
+        warnBorder.destroy();
+      }
+    });
+
     this.tweens.add({
       targets: [this.bossWarningText, bossNameDisplay],
       alpha: 0,

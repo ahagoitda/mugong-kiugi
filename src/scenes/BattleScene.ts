@@ -1068,11 +1068,14 @@ export class BattleScene extends Phaser.Scene {
         }
 
         if (isBoss) {
-          this.showDamageText(enemy.x, enemy.y - 40, damage, true);
+          this.showDamageText(enemy.x, enemy.y - 40, damage, true, skill.grade);
         } else {
-          this.showDamageText(enemy.x, enemy.y - 20, damage, false);
+          this.showDamageText(enemy.x, enemy.y - 20, damage, skill.grade === 'HIGH' || skill.grade === 'ULTIMATE', skill.grade);
         }
         this.showSkillImpactBurst(enemy.x, enemy.y - (isBoss ? 18 : 8), skill, isBoss);
+        if (isBoss || skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
+          this.pulseHitStop(skill.grade === 'ULTIMATE' ? 70 : 45);
+        }
       }
     }
   }
@@ -1785,25 +1788,54 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private showDamageText(x: number, y: number, damage: number, isCritical: boolean): void {
-    const fontSize = isCritical ? '16px' : '12px';
-    const color = isCritical ? '#ffd740' : '#ff4444';
+  private showDamageText(x: number, y: number, damage: number, isCritical: boolean, grade?: SkillData['grade']): void {
+    const isUltimate = grade === 'ULTIMATE';
+    const fontSize = isUltimate ? '20px' : isCritical ? '16px' : '12px';
+    const color = isUltimate ? '#fff0a8' : isCritical ? '#ffd740' : '#ff4444';
+    const label = isCritical ? `${isUltimate ? '절기 ' : ''}${damage}` : String(damage);
 
-    const text = this.add.text(x, y, String(damage), {
+    const text = this.add.text(x, y, label, {
       fontSize,
       color,
       fontFamily: 'monospace',
       fontStyle: 'bold',
       stroke: '#000000',
-      strokeThickness: isCritical ? 2 : 0,
-    }).setOrigin(0.5);
+      strokeThickness: isCritical ? 4 : 2,
+    }).setOrigin(0.5).setDepth(190);
+
+    if (isCritical) {
+      const flare = this.add.circle(x, y, isUltimate ? 22 : 14, isUltimate ? 0xffd740 : 0xff5544, isUltimate ? 0.22 : 0.14)
+        .setDepth(189)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: flare,
+        scaleX: 1.8,
+        scaleY: 1.8,
+        alpha: 0,
+        duration: 260,
+        ease: 'Quad.easeOut',
+        onComplete: () => flare.destroy(),
+      });
+    }
 
     this.tweens.add({
       targets: text,
-      y: y - 24,
+      y: y - (isCritical ? 34 : 24),
+      x: x + (Math.random() - 0.5) * 16,
       alpha: 0,
-      duration: 600,
+      scaleX: isCritical ? 1.12 : 1,
+      scaleY: isCritical ? 1.12 : 1,
+      duration: isCritical ? 760 : 600,
+      ease: 'Cubic.easeOut',
       onComplete: () => { text.destroy(); },
+    });
+  }
+
+  private pulseHitStop(duration: number): void {
+    const clock = this.physics.world.timeScale;
+    this.physics.world.timeScale = 0.65;
+    this.time.delayedCall(duration, () => {
+      this.physics.world.timeScale = clock;
     });
   }
 

@@ -11,3 +11,4 @@ ios/
 # Android: 네이티브 프로젝트(android/)는 커밋한다.
 # 빌드 산출물·복사된 웹 자산·생성 모듈 제외는 android/.gitignore 가 처리.
 # (클론 후 빌드 전: npm install && npm run build && npx cap sync android)
+.claude/

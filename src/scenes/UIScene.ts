@@ -7,8 +7,10 @@ import {
   equippedItems, equipmentSetBonus, dominantSetId,
 } from '../data/equipment';
 import { skillCardKey } from '../data/assets';
-import { claimOfflineReward, loadGame, saveGame } from '../systems/SaveSystem';
+import { claimOfflineReward, loadGame, saveGame, deleteSave } from '../systems/SaveSystem';
 import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
+import { soundSystem } from '../systems/SoundSystem';
+import { bgmSystem } from '../systems/BgmSystem';
 
 const W = 540;
 const H = 960;
@@ -39,28 +41,16 @@ const UI = {
   offline: '\uC624\uD504\uB77C\uC778 \uBCF4\uC0C1',
 };
 
-type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS';
+type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS' | 'SETTINGS' | 'SHOP';
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
 type EquipmentFilter = 'ALL' | 'SET' | EquipmentGrade;
-type MissionTab = 'DAILY' | 'ACHIEVEMENT';
-type CodexTab = 'SKILLS' | 'ENEMIES' | 'BOSSES';
-
-interface MissionDef {
-  id: string;
-  type: string;
-  name: string;
-  progress: number;
-  target: number;
-  gold: number;
-  gems: number;
-}
 
 interface PlayerStatePayload {
   hp: number; maxHp: number; stamina: number; maxStamina: number;
   skills: { id: string; nameKo: string; cooldownRemaining: number; cooldown: number }[];
   dashCooldownRemaining: number; dashCooldown: number;
   killCount: number; waveNumber: number; battleMode: string; isBossWave: boolean;
-  gold: number; gems: number; combatPower: number; level: number; exp: number; expToNext: number;
+  gold: number; level: number; exp: number; expToNext: number;
 }
 
 const PANEL_TITLES: Record<Panel, string> = {
@@ -70,6 +60,8 @@ const PANEL_TITLES: Record<Panel, string> = {
   SECT: '문파',
   CODEX: '도감',
   MISSIONS: '임무',
+  SETTINGS: '설정',
+  SHOP: '상점',
 };
 
 const CLASS_KO: Record<CharacterClass, string> = {
@@ -85,17 +77,6 @@ const GRADE_KO: Record<string, string> = {
   HIGH: '상급',
   ULTIMATE: '절기',
 };
-
-const STORY_REGION_NAMES = [
-  '\uC785\uBB38\uD611',
-  '\uD608\uAD50\uB839',
-  '\uB9C8\uC6B4\uAD00',
-  '\uD751\uD48D\uACE1',
-  '\uCC9C\uB9C8\uB8E8',
-  '\uBE44\uC6D4\uC131',
-  '\uBB34\uADF9\uC804',
-  '\uD608\uB9C8\uAD81',
-] as const;
 
 const SKILL_NAME_KO: Record<string, string> = {
   samjae: '삼재검법',
@@ -127,20 +108,16 @@ const SKILL_NAME_KO: Record<string, string> = {
 export class UIScene extends Phaser.Scene {
   private charClass: CharacterClass = 'SWORD';
   private martialTab: MartialTab = 'SKILLS';
-  private missionTab: MissionTab = 'DAILY';
-  private codexTab: CodexTab = 'SKILLS';
   private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
+  private codexTab: 'SKILLS' | 'ENEMIES' | 'BOSSES' = 'SKILLS';
+  private missionsTab: 'DAILY' | 'ACHIEVEMENT' = 'DAILY';
   private hpFill!: Phaser.GameObjects.Rectangle;
   private spFill!: Phaser.GameObjects.Rectangle;
   private expFill!: Phaser.GameObjects.Rectangle;
   private levelText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
-  private resourceGoldText!: Phaser.GameObjects.Text;
-  private gemText!: Phaser.GameObjects.Text;
-  private energyText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
-  private combatPowerText!: Phaser.GameObjects.Text;
   private modeText!: Phaser.GameObjects.Text;
   private modeButton!: Phaser.GameObjects.Arc;
   private modeGlow!: Phaser.GameObjects.Arc;
@@ -152,11 +129,10 @@ export class UIScene extends Phaser.Scene {
   private cooldownTexts: Phaser.GameObjects.Text[] = [];
   private progressNodes: Phaser.GameObjects.Arc[] = [];
   private bossNode!: Phaser.GameObjects.Star;
-  private progressGoalText!: Phaser.GameObjects.Text;
-  private navBadges: Partial<Record<Panel, Phaser.GameObjects.Text>> = {};
-  private lastNavBadgeUpdate = 0;
   private notif!: Phaser.GameObjects.Text;
   private portraitImage!: Phaser.GameObjects.Image;
+  private shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
+  private tutorialOverlay: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -171,9 +147,6 @@ export class UIScene extends Phaser.Scene {
     battle.events.on('player-state', this.updateHUD, this);
     battle.events.on('wave-clear', (wave: number) => this.showNotice(`${wave} ${UI.wave} ${UI.clear}`), this);
     battle.events.on('boss-clear', (wave: number) => this.showNotice(`${UI.boss} ${UI.clear} · ${wave} ${UI.wave}`), this);
-    battle.events.on('region-clear', (region: number, name: string, gold: number, gems: number) => {
-      this.showNotice(`${region}\uC9C0\uC5ED ${name} \uB3CC\uD30C! · +${gold}G · +${gems}${UI.gem}`);
-    }, this);
     battle.events.on('item-drop', (id: string) => this.showNotice(`${UI.martial} ${UI.acquired} · ${this.skillLabel(SKILL_DATABASE.get(id))}`), this);
     battle.events.on('level-up', (level: number) => this.showNotice(`${UI.levelUp} · Lv.${level}`), this);
 
@@ -187,12 +160,11 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setDepth(500).setStroke('#000000', 5).setAlpha(0);
 
     const reward = claimOfflineReward();
-    if (reward.minutes > 0) {
-      const gemText = reward.gems > 0 ? ` · +${reward.gems}${UI.gem}` : '';
-      const levelText = reward.levels > 0 ? ` · Lv.+${reward.levels}` : '';
-      const fac = loadGame().sectFacilities ?? {};
-      const facNote = ((fac.hall ?? 1) + (fac.forge ?? 1) + (fac.library ?? 1) > 3) ? ' · 시설 보너스' : '';
-      this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}${gemText}${levelText}${facNote}`);
+    if (reward.minutes > 0) this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}`);
+
+    const saveData = loadGame();
+    if (!saveData.tutorialCompleted) {
+      this.time.delayedCall(800, () => this.showTutorial(0));
     }
   }
 
@@ -224,30 +196,25 @@ export class UIScene extends Phaser.Scene {
     this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(204);
     this.goldText = this.add.text(430, 32, '0 금화', this.textStyle(16, '#f2d27d')).setOrigin(0.5).setDepth(203);
     this.waveText = this.add.text(430, 60, '1 웨이브', this.textStyle(15, '#e8dfce')).setOrigin(0.5).setDepth(203);
-    this.combatPowerText = this.add.text(430, 82, '\uC804\uD22C\uB825 0', this.textStyle(12, '#d8c9aa')).setOrigin(0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
   }
 
   private createTopResourceStrip(): void {
-    const save = loadGame();
     const resources = [
-      { x: 302, y: 20, icon: '\u25CE', text: this.formatCompactNumber(save.gold), color: 0xd4a74e },
-      { x: 394, y: 20, icon: '\u25C6', text: this.formatCompactNumber(save.gems ?? 0), color: 0xffc85a },
-      { x: 486, y: 20, icon: '\u2726', text: '--/--', color: 0x55a7ff },
+      { x: 302, y: 20, icon: '\u25CE', text: UI.gold, color: 0xd4a74e },
+      { x: 394, y: 20, icon: '\u25C6', text: UI.gem, color: 0xffc85a },
+      { x: 486, y: 20, icon: '\u2726', text: UI.energy, color: 0x55a7ff },
     ];
-    resources.forEach(({ x, y, icon, text, color }, index) => {
+    resources.forEach(({ x, y, icon, text, color }) => {
       this.add.rectangle(x, y, 82, 24, 0x0b0907, 0.86)
         .setStrokeStyle(1, 0x8d6b32)
         .setDepth(204);
       this.add.text(x - 26, y, icon, this.textStyle(15, `#${color.toString(16).padStart(6, '0')}`))
         .setOrigin(0.5)
         .setDepth(205);
-      const value = this.add.text(x + 5, y, text, this.textStyle(12, '#f1dfbc'))
+      this.add.text(x + 2, y, text, this.textStyle(12, '#d9caa8'))
         .setOrigin(0.5)
         .setDepth(205);
-      if (index === 0) this.resourceGoldText = value;
-      if (index === 1) this.gemText = value;
-      if (index === 2) this.energyText = value;
       this.add.text(x + 34, y, '+', this.titleStyle(17))
         .setOrigin(0.5)
         .setDepth(205);
@@ -258,7 +225,7 @@ export class UIScene extends Phaser.Scene {
       .setDepth(205)
       .setInteractive();
     this.add.text(W - 30, 78, '\u2630', this.titleStyle(24)).setOrigin(0.5).setDepth(206);
-    menu.on('pointerdown', () => this.openPanel('MISSIONS'));
+    menu.on('pointerdown', () => this.openPanel('SETTINGS'));
   }
 
   createSkillDock(): void {
@@ -313,9 +280,6 @@ export class UIScene extends Phaser.Scene {
       .setStrokeStyle(3, 0xf1b34f)
       .setDepth(207);
     this.add.text(W / 2, y - 1, '\u9B54', this.titleStyle(18)).setOrigin(0.5).setDepth(208);
-    this.progressGoalText = this.add.text(W / 2, y + 35, '', this.textStyle(12, '#d8c9aa'))
-      .setOrigin(0.5)
-      .setDepth(208);
   }
 
   private createCombatSkillDockV2(): void {
@@ -461,24 +425,23 @@ export class UIScene extends Phaser.Scene {
   private createBottomNavV2(): void {
     this.add.rectangle(W / 2, 925, W, 70, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
     const nav: [Panel, string, string][] = [
-      ['TRAINING', UI.training, '\u4FEE'], ['EQUIPMENT', UI.equipment, '\u88DD'], ['MARTIAL', UI.sect, '\u9580'],
-      ['SECT', UI.codex, '\u66F8'], ['CODEX', UI.secret, '\u5178'], ['MISSIONS', UI.mission, '\u4EE4'],
+      ['TRAINING', UI.training, '\u4FEE'],
+      ['EQUIPMENT', UI.equipment, '\u88DD'],
+      ['SHOP', '\uC0C1\uC810', '\u5546'],
+      ['MARTIAL', UI.sect, '\u9580'],
+      ['SECT', UI.codex, '\u66F8'],
+      ['CODEX', UI.secret, '\u5178'],
+      ['MISSIONS', UI.mission, '\u4EE4'],
     ];
     nav.forEach(([panel, label, glyph], index) => {
-      const x = 45 + index * 90;
-      const button = this.add.circle(x, 910, panel === 'MARTIAL' ? 31 : 26, 0x17120d, 1)
-        .setStrokeStyle(panel === 'MARTIAL' ? 3 : 1, panel === 'MARTIAL' ? GOLD : 0x75572b).setDepth(202).setInteractive();
-      this.add.text(x, 907, glyph, this.titleStyle(panel === 'MARTIAL' ? 24 : 20)).setOrigin(0.5).setDepth(203);
-      this.add.text(x, 943, label, this.textStyle(13, '#d5c6a7')).setOrigin(0.5).setDepth(203);
-      this.navBadges[panel] = this.add.text(x + 20, 891, '!', this.textStyle(12, '#fff4ce'))
-        .setOrigin(0.5)
-        .setDepth(206)
-        .setBackgroundColor('#b72616')
-        .setPadding(4, 1, 4, 1)
-        .setVisible(false);
+      const x = 38 + index * 77;
+      const isMain = panel === 'MARTIAL';
+      const button = this.add.circle(x, 910, isMain ? 28 : 23, 0x17120d, 1)
+        .setStrokeStyle(isMain ? 3 : 1, isMain ? GOLD : 0x75572b).setDepth(202).setInteractive();
+      this.add.text(x, 907, glyph, this.titleStyle(isMain ? 20 : 17)).setOrigin(0.5).setDepth(203);
+      this.add.text(x, 940, label, this.textStyle(10, '#d5c6a7')).setOrigin(0.5).setDepth(203);
       button.on('pointerdown', () => this.openPanel(panel));
     });
-    this.updateNavBadges(undefined, true);
   }
 
   private openPanel(panel: Panel): void {
@@ -496,6 +459,8 @@ export class UIScene extends Phaser.Scene {
     if (panel === 'SECT') this.buildSect(items);
     if (panel === 'CODEX') this.buildCodex(items);
     if (panel === 'MISSIONS') this.buildMissions(items);
+    if (panel === 'SETTINGS') this.buildSettings(items);
+    if (panel === 'SHOP') this.buildShop(items);
     this.overlay = this.add.container(0, 0, items).setDepth(700);
   }
 
@@ -585,45 +550,87 @@ export class UIScene extends Phaser.Scene {
 
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const rows = [['attack', '공격 수련', '공격'], ['hp', '체력 수련', '체력'], ['gold', '재물 수련', '금화 획득']] as const;
-    const hallLevel = save.sectFacilities?.hall ?? 1;
-    const hallDiscount = Math.min(0.25, (hallLevel - 1) * 0.025); // 대전: 수련 비용 할인
-    rows.forEach(([key, name, effect], index) => {
-      const level = save.trainingLevels?.[key] ?? 0;
-      const base = 100 * (level + 1);
-      const cost = Math.max(10, Math.floor(base * (1 - hallDiscount)));
-      const y = 170 + index * 120;
-      const button = this.add.rectangle(W - 120, y, 150, 52, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-      button.on('pointerdown', () => this.upgradeTraining(key, cost));
-      items.push(this.add.text(55, y - 18, name, this.titleStyle(20)),
-        this.add.text(55, y + 16, `${effect} +${level * 2}%`, this.textStyle(15, '#d8c9aa')),
-        button, this.add.text(W - 120, y, `${cost} 금화`, this.textStyle(15, '#f0d493')).setOrigin(0.5));
+    const TRAIN = [
+      { key: 'attack',  name: '공격 수련', sub: '호신강공(護身剛功)', icon: '剑', eff: '공격력',    pct: 2,   maxLv: 20, base: 100, color: 0xe05555 },
+      { key: 'hp',      name: '체력 수련', sub: '금강불괴(金剛不壞)', icon: '氣', eff: '최대 체력',  pct: 2,   maxLv: 20, base: 100, color: 0xcc3333 },
+      { key: 'gold',    name: '재물 수련', sub: '취재술(聚財術)',     icon: '財', eff: '금화 획득',  pct: 2,   maxLv: 20, base: 80,  color: 0xd4a74e },
+      { key: 'speed',   name: '신법 수련', sub: '경공술(輕功術)',     icon: '步', eff: '이동 속도',  pct: 1.5, maxLv: 15, base: 150, color: 0x5aafff },
+      { key: 'stamina', name: '내공 수련', sub: '심기단련(心氣鍛鍊)', icon: '心', eff: '최대 내공',  pct: 3,   maxLv: 20, base: 120, color: 0x50c878 },
+      { key: 'crit',    name: '격파 수련', sub: '파공술(破功術)',     icon: '破', eff: '치명타 확률', pct: 2,   maxLv: 10, base: 250, color: 0xc878ff },
+    ] as const;
+
+    // 2×3 그리드
+    const COL = [150, 392];
+    const ROW = [180, 360, 540];
+    const CW = 224, CH = 158;
+
+    TRAIN.forEach((t, i) => {
+      const cx = COL[i % 2];
+      const cy = ROW[Math.floor(i / 2)];
+      const lv = save.trainingLevels?.[t.key] ?? 0;
+      const isMax = lv >= t.maxLv;
+      const cost = t.base * (lv + 1);
+      const ratio = lv / t.maxLv;
+      const effPct = (t.pct * lv).toFixed(1);
+
+      // 카드 배경
+      items.push(
+        this.add.rectangle(cx, cy, CW, CH, 0x0f0e0c, 1)
+          .setStrokeStyle(2, t.color, isMax ? 1.0 : 0.6).setDepth(702),
+        this.add.rectangle(cx, cy - CH / 2 + 3, CW - 4, 5, t.color, isMax ? 0.9 : 0.55)
+          .setOrigin(0.5, 0.5).setDepth(703),
+      );
+      // 아이콘
+      items.push(
+        this.add.circle(cx - 90, cy - 40, 21, 0x0a0806).setStrokeStyle(2, t.color, 0.9).setDepth(703),
+        this.add.text(cx - 90, cy - 40, t.icon, this.titleStyle(19)).setOrigin(0.5).setDepth(704),
+      );
+      // 이름 / 서브 / 레벨
+      items.push(
+        this.add.text(cx - 62, cy - 52, t.name, this.textStyle(14, '#e8c36a')).setDepth(703),
+        this.add.text(cx - 62, cy - 34, t.sub, this.textStyle(9, '#6e6254')).setDepth(703),
+        this.add.text(cx + 100, cy - 52, `${lv}/${t.maxLv}`, this.textStyle(12, '#f0d493'))
+          .setOrigin(1, 0).setDepth(703),
+      );
+      // 효과 텍스트
+      items.push(
+        this.add.text(cx - 104, cy - 10, `${t.eff}  +${effPct}%`, this.textStyle(13, '#c8b98a')).setDepth(703),
+      );
+      // 진행 바
+      const bw = 200;
+      items.push(
+        this.add.rectangle(cx, cy + 22, bw, 7, 0x1e1a13, 1).setDepth(703),
+        this.add.rectangle(cx - bw / 2, cy + 22, Math.max(3, bw * ratio), 7, t.color, 0.85)
+          .setOrigin(0, 0.5).setDepth(704),
+      );
+      // 업그레이드 버튼
+      if (!isMax) {
+        const btn = this.add.rectangle(cx, cy + 52, 200, 28, 0x4a3215)
+          .setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+        btn.on('pointerdown', () => this.upgradeTraining(t.key, cost));
+        items.push(
+          btn,
+          this.add.text(cx, cy + 52, `수련  ·  ${cost}G`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(704),
+        );
+      } else {
+        items.push(
+          this.add.rectangle(cx, cy + 52, 200, 28, 0x1c1c1c).setStrokeStyle(1, 0x444444).setDepth(703),
+          this.add.text(cx, cy + 52, '수련 완성 (MAX)', this.textStyle(12, '#555555')).setOrigin(0.5).setDepth(704),
+        );
+      }
     });
 
-    const autoTrain = this.add.rectangle(W / 2, 470, 260, 46, 0x3b2514).setStrokeStyle(1, GOLD).setInteractive();
-    autoTrain.on('pointerdown', () => this.autoTrain());
-    items.push(this.add.text(55, 456, '\uC790\uB3D9 \uC218\uB828', this.titleStyle(19)),
-      this.add.text(55, 482, '\uBCF4\uC720 \uAE08\uD654\uB85C \uB0AE\uC740 \uC218\uB828\uBD80\uD130', this.textStyle(13, '#d8c9aa')),
-      autoTrain, this.add.text(W / 2, 470, '\uC77C\uAD04 \uC218\uB828', this.textStyle(15, '#f0d493')).setOrigin(0.5));
+    // 종합 보너스 요약
+    const tl = save.trainingLevels ?? {};
+    items.push(
+      this.add.rectangle(W / 2, 655, W - 52, 46, 0x0c0a07, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(W / 2, 647, '현재 총 보너스', this.textStyle(11, '#7a6e58')).setOrigin(0.5).setDepth(703),
+      this.add.text(W / 2, 665,
+        `공격 +${(tl.attack ?? 0) * 2}%   체력 +${(tl.hp ?? 0) * 2}%   속도 +${((tl.speed ?? 0) * 1.5).toFixed(1)}%   치명타 +${(tl.crit ?? 0) * 2}%`,
+        this.textStyle(12, '#d4a74e')).setOrigin(0.5).setDepth(703),
+    );
 
-    const supplyCost = 3;
-    const supplyGold = this.gemSupplyGold(save);
-    const canSupply = (save.gems ?? 0) >= supplyCost;
-    const supply = this.add.rectangle(W / 2, 540, 260, 54, canSupply ? 0x4a3215 : 0x1a1712)
-      .setStrokeStyle(1, canSupply ? GOLD : 0x4b4132)
-      .setInteractive();
-    supply.on('pointerdown', () => this.buyGoldSupply(supplyCost));
-    items.push(this.add.text(55, 506, '\uC6D0\uBCF4 \uBCF4\uAE09', this.titleStyle(20)),
-      this.add.text(55, 532, `+${supplyGold}\uAE08\uD654 · ${supplyCost}${UI.gem}`, this.textStyle(15, '#d8c9aa')),
-      supply, this.add.text(W / 2, 540, canSupply ? '\uC989\uC2DC \uBCF4\uAE09' : '\uC6D0\uBCF4 \uBD80\uC871', this.textStyle(15, canSupply ? '#f0d493' : '#8f8778')).setOrigin(0.5));
-
-    const summary = this.growthSummary(save);
-    items.push(this.add.text(55, 605, '\uC131\uC7A5 \uC694\uC57D', this.titleStyle(19)),
-      this.add.text(55, 633, summary[0], this.textStyle(13, '#d8c9aa')),
-      this.add.text(55, 657, summary[1], this.textStyle(13, '#d8c9aa')),
-      this.add.text(55, 681, summary[2], this.textStyle(13, '#d8c9aa')));
-    // 점소이 일러스트 추가
-    const npc = this.add.image(W - 120, 680, 'npc_jeomsoyi').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
+    const npc = this.add.image(W - 95, 820, 'npc_jeomsoyi').setDisplaySize(190, 210).setDepth(702).setAlpha(0.82);
     items.push(npc);
   }
 
@@ -645,8 +652,7 @@ export class UIScene extends Phaser.Scene {
     items.push(auto, this.add.text(W - 72, 105, '최적', this.textStyle(13, '#f0d493')).setOrigin(0.5));
 
     const setBonus = equipmentSetBonus(equippedItems(save.equipmentInventory ?? [], save.equippedItems));
-    const inventoryCount = save.equipmentInventory?.length ?? 0;
-    items.push(this.add.text(55, 148, `보유 ${inventoryCount}/140  세트  공격 x${setBonus.attackMul.toFixed(2)}  체력 x${setBonus.hpMul.toFixed(2)}  금화 x${setBonus.goldMul.toFixed(2)}`, this.textStyle(13, '#d4a74e')));
+    items.push(this.add.text(55, 148, `세트 효과  공격 x${setBonus.attackMul.toFixed(2)}  체력 x${setBonus.hpMul.toFixed(2)}  금화 x${setBonus.goldMul.toFixed(2)}`, this.textStyle(13, '#d4a74e')));
 
     EQUIPMENT_SLOTS.forEach((slot, index) => {
       const x = 55 + (index % 3) * 165;
@@ -678,175 +684,275 @@ export class UIScene extends Phaser.Scene {
 
   private buildSect(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const facilities = [['hall', '대전'], ['forge', '대장간'], ['library', '무경각']] as const;
-    facilities.forEach(([key, name], index) => {
-      const level = save.sectFacilities?.[key] ?? 1;
-      const cost = level * 250;
-      const y = 170 + index * 105;
-      const button = this.add.rectangle(W - 115, y, 150, 48, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-      button.on('pointerdown', () => this.upgradeSect(key, cost));
-      // 시설별 효과 표시 (성장 루프 영향 가시화)
-      let effect = '';
-      if (key === 'hall') effect = ` (수련 +${(level - 1) * 1.2 | 0}%)`;
-      if (key === 'forge') effect = ` (골드+${(level - 1) * 1 | 0}%·드롭↑)`;
-      if (key === 'library') effect = ` (연구 +${(level - 1) * 1.5 | 0}%·할인)`;
-      items.push(this.add.text(55, y - 15, name, this.titleStyle(20)),
-        this.add.text(55, y + 18, `시설 Lv.${level}${effect}`, this.textStyle(15, '#d8c9aa')),
-        button, this.add.text(W - 115, y, `${cost} 금화`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
+
+    // ─── 시설 섹션 ───
+    items.push(
+      this.add.rectangle(W / 2, 90, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 90, '시설 (施設)', this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+
+    const FACILITIES = [
+      { key: 'hall',    name: '대전 (大殿)',    icon: '殿', eff: (lv: number) => `공격력 +${(lv * 2.5).toFixed(1)}%  ·  제자 +${lv}명` },
+      { key: 'forge',   name: '대장간 (冶鐵)',  icon: '鐵', eff: (lv: number) => `장비 효율 +${lv * 3}%  ·  골드 생산 +${lv}%` },
+      { key: 'library', name: '무경각 (武經閣)', icon: '卷', eff: (lv: number) => `연구 효율 +${lv * 5}%  ·  무공 경험 +${lv * 2}%` },
+    ] as const;
+    FACILITIES.forEach(({ key, name, icon, eff }, i) => {
+      const lv = save.sectFacilities?.[key] ?? 1;
+      const cost = lv * 250;
+      const y = 133 + i * 82;
+      items.push(
+        this.add.rectangle(W / 2, y, W - 52, 68, 0x110e0a, 1).setStrokeStyle(1, 0x75572b, 0.7).setDepth(702),
+        this.add.circle(70, y, 24, 0x0a0806).setStrokeStyle(2, GOLD, 0.7).setDepth(703),
+        this.add.text(70, y, icon, this.titleStyle(20)).setOrigin(0.5).setDepth(704),
+        this.add.text(102, y - 16, name, this.textStyle(15, '#e8c36a')).setDepth(703),
+        this.add.text(102, y + 6, eff(lv), this.textStyle(11, '#a8987a')).setDepth(703),
+        this.add.text(102, y + 22, `시설 Lv.${lv}`, this.textStyle(11, '#d4a74e')).setDepth(703),
+      );
+      const btn = this.add.rectangle(W - 95, y, 130, 38, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+      btn.on('pointerdown', () => this.upgradeSect(key, cost));
+      items.push(btn, this.add.text(W - 95, y, `${cost}G 업그레이드`, this.textStyle(12, '#f0d493')).setOrigin(0.5).setDepth(704));
     });
 
-    // 시설 성장 기여 요약 표시 (실제 영향 인지 쉽게)
-    const f = save.sectFacilities ?? {};
-    const fh = Math.max(0, (f.hall ?? 1) - 1), ff = Math.max(0, (f.forge ?? 1) - 1), fl = Math.max(0, (f.library ?? 1) - 1);
-    items.push(this.add.text(55, 485, `성장 기여: 수련+${Math.round(fh*1.2)}% 금+${Math.round(ff*1)}% 연구+${Math.round(fl*1.5)}%`, this.textStyle(12, '#a38b6b')));
-
-    items.push(this.add.text(55, 530, '계열 연구', this.titleStyle(22)));
-    const libraryLevel = save.sectFacilities?.library ?? 1;
-    const libDiscount = Math.min(0.2, (libraryLevel - 1) * 0.02); // 무경각: 연구 비용 할인
-    (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[]).forEach((key, index) => {
-      const level = save.sectResearch?.[key] ?? 0;
-      const x = 65 + index * 115;
-      const baseCost = 220 * (level + 1);
-      const cost = Math.max(50, Math.floor(baseCost * (1 - libDiscount)));
-      const button = this.add.rectangle(x, 635, 88, 36, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
-      button.on('pointerdown', () => this.upgradeResearch(key, cost));
-      items.push(this.add.text(x, 585, `${CLASS_KO[key]}\nLv.${level}`, { ...this.textStyle(15, '#d4a74e'), align: 'center' }).setOrigin(0.5),
-        button, this.add.text(x, 635, `${cost}G`, this.textStyle(12, '#f0d493')).setOrigin(0.5));
+    // ─── 계열 연구 섹션 ───
+    items.push(
+      this.add.rectangle(W / 2, 384, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 384, '계열 연구 (系列硏究)', this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+    const RESEARCH_COLORS: Record<CharacterClass, number> = { SWORD: 0x5aafff, BLADE: 0xe05555, FIST: 0xf0b444, SPEAR: 0x60d060 };
+    (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[]).forEach((key, i) => {
+      const lv = save.sectResearch?.[key] ?? 0;
+      const cost = 220 * (lv + 1);
+      const x = 68 + i * 102;
+      const isActive = key === this.charClass;
+      items.push(
+        this.add.rectangle(x, 450, 90, 90, isActive ? 0x1a2035 : 0x100e0c, 1)
+          .setStrokeStyle(2, RESEARCH_COLORS[key], isActive ? 0.9 : 0.5).setDepth(702),
+        this.add.text(x, 425, CLASS_KO[key], this.textStyle(14, isActive ? '#e8c36a' : '#8a7d6a')).setOrigin(0.5).setDepth(703),
+        this.add.text(x, 445, `Lv.${lv}`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(703),
+        this.add.text(x, 462, `공격+${(lv * 2.5).toFixed(1)}%`, this.textStyle(10, '#a8987a')).setOrigin(0.5).setDepth(703),
+      );
+      const btn = this.add.rectangle(x, 482, 80, 26, 0x4a3215).setStrokeStyle(1, RESEARCH_COLORS[key], 0.7).setInteractive().setDepth(703);
+      btn.on('pointerdown', () => this.upgradeResearch(key, cost));
+      items.push(btn, this.add.text(x, 482, `${cost}G`, this.textStyle(11, '#f0d493')).setOrigin(0.5).setDepth(704));
     });
 
-    const discipleCount = save.disciples?.length ?? 0;
-    const discipleBonus = Math.min(10, discipleCount) * 2;
+    // ─── 제자 섹션 ───
+    const DISCIPLE_NAMES = ['청운', '백호', '철검', '방파', '나한', '운학', '소월', '천풍', '화룡', '옥기'];
+    const disciples = save.disciples ?? [];
+    const discipleCount = disciples.length;
     const recruitCost = 600 + discipleCount * 350;
-    const canRecruit = discipleCount < 10;
-    const recruit = this.add.rectangle(W / 2, 735, 210, 46, canRecruit ? 0x4a3215 : 0x1a1712).setStrokeStyle(1, canRecruit ? GOLD : 0x4b4132).setInteractive();
+    items.push(
+      this.add.rectangle(W / 2, 532, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 532, `제자 (弟子)  ·  ${discipleCount}명`, this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+    const recruit = this.add.rectangle(W - 95, 532, 130, 30, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
     recruit.on('pointerdown', () => this.recruitDisciple(recruitCost));
-    items.push(this.add.text(55, 700, `\uC81C\uC790 ${discipleCount}/10\uBA85`, this.titleStyle(20)),
-      this.add.text(55, 728, `\uACF5\uACA9\uB825 +${discipleBonus}%`, this.textStyle(15, '#d8c9aa')),
-      recruit, this.add.text(W / 2, 735, canRecruit ? `\uBAA8\uC9D1 ${recruitCost}G` : '\uCD5C\uB300 \uC81C\uC790', this.textStyle(14, canRecruit ? '#f0d493' : '#8f8778')).setOrigin(0.5));
-    // 문파 장문인 일러스트 배치
-    const npc = this.add.image(W - 95, 750, 'npc_master').setDisplaySize(180, 180).setDepth(702).setAlpha(0.85);
+    items.push(recruit, this.add.text(W - 95, 532, `모집  ${recruitCost}G`, this.textStyle(12, '#f0d493')).setOrigin(0.5).setDepth(704));
+
+    const maxShow = 5;
+    for (let d = 0; d < maxShow; d++) {
+      const y = 570 + d * 52;
+      const hasDisciple = d < discipleCount;
+      items.push(
+        this.add.rectangle(W / 2, y, W - 52, 44, hasDisciple ? 0x141008 : 0x0d0b09, 1)
+          .setStrokeStyle(1, hasDisciple ? 0x75572b : 0x2a2218, 0.7).setDepth(702),
+      );
+      if (hasDisciple) {
+        const nameIdx = d % DISCIPLE_NAMES.length;
+        items.push(
+          this.add.text(70, y, DISCIPLE_NAMES[nameIdx], this.textStyle(15, '#e8c36a')).setOrigin(0, 0.5).setDepth(703),
+          this.add.text(220, y, `공격 +${((d + 1) * 1).toFixed(0)}%`, this.textStyle(12, '#a8987a')).setOrigin(0, 0.5).setDepth(703),
+          this.add.text(W - 60, y, `제자 ${d + 1}호`, this.textStyle(11, '#7a6e5a')).setOrigin(1, 0.5).setDepth(703),
+        );
+      } else {
+        items.push(
+          this.add.text(W / 2, y, '비어있음', this.textStyle(13, '#3a3530')).setOrigin(0.5).setDepth(703),
+        );
+      }
+    }
+
+    const npc = this.add.image(W - 90, 840, 'npc_master').setDisplaySize(170, 190).setDepth(702).setAlpha(0.82);
     items.push(npc);
   }
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const tabs: [CodexTab, string][] = [['SKILLS', '\uBB34\uACF5'], ['ENEMIES', '\uC801'], ['BOSSES', '\uBCF4\uC2A4']];
-    tabs.forEach(([tab, label], index) => {
-      const x = 48 + index * 115;
-      const button = this.add.rectangle(x, 105, 96, 38, tab === this.codexTab ? 0x5a3d18 : 0x17120d)
-        .setStrokeStyle(1, tab === this.codexTab ? GOLD : 0x75572b)
-        .setInteractive();
-      button.on('pointerdown', () => { this.codexTab = tab; this.openPanel('CODEX'); });
-      items.push(button, this.add.text(x, 105, label, this.textStyle(14, '#f0d493')).setOrigin(0.5));
+
+    // ─── 탭 바 ───
+    const CODEX_TABS: [typeof this.codexTab, string, string][] = [
+      ['SKILLS', '무공', '武'],
+      ['ENEMIES', '일반 적', '敵'],
+      ['BOSSES', '보스', '魔'],
+    ];
+    CODEX_TABS.forEach(([tab, label, glyph], i) => {
+      const x = 90 + i * 125;
+      const isActive = this.codexTab === tab;
+      const btn = this.add.rectangle(x, 103, 112, 38, isActive ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(isActive ? 2 : 1, isActive ? GOLD : 0x60451f).setInteractive().setDepth(702);
+      btn.on('pointerdown', () => { this.codexTab = tab; this.openPanel('CODEX'); });
+      items.push(btn,
+        this.add.text(x - 20, 103, glyph, this.titleStyle(18)).setOrigin(0.5).setDepth(703),
+        this.add.text(x + 16, 103, label, this.textStyle(14, isActive ? '#f3d992' : '#b7aa92')).setOrigin(0, 0.5).setDepth(703),
+      );
     });
 
-    if (this.codexTab === 'SKILLS') this.buildCodexSkills(items, save);
-    if (this.codexTab === 'ENEMIES') this.buildCodexEnemies(items, save);
-    if (this.codexTab === 'BOSSES') this.buildCodexBosses(items, save);
-
-    // 신비상인 일러스트 배치
-    const npc = this.add.image(W - 120, 680, 'npc_merchant').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
-    items.push(npc);
-  }
-
-  private buildCodexSkills(items: Phaser.GameObjects.GameObject[], save: ReturnType<typeof loadGame>): void {
-    const skills = [...SKILL_DATABASE.values()]
-      .filter(skill => skill.type === 'ACTIVE')
-      .sort((a, b) => Number(save.unlockedSkills.includes(b.id)) - Number(save.unlockedSkills.includes(a.id)))
-      .slice(0, 8);
-    items.push(this.add.text(55, 148, `\uBB34\uACF5 ${save.unlockedSkills.length} / ${SKILL_DATABASE.size}`, this.titleStyle(20)),
-      this.add.text(W - 55, 153, this.formatPlayTime(save.totalPlayTime ?? 0), this.textStyle(13, '#d8c9aa')).setOrigin(1, 0.5));
-    skills.forEach((skill, index) => {
-      const y = 190 + index * 62;
-      const unlocked = save.unlockedSkills.includes(skill.id);
-      const level = save.skillLevels?.[skill.id] ?? 0;
-      items.push(this.add.rectangle(W / 2, y, W - 78, 48, unlocked ? 0x162416 : 0x17120d).setStrokeStyle(1, unlocked ? GOLD : 0x4b4132),
-        this.add.text(55, y - 8, unlocked ? this.skillLabel(skill) : '\uBBF8\uD655\uC778 \uBB34\uACF5', this.textStyle(15, unlocked ? '#f0d493' : '#8f8778')),
-        this.add.text(W - 65, y + 7, unlocked ? `${GRADE_KO[skill.grade]} +${level}` : UI.locked, this.textStyle(13, unlocked ? '#d8c9aa' : '#777066')).setOrigin(1, 0.5));
-    });
-  }
-
-  private buildCodexEnemies(items: Phaser.GameObjects.GameObject[], save: ReturnType<typeof loadGame>): void {
-    const enemies = [...ENEMY_DATABASE.values()].filter(enemy => enemy.rank !== 'BOSS').slice(0, 12);
-    const region = save.storyRegion ?? 1;
-    items.push(this.add.text(55, 148, `\uC9C0\uC5ED ${STORY_REGION_NAMES[region - 1] ?? `${region}\uC9C0\uC5ED`} · ${region} / 8`, this.titleStyle(20)));
-    enemies.forEach((enemy, index) => {
-      const x = 55 + (index % 2) * 245;
-      const y = 190 + Math.floor(index / 2) * 78;
-      const unlocked = (enemy.region ?? 1) <= region;
-      items.push(this.add.rectangle(x, y, 220, 58, unlocked ? 0x151d16 : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, unlocked ? 0x75572b : 0x3b3329),
-        this.add.text(x + 12, y + 15, unlocked ? enemy.name : '\uBBF8\uD655\uC778 \uC801', this.textStyle(14, unlocked ? '#e8dfce' : '#8f8778')),
-        this.add.text(x + 12, y + 38, unlocked ? `${enemy.region}\uC9C0\uC5ED · ${enemy.rank}` : UI.locked, this.textStyle(12, unlocked ? '#d4a74e' : '#777066')));
-    });
-  }
-
-  private buildCodexBosses(items: Phaser.GameObjects.GameObject[], save: ReturnType<typeof loadGame>): void {
-    const bosses = [...ENEMY_DATABASE.values()].filter(enemy => enemy.rank === 'BOSS');
-    items.push(this.add.text(55, 148, `\uBCF4\uC2A4 ${save.defeatedBosses?.length ?? 0} / ${bosses.length}`, this.titleStyle(20)));
-    bosses.forEach((boss, index) => {
-      const y = 190 + index * 62;
-      const defeated = save.defeatedBosses?.includes(boss.id);
-      const color = BOSS_RANK_COLORS[boss.bossRank ?? 'DAEJU'] ?? 0x75572b;
-      items.push(this.add.rectangle(W / 2, y, W - 78, 48, defeated ? 0x241816 : 0x17120d).setStrokeStyle(1, defeated ? color : 0x4b4132),
-        this.add.text(55, y - 8, defeated ? (boss.title ?? boss.name) : `${boss.region}\uC7A5 \uBCF4\uC2A4`, this.textStyle(15, defeated ? '#f0d493' : '#8f8778')),
-        this.add.text(W - 65, y + 7, defeated ? '\uACA9\uD30C \uC644\uB8CC' : UI.locked, this.textStyle(13, defeated ? '#83d68a' : '#777066')).setOrigin(1, 0.5));
-    });
+    if (this.codexTab === 'SKILLS') {
+      // 무공 탭 - 2열 스킬 목록
+      const allSkills = [...SKILL_DATABASE.values()].filter(s => s.type === 'ACTIVE' && s.category === this.charClass);
+      const owned = new Set(save.unlockedSkills);
+      items.push(this.add.text(38, 140, `${this.charClass === 'SWORD' ? '검법' : this.charClass === 'BLADE' ? '도법' : this.charClass === 'FIST' ? '권법' : '창법'} 계열 무공  ·  ${owned.size}개 습득`, this.textStyle(12, '#7a6e58')).setDepth(702));
+      allSkills.slice(0, 14).forEach((skill, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = 38 + col * 248;
+        const y = 160 + row * 90;
+        const isOwned = owned.has(skill.id);
+        const gradeColor = this.skillGradeColor(skill.grade);
+        items.push(
+          this.add.rectangle(x, y, 234, 78, 0x110f0c, 1)
+            .setOrigin(0, 0).setStrokeStyle(1, isOwned ? gradeColor : 0x2a2218, isOwned ? 0.8 : 0.5).setDepth(702),
+          this.add.image(x + 36, y + 39, skillCardKey(skill.id)).setDisplaySize(58, 58).setOrigin(0.5).setAlpha(isOwned ? 0.9 : 0.25).setDepth(703),
+          this.add.text(x + 70, y + 16, this.skillLabel(skill), this.textStyle(13, isOwned ? '#e8c36a' : '#4a4035')).setDepth(703),
+          this.add.text(x + 70, y + 36, `${GRADE_KO[skill.grade]} · 쿨타임 ${(skill.cooldown / 1000).toFixed(1)}s`, this.textStyle(11, isOwned ? '#a8987a' : '#3a3530')).setDepth(703),
+          this.add.text(x + 70, y + 54, skill.description ? skill.description.slice(0, 20) + (skill.description.length > 20 ? '…' : '') : '', this.textStyle(10, '#6a5e4a')).setDepth(703),
+          this.add.text(x + 222, y + 14, GRADE_KO[skill.grade], this.textStyle(10, isOwned ? '#f0d493' : '#3a3530')).setOrigin(1, 0).setDepth(703),
+          this.add.text(x + 222, y + 58, isOwned ? '습득' : '미습득', this.textStyle(10, isOwned ? '#83d68a' : '#554e45')).setOrigin(1, 1).setDepth(703),
+        );
+      });
+    } else if (this.codexTab === 'ENEMIES') {
+      // 일반 적 탭
+      const enemies = [...ENEMY_DATABASE.values()].filter(e => e.rank !== 'BOSS');
+      const unlockedRegion = save.storyRegion ?? 1;
+      items.push(this.add.text(38, 140, `일반 적 도감  ·  총 ${Math.min(enemies.length, unlockedRegion * 3)}마리 발견`, this.textStyle(12, '#7a6e58')).setDepth(702));
+      enemies.slice(0, 12).forEach((enemy, i) => {
+        const y = 158 + i * 58;
+        const isUnlocked = (enemy.region ?? 1) <= unlockedRegion;
+        const regionColor = [0x5aafff, 0x60d060, 0xffd060, 0xe07030, 0xe05555, 0xc04040, 0x9050e0, 0xcc2030][Math.min(7, (enemy.region ?? 1) - 1)];
+        items.push(
+          this.add.rectangle(W / 2, y + 26, W - 52, 50, 0x110f0c, 1)
+            .setStrokeStyle(1, isUnlocked ? regionColor : 0x2a2218, isUnlocked ? 0.55 : 0.3).setDepth(702),
+          this.add.text(56, y + 16, isUnlocked ? enemy.name : '???', this.textStyle(14, isUnlocked ? '#e8c36a' : '#3a3530')).setDepth(703),
+          this.add.text(56, y + 36, isUnlocked ? `${enemy.region ?? 1}지역  ·  HP ${enemy.hp}  ·  공격 ${enemy.damage}` : '미발견', this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(W - 56, y + 26, isUnlocked ? (enemy.rank === 'ELITE' ? '정예' : '일반') : '', this.textStyle(12, isUnlocked ? '#f0d493' : '#3a3530')).setOrigin(1, 0.5).setDepth(703),
+        );
+      });
+    } else {
+      // 보스 탭
+      const bosses = [...ENEMY_DATABASE.values()].filter(e => e.rank === 'BOSS');
+      const defeatedSet = new Set(save.defeatedBosses ?? []);
+      items.push(this.add.text(38, 140, `혈교 보스 도감  ·  ${defeatedSet.size} / ${bosses.length} 격파`, this.textStyle(12, '#7a6e58')).setDepth(702));
+      bosses.forEach((boss, i) => {
+        const y = 160 + i * 84;
+        const isDefeated = defeatedSet.has(boss.id);
+        const rankColor = BOSS_RANK_COLORS[boss.bossRank ?? 'DAEJU'] ?? 0x75572b;
+        items.push(
+          this.add.rectangle(W / 2, y + 34, W - 52, 72, isDefeated ? 0x131c0e : 0x110f0c, 1)
+            .setStrokeStyle(2, rankColor, isDefeated ? 0.9 : 0.35).setDepth(702),
+          this.add.text(56, y + 16, `${i + 1}장  ${BOSS_RANK_NAMES[boss.bossRank ?? 'DAEJU'] ?? ''}`, this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(56, y + 34, isDefeated ? boss.name : '???', this.titleStyle(18)).setDepth(703),
+          this.add.text(56, y + 56, isDefeated ? `HP ${boss.hp}  ·  공격 ${boss.damage}  ·  ${boss.region ?? 1}지역 수호자` : '격파 필요', this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(W - 56, y + 34, isDefeated ? '격파 ✓' : '미격파', this.textStyle(14, isDefeated ? '#83d68a' : '#554e45')).setOrigin(1, 0.5).setDepth(703),
+        );
+      });
+    }
   }
 
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     this.ensureDailyMission(save);
+    const mp = save.missionProgress ?? {};
+    const claims = save.missionClaims ?? [];
 
-    const tabs: [MissionTab, string][] = [['DAILY', '\uC77C\uC77C'], ['ACHIEVEMENT', '\uC5C5\uC801']];
-    tabs.forEach(([tab, label], index) => {
-      const x = 55 + index * 145;
-      const button = this.add.rectangle(x, 104, 125, 42, tab === this.missionTab ? 0x5a3d18 : 0x17120d)
-        .setOrigin(0, 0)
-        .setStrokeStyle(1, tab === this.missionTab ? GOLD : 0x75572b)
-        .setInteractive();
-      button.on('pointerdown', () => { this.missionTab = tab; this.openPanel('MISSIONS'); });
-      items.push(button, this.add.text(x + 62, 125, label, this.textStyle(17, '#f0d493')).setOrigin(0.5));
+    // ─── 탭 바 ───
+    const TABS: [typeof this.missionsTab, string][] = [['DAILY', '일일 임무'], ['ACHIEVEMENT', '업적']];
+    TABS.forEach(([tab, label], i) => {
+      const x = 135 + i * 178;
+      const isActive = this.missionsTab === tab;
+      const btn = this.add.rectangle(x, 103, 158, 38, isActive ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(isActive ? 2 : 1, isActive ? GOLD : 0x60451f).setInteractive().setDepth(702);
+      btn.on('pointerdown', () => { this.missionsTab = tab; this.openPanel('MISSIONS'); });
+      items.push(btn, this.add.text(x, 103, label, this.textStyle(15, isActive ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(703));
     });
 
-    const missions = this.missionTab === 'DAILY' ? this.dailyMissions(save) : this.achievementMissions(save);
-    missions.forEach((mission, index) => this.addMissionRow(items, mission, index));
+    if (this.missionsTab === 'DAILY') {
+      // 일일 임무 리셋 날짜 표시
+      items.push(this.add.text(W / 2, 137, `자정에 초기화 · ${save.dailyMissionDate ?? '오늘'}`, this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
 
-    // 객잔 주인 일러스트 배치
-    const npc = this.add.image(W - 120, 680, 'npc_innkeeper').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
-    items.push(npc);
-  }
+      const daily = [
+        { id: 'daily_kill',      name: '적 30명 처치',       prog: mp.daily_kill ?? 0,      target: 30,  reward: 500  },
+        { id: 'daily_waves',     name: '웨이브 5회 클리어',  prog: mp.daily_waves ?? 0,     target: 5,   reward: 400  },
+        { id: 'daily_boss',      name: '보스 1회 처치',       prog: mp.daily_boss ?? 0,      target: 1,   reward: 800  },
+        { id: 'daily_gold',      name: '금화 500개 수집',     prog: mp.daily_gold ?? 0,      target: 500, reward: 300  },
+        { id: 'daily_synthesis', name: '합성 1회 성공',       prog: mp.daily_synthesis ?? 0, target: 1,   reward: 400  },
+      ];
 
-  private dailyMissions(save: ReturnType<typeof loadGame>): MissionDef[] {
-    return [
-      { id: 'daily_kill', type: '\uC77C\uC77C', name: '\uC801 30\uBA85 \uCC98\uCE58', progress: save.missionProgress?.daily_kill ?? 0, target: 30, gold: 500, gems: 1 },
-      { id: 'daily_wave', type: '\uC77C\uC77C', name: '\uC6E8\uC774\uBE0C 5\uD68C \uD074\uB9AC\uC5B4', progress: save.missionProgress?.daily_wave ?? 0, target: 5, gold: 650, gems: 1 },
-      { id: 'daily_boss', type: '\uC77C\uC77C', name: '\uBCF4\uC2A4 1\uD68C \uACA9\uD30C', progress: save.missionProgress?.daily_boss ?? 0, target: 1, gold: 900, gems: 2 },
-    ];
-  }
+      daily.forEach(({ id, name, prog, target, reward }, i) => {
+        const y = 158 + i * 128;
+        const claimed = claims.includes(id);
+        const done = prog >= target;
+        const canClaim = done && !claimed;
+        const ratio = Math.min(1, prog / target);
+        const cardColor = claimed ? 0x131e0e : canClaim ? 0x1e2010 : 0x110f0c;
+        const borderColor = claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528;
+        items.push(
+          this.add.rectangle(W / 2, y + 46, W - 52, 110, cardColor, 1)
+            .setStrokeStyle(2, borderColor, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
+          this.add.text(56, y + 18, name, this.titleStyle(18)).setDepth(703),
+          this.add.text(56, y + 44, `보상  ${reward}G`, this.textStyle(13, '#d4a74e')).setDepth(703),
+          // 진행 바
+          this.add.rectangle(56, y + 68, W - 108, 10, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
+          this.add.rectangle(56, y + 68, Math.max(4, (W - 108) * ratio), 10, canClaim || claimed ? 0x83d68a : GOLD, 0.85).setOrigin(0, 0.5).setDepth(704),
+          this.add.text(56, y + 87, `${Math.min(prog, target)} / ${target}`, this.textStyle(12, '#8a7d6a')).setDepth(703),
+        );
+        const btn = this.add.rectangle(W - 95, y + 65, 120, 38, canClaim ? 0x4a3215 : 0x17120d)
+          .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
+        btn.on('pointerdown', () => this.claimMission(id, canClaim));
+        items.push(btn, this.add.text(W - 95, y + 65, claimed ? '수령 완료' : canClaim ? '보상 수령' : '진행 중',
+          this.textStyle(13, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#666666')).setOrigin(0.5).setDepth(704));
+      });
+    } else {
+      // 업적
+      items.push(this.add.text(W / 2, 137, '영구적으로 달성되는 업적입니다', this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
 
-  private achievementMissions(save: ReturnType<typeof loadGame>): MissionDef[] {
-    return [
-      { id: `achievement_story_${save.storyRegion ?? 1}`, type: '\uC5C5\uC801', name: `\uD608\uAD50 ${save.storyRegion ?? 1}\uC7A5 \uB3CC\uD30C`, progress: save.stageCleared, target: (save.storyRegion ?? 1) * 5, gold: 900, gems: 2 },
-      { id: 'achievement_kill_500', type: '\uC5C5\uC801', name: '\uC801 500\uBA85 \uCC98\uCE58', progress: save.totalKills ?? 0, target: 500, gold: 2000, gems: 5 },
-      { id: 'achievement_disciple_10', type: '\uC5C5\uC801', name: '\uC81C\uC790 10\uBA85 \uBAA8\uC9D1', progress: save.disciples?.length ?? 0, target: 10, gold: 2500, gems: 6 },
-      { id: 'achievement_play_1h', type: '\uC5C5\uC801', name: '\uCD1D 1\uC2DC\uAC04 \uC218\uB828', progress: Math.floor((save.totalPlayTime ?? 0) / 60), target: 60, gold: 1800, gems: 4 },
-    ];
-  }
+      const totalKills = save.totalKills ?? 0;
+      const bossCount = save.defeatedBosses?.length ?? 0;
+      const skillCount = save.unlockedSkills.length;
+      const eqCount = save.equipmentInventory?.length ?? 0;
 
-  private addMissionRow(items: Phaser.GameObjects.GameObject[], mission: MissionDef, index: number): void {
-    const y = 190 + index * 115;
-    const claimed = loadGame().missionClaims?.includes(mission.id);
-    const can = mission.progress >= mission.target && !claimed;
-    const button = this.add.rectangle(W - 115, y, 150, 48, can ? 0x4a3215 : 0x1a1712)
-      .setStrokeStyle(1, can ? GOLD : 0x4b4132)
-      .setInteractive();
-    button.on('pointerdown', () => this.claimMission(mission.id, can));
+      const achievements = [
+        { id: 'ach_kill100',  name: '첫 번째 백인도',  desc: '적 100명 처치', prog: totalKills, target: 100,  reward: 1000 },
+        { id: 'ach_kill500',  name: '오백인도',        desc: '적 500명 처치', prog: totalKills, target: 500,  reward: 2500 },
+        { id: 'ach_kill2000', name: '이천인도',        desc: '적 2000명 처치',prog: totalKills, target: 2000, reward: 5000 },
+        { id: 'ach_boss1',    name: '혈교 첫 타도',   desc: '보스 1회 격파', prog: bossCount,  target: 1,    reward: 1500 },
+        { id: 'ach_boss4',    name: '혈교 사천왕 격파',desc: '보스 4회 격파', prog: bossCount,  target: 4,    reward: 3000 },
+        { id: 'ach_lvl10',    name: '초입 경지',       desc: '레벨 10 달성',  prog: save.level, target: 10,   reward: 1000 },
+        { id: 'ach_lvl30',    name: '화경(化境) 돌입', desc: '레벨 30 달성',  prog: save.level, target: 30,   reward: 5000 },
+        { id: 'ach_skill8',   name: '팔방진인',        desc: '무공 8개 습득', prog: skillCount, target: 8,    reward: 2000 },
+        { id: 'ach_equip10',  name: '무장 강화',       desc: '장비 10개 수집',prog: eqCount,    target: 10,   reward: 1500 },
+      ];
 
-    const reward = `+${mission.gold}G · +${mission.gems}${UI.gem}`;
-    items.push(this.add.text(55, y - 24, `[${mission.type}] ${mission.name}`, this.titleStyle(18)),
-      this.add.text(55, y + 7, `${Math.min(mission.progress, mission.target)} / ${mission.target}`, this.textStyle(15, '#d8c9aa')),
-      this.add.text(55, y + 32, reward, this.textStyle(13, '#d4a74e')),
-      button, this.add.text(W - 115, y, claimed ? '\uC218\uB839 \uC644\uB8CC' : can ? '\uBCF4\uC0C1 \uC218\uB839' : '\uC9C4\uD589 \uC911', this.textStyle(14, can ? '#f0d493' : '#8f8778')).setOrigin(0.5));
+      achievements.forEach(({ id, name, desc, prog, target, reward }, i) => {
+        const y = 152 + i * 78;
+        const claimed = claims.includes(id);
+        const canClaim = prog >= target && !claimed;
+        const ratio = Math.min(1, prog / target);
+        items.push(
+          this.add.rectangle(W / 2, y + 30, W - 52, 64, claimed ? 0x131e0e : 0x110f0c, 1)
+            .setStrokeStyle(1, claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
+          this.add.text(56, y + 14, name, this.textStyle(14, claimed ? '#83d68a' : canClaim ? '#e8c36a' : '#8a7d6a')).setDepth(703),
+          this.add.text(56, y + 34, `${desc}  ·  보상 ${reward}G`, this.textStyle(11, '#7a6e58')).setDepth(703),
+          // 미니 진행 바
+          this.add.rectangle(56, y + 52, 240, 5, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
+          this.add.rectangle(56, y + 52, Math.max(3, 240 * ratio), 5, canClaim || claimed ? 0x83d68a : GOLD, 0.8).setOrigin(0, 0.5).setDepth(704),
+          this.add.text(304, y + 52, `${Math.min(prog, target)}/${target}`, this.textStyle(10, '#5a5048')).setOrigin(0, 0.5).setDepth(703),
+        );
+        const btn = this.add.rectangle(W - 88, y + 30, 110, 34, canClaim ? 0x4a3215 : 0x17120d)
+          .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
+        btn.on('pointerdown', () => this.claimMission(id, canClaim));
+        items.push(btn, this.add.text(W - 88, y + 30, claimed ? '달성 ✓' : canClaim ? '수령' : `${Math.floor(ratio * 100)}%`,
+          this.textStyle(12, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#555555')).setOrigin(0.5).setDepth(704));
+      });
+    }
   }
 
   private updateHUD(state: PlayerStatePayload): void {
@@ -855,18 +961,7 @@ export class UIScene extends Phaser.Scene {
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
     this.levelText.setText(`Lv.${state.level}`);
     this.goldText.setText(`${state.gold} 금화`);
-    this.resourceGoldText?.setText(this.formatCompactNumber(state.gold));
-    this.gemText?.setText(this.formatCompactNumber(state.gems));
-    this.energyText?.setText(`${Math.floor(state.stamina)}/${state.maxStamina}`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
-    this.combatPowerText.setText(`\uC804\uD22C\uB825 ${this.formatCompactNumber(state.combatPower)}`);
-    const bossWave = Math.ceil(state.waveNumber / 5) * 5;
-    const region = Math.min(8, Math.max(1, Math.floor((bossWave - 1) / 5) + 1));
-    const regionName = STORY_REGION_NAMES[region - 1] ?? `${region}\uC9C0\uC5ED`;
-    const remaining = Math.max(0, bossWave - state.waveNumber);
-    this.progressGoalText?.setText(state.isBossWave
-      ? `${regionName} \uBCF4\uC2A4 \uB3C4\uC804 \uC911`
-      : `${regionName} \uBCF4\uC2A4\uAE4C\uC9C0 ${remaining}\uC6E8\uC774\uBE0C`);
     const isAuto = state.battleMode === 'AUTO';
     this.modeText.setText(isAuto ? 'AUTO' : '수동');
     if (this.modeButton) {
@@ -900,7 +995,6 @@ export class UIScene extends Phaser.Scene {
 
     // 초상화 일러스트 실시간 갱신
     const save = loadGame();
-    this.updateNavBadges(save);
     const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
     const dominantSet = dominantSetId(equipped, 4);
     const charId = save.selectedCharacter ?? 'sword_male';
@@ -934,6 +1028,8 @@ export class UIScene extends Phaser.Scene {
     save.inventory[b] = (save.inventory[b] ?? 0) - 1;
     save.inventory[result] = (save.inventory[result] ?? 0) + 1;
     if (!save.unlockedSkills.includes(result)) save.unlockedSkills.push(result);
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_synthesis = (save.missionProgress.daily_synthesis ?? 0) + 1;
     saveGame(save);
     this.showNotice(`합성 성공 · ${this.skillLabel(SKILL_DATABASE.get(result))}`);
     this.openPanel('MARTIAL');
@@ -962,132 +1058,6 @@ export class UIScene extends Phaser.Scene {
     this.openPanel('TRAINING');
   }
 
-  private updateNavBadges(save = loadGame(), force = false): void {
-    if (!force && this.time.now - this.lastNavBadgeUpdate < 1000) return;
-    this.lastNavBadgeUpdate = this.time.now;
-    (Object.keys(this.navBadges) as Panel[]).forEach(panel => {
-      this.navBadges[panel]?.setVisible(this.hasPanelAlert(panel, save));
-    });
-  }
-
-  private hasPanelAlert(panel: Panel, save: ReturnType<typeof loadGame>): boolean {
-    if (panel === 'TRAINING') return this.canAffordTraining(save);
-    if (panel === 'EQUIPMENT') return this.hasBetterEquipment(save) || (save.equipmentInventory?.length ?? 0) >= 100;
-    if (panel === 'MARTIAL') return this.hasUpgradeableSkill(save);
-    if (panel === 'SECT') return this.canAffordSectAction(save);
-    if (panel === 'MISSIONS') return [...this.dailyMissions(save), ...this.achievementMissions(save)]
-      .some(mission => mission.progress >= mission.target && !(save.missionClaims ?? []).includes(mission.id));
-    return false;
-  }
-
-  private canAffordTraining(save: ReturnType<typeof loadGame>): boolean {
-    const levels = save.trainingLevels ?? {};
-    const hallLevel = save.sectFacilities?.hall ?? 1;
-    const hallDiscount = Math.min(0.25, (hallLevel - 1) * 0.025);
-    return ['attack', 'hp', 'gold'].some(key => {
-      const base = 100 * ((levels[key] ?? 0) + 1);
-      const c = Math.max(10, Math.floor(base * (1 - hallDiscount)));
-      return save.gold >= c;
-    });
-  }
-
-  private hasUpgradeableSkill(save: ReturnType<typeof loadGame>): boolean {
-    return this.ownedSkills(save).some(skill => {
-      const level = save.skillLevels?.[skill.id] ?? 0;
-      const cost = Math.round((skill.upgradeGoldBase ?? 40) * (1 + level * 0.32));
-      return save.gold >= cost && (save.inventory[skill.id] ?? 0) >= 2;
-    });
-  }
-
-  private hasBetterEquipment(save: ReturnType<typeof loadGame>): boolean {
-    const equippedIds = save.equippedItems ?? {};
-    return (save.equipmentInventory ?? []).some(item => {
-      const current = (save.equipmentInventory ?? []).find(candidate => candidate.id === equippedIds[item.slot]);
-      return !current || equipmentScore(item) > equipmentScore(current);
-    });
-  }
-
-  private canAffordSectAction(save: ReturnType<typeof loadGame>): boolean {
-    const facilities = save.sectFacilities ?? {};
-    const research = save.sectResearch ?? {};
-    const facilityReady = ['hall', 'forge', 'library'].some(key => save.gold >= (facilities[key] ?? 1) * 250);
-    // 무경각 할인 반영한 연구 비용 체크
-    const libraryLevel = facilities.library ?? 1;
-    const libDiscount = Math.min(0.2, (libraryLevel - 1) * 0.02);
-    const researchReady = (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[])
-      .some(key => {
-        const base = 220 * ((research[key] ?? 0) + 1);
-        const c = Math.max(50, Math.floor(base * (1 - libDiscount)));
-        return save.gold >= c;
-      });
-    const discipleCount = save.disciples?.length ?? 0;
-    const discipleReady = discipleCount < 10 && save.gold >= 600 + discipleCount * 350;
-    return facilityReady || researchReady || discipleReady;
-  }
-
-  private autoTrain(): void {
-    const save = loadGame();
-    save.trainingLevels = save.trainingLevels ?? {};
-    const keys = ['attack', 'hp', 'gold'];
-    const hallLevel = save.sectFacilities?.hall ?? 1;
-    const hallDiscount = Math.min(0.25, (hallLevel - 1) * 0.025); // 대전 할인 auto에도 적용
-    let upgraded = 0;
-
-    for (let guard = 0; guard < 200; guard++) {
-      const key = keys.sort((a, b) => (save.trainingLevels?.[a] ?? 0) - (save.trainingLevels?.[b] ?? 0))[0];
-      const level = save.trainingLevels[key] ?? 0;
-      const base = 100 * (level + 1);
-      const cost = Math.max(10, Math.floor(base * (1 - hallDiscount)));
-      if (save.gold < cost) break;
-      save.gold -= cost;
-      save.trainingLevels[key] = level + 1;
-      upgraded += 1;
-    }
-
-    if (upgraded <= 0) return this.showNotice('금화가 부족합니다');
-    saveGame(save);
-    this.showNotice(`\uC218\uB828 +${upgraded}`);
-    this.openPanel('TRAINING');
-  }
-
-  private buyGoldSupply(gemCost: number): void {
-    const save = loadGame();
-    if ((save.gems ?? 0) < gemCost) return this.showNotice('\uC6D0\uBCF4\uAC00 \uBD80\uC871\uD569\uB2C8\uB2E4');
-    const gold = this.gemSupplyGold(save);
-    save.gems = (save.gems ?? 0) - gemCost;
-    save.gold += gold;
-    saveGame(save);
-    this.showNotice(`\uBCF4\uAE09 \uD68D\uB4DD · +${gold}G`);
-    this.openPanel('TRAINING');
-  }
-
-  private gemSupplyGold(save: ReturnType<typeof loadGame>): number {
-    return 1200 + Math.max(0, save.stageCleared) * 120 + Math.max(0, save.level - 1) * 80;
-  }
-
-  private growthSummary(save: ReturnType<typeof loadGame>): string[] {
-    const training = save.trainingLevels ?? {};
-    const research = save.sectResearch ?? {};
-    const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
-    const sets = equipmentSetBonus(equipped);
-    const discipleBonus = Math.min(10, save.disciples?.length ?? 0) * 2;
-    const classResearch = (research[this.charClass] ?? 0) * 2.5;
-    // 문파 시설 효과 반영 - 성장 요약에 실제 영향 표시 (hall + forge + library)
-    const facilities = save.sectFacilities ?? {};
-    const hall = Math.max(1, facilities.hall ?? 1);
-    const forge = Math.max(1, facilities.forge ?? 1);
-    const library = Math.max(1, facilities.library ?? 1);
-    const hallAtk = Math.round((hall - 1) * 1.2);
-    const hallHp = Math.round((hall - 1) * 1.2);
-    const forgeGold = Math.round((forge - 1) * 1);
-    const libResearch = Math.round((library - 1) * 1.5);
-    return [
-      `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch + hallAtk + libResearch}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2 + hallHp}%`,
-      `\uAE08\uD654 +${(training.gold ?? 0) * 2 + forgeGold}% · \uC138\uD2B8 \uACF5\uACA9 x${sets.attackMul.toFixed(2)}`,
-      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length} · \uB300\uC804${hall} \uB300\uC7A5${forge} \uBB34\uACBD${library}`,
-    ];
-  }
-
   private upgradeSect(key: string, cost: number): void {
     const save = loadGame();
     if (save.gold < cost) return this.showNotice('금화가 부족합니다');
@@ -1101,15 +1071,12 @@ export class UIScene extends Phaser.Scene {
   private autoEquip(): void {
     const save = loadGame();
     save.equippedItems = save.equippedItems ?? {};
-    const before = equippedItems(save.equipmentInventory ?? [], save.equippedItems).reduce((sum, item) => sum + equipmentScore(item), 0);
     for (const slot of EQUIPMENT_SLOTS) {
       const best = (save.equipmentInventory ?? []).filter(item => item.slot === slot).sort((a, b) => equipmentScore(b) - equipmentScore(a))[0];
       if (best) save.equippedItems[slot] = best.id;
     }
-    const after = equippedItems(save.equipmentInventory ?? [], save.equippedItems).reduce((sum, item) => sum + equipmentScore(item), 0);
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
-    this.showNotice(after > before ? `전투력 +${after - before}` : '이미 최적 장비입니다');
     this.openPanel('EQUIPMENT');
   }
 
@@ -1120,17 +1087,16 @@ export class UIScene extends Phaser.Scene {
     let refund = 0;
     for (const item of save.equipmentInventory ?? []) {
       const matched = this.equipmentFilter === 'ALL' || (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter);
-      const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY' || Boolean(item.setId);
+      const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY';
       if (matched && !protectedItem) refund += Math.max(5, Math.round(equipmentScore(item) * 0.08));
       else keep.push(item);
     }
-    const removed = (save.equipmentInventory?.length ?? 0) - keep.length;
-    if (refund <= 0) return this.showNotice('분해할 일반 장비가 없습니다');
+    if (refund <= 0) return this.showNotice('분해할 장비가 없습니다');
     save.equipmentInventory = keep;
     save.gold += refund;
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
-    this.showNotice(`분해 ${removed}개 · +${refund}G`);
+    this.showNotice(`분해 보상 +${refund}G`);
     this.openPanel('EQUIPMENT');
   }
 
@@ -1155,25 +1121,12 @@ export class UIScene extends Phaser.Scene {
 
   private recruitDisciple(cost: number): void {
     const save = loadGame();
-    save.disciples = save.disciples ?? [];
-    if (save.disciples.length >= 10) return this.showNotice('\uC81C\uC790\uB294 \uCD5C\uB300 10\uBA85\uAE4C\uC9C0 \uBAA8\uC9D1\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4');
     if (save.gold < cost) return this.showNotice('금화가 부족합니다');
     save.gold -= cost;
+    save.disciples = save.disciples ?? [];
     save.disciples.push(`disciple_${Date.now()}_${save.disciples.length + 1}`);
     saveGame(save);
     this.openPanel('SECT');
-  }
-
-  private formatPlayTime(totalSeconds: number): string {
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours}\uC2DC\uAC04 ${minutes}\uBD84`;
-  }
-
-  private formatCompactNumber(value: number): string {
-    if (value >= 1000000) return `${Math.floor(value / 100000) / 10}M`;
-    if (value >= 10000) return `${Math.floor(value / 100) / 10}K`;
-    return `${Math.floor(value)}`;
   }
 
   private ensureDailyMission(save: ReturnType<typeof loadGame>): void {
@@ -1182,8 +1135,10 @@ export class UIScene extends Phaser.Scene {
     save.dailyMissionDate = today;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_kill = 0;
-    save.missionProgress.daily_wave = 0;
+    save.missionProgress.daily_waves = 0;
     save.missionProgress.daily_boss = 0;
+    save.missionProgress.daily_gold = 0;
+    save.missionProgress.daily_synthesis = 0;
     save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
     saveGame(save);
   }
@@ -1191,21 +1146,334 @@ export class UIScene extends Phaser.Scene {
   private claimMission(id: string, can: boolean): void {
     if (!can) return;
     const save = loadGame();
-    const mission = [...this.dailyMissions(save), ...this.achievementMissions(save)].find(candidate => candidate.id === id);
-    if (!mission) return;
     save.missionClaims = save.missionClaims ?? [];
-    if (save.missionClaims.includes(id)) return;
     save.missionClaims.push(id);
-    save.gold += mission.gold;
-    save.gems = (save.gems ?? 0) + mission.gems;
+    const REWARDS: Record<string, number> = {
+      daily_kill: 500, daily_waves: 400, daily_boss: 800, daily_gold: 300, daily_synthesis: 400,
+      ach_kill100: 1000, ach_kill500: 2500, ach_kill2000: 5000,
+      ach_boss1: 1500, ach_boss4: 3000,
+      ach_lvl10: 1000, ach_lvl30: 5000,
+      ach_skill8: 2000, ach_equip10: 1500,
+      achievement: 2000, story: 900,
+    };
+    const reward = REWARDS[id] ?? 500;
+    save.gold += reward;
     saveGame(save);
-    this.showNotice(`${UI.mission} ${UI.acquired} · +${mission.gold}G · +${mission.gems}${UI.gem}`);
+    this.showNotice(`임무 완료 · +${reward}G`);
     this.openPanel('MISSIONS');
   }
 
   private closePanel(): void {
     this.overlay?.destroy(true);
     this.overlay = null;
+  }
+
+  // ─── Settings Panel ───────────────────────────────────────────────────────
+
+  private buildSettings(items: Phaser.GameObjects.GameObject[]): void {
+    const save = loadGame();
+    let bgmVol = bgmSystem.volume;
+    let sfxVol = soundSystem.volume;
+
+    const row = (y: number, label: string, value: number, onMinus: () => void, onPlus: () => void) => {
+      items.push(
+        this.add.text(55, y, label, this.titleStyle(18)).setDepth(703),
+      );
+      const valText = this.add.text(W / 2, y + 2, `${Math.round(value * 100)}%`,
+        this.textStyle(17, '#e8c36a')).setOrigin(0.5).setDepth(703);
+      items.push(valText);
+      const minus = this.add.text(W / 2 - 70, y, '◀', this.titleStyle(20)).setOrigin(0.5)
+        .setInteractive().setDepth(703);
+      const plus  = this.add.text(W / 2 + 70, y, '▶', this.titleStyle(20)).setOrigin(0.5)
+        .setInteractive().setDepth(703);
+      minus.on('pointerdown', () => { onMinus(); });
+      plus.on('pointerdown', () => { onPlus(); });
+      items.push(minus, plus);
+      return valText;
+    };
+
+    const bgmText = row(160, '배경음악', bgmVol,
+      () => { bgmVol = Math.max(0, bgmVol - 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
+      () => { bgmVol = Math.min(1, bgmVol + 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
+    );
+    const sfxText = row(230, '효과음', sfxVol,
+      () => { sfxVol = Math.max(0, sfxVol - 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
+      () => { sfxVol = Math.min(1, sfxVol + 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
+    );
+
+    // Divider
+    items.push(this.add.rectangle(W / 2, 300, W - 60, 1, 0x60451f).setDepth(703));
+
+    // Tutorial restart
+    const tutBtn = this.add.rectangle(W / 2, 350, 300, 48, 0x2a1f0e).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+    const tutLabel = this.add.text(W / 2, 350, '튜토리얼 다시 보기', this.textStyle(16, '#e8c36a')).setOrigin(0.5).setDepth(704);
+    tutBtn.on('pointerdown', () => {
+      this.closePanel();
+      this.time.delayedCall(100, () => this.showTutorial(0));
+    });
+    items.push(tutBtn, tutLabel);
+
+    // Reset save
+    const resetBtn = this.add.rectangle(W / 2, 430, 300, 48, 0x2a1f0e).setStrokeStyle(1, 0x9c3b28).setInteractive().setDepth(703);
+    const resetLabel = this.add.text(W / 2, 430, '세이브 초기화', this.textStyle(16, '#e05050')).setOrigin(0.5).setDepth(704);
+    resetBtn.on('pointerdown', () => this.confirmReset(items));
+    items.push(resetBtn, resetLabel);
+
+    // Version
+    items.push(this.add.text(W / 2, 520, '무공키우기 v1.0.0', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703));
+
+    // Unused save reference to suppress lint warning
+    void save;
+  }
+
+  private confirmReset(items: Phaser.GameObjects.GameObject[]): void {
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(800);
+    const box = this.add.rectangle(W / 2, H / 2, 380, 220, 0x110c07).setStrokeStyle(2, 0x9c3b28).setDepth(801);
+    const msg = this.add.text(W / 2, H / 2 - 60, '정말 초기화하시겠습니까?\n모든 진행이 삭제됩니다.', {
+      ...this.textStyle(16, '#e8c36a'), align: 'center',
+    }).setOrigin(0.5).setDepth(802);
+    const yes = this.add.text(W / 2 - 70, H / 2 + 50, '초기화', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(802);
+    const no = this.add.text(W / 2 + 70, H / 2 + 50, '취소', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(802);
+    yes.on('pointerdown', () => {
+      deleteSave();
+      items.push(overlay, box, msg, yes, no);
+      this.scene.restart();
+    });
+    no.on('pointerdown', () => {
+      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+    });
+    items.push(overlay, box, msg, yes, no);
+  }
+
+  // ─── Shop Panel ───────────────────────────────────────────────────────────
+
+  private buildShop(items: Phaser.GameObjects.GameObject[]): void {
+    const save = loadGame();
+    const today = new Date().toLocaleDateString('en-CA');
+    const TABS: ['DAILY' | 'SKILLS' | 'GEMS', string][] = [['DAILY', '일일상점'], ['SKILLS', '무공구매'], ['GEMS', '원보']];
+
+    TABS.forEach(([tab, label], i) => {
+      const x = 90 + i * 130;
+      const btn = this.add.rectangle(x, 115, 115, 36, this.shopTab === tab ? 0x4a3520 : 0x1e1409)
+        .setStrokeStyle(1, this.shopTab === tab ? GOLD : 0x60451f).setInteractive().setDepth(703);
+      const txt = this.add.text(x, 115, label, this.textStyle(14, this.shopTab === tab ? '#e8c36a' : '#8a7a60'))
+        .setOrigin(0.5).setDepth(704);
+      btn.on('pointerdown', () => {
+        this.shopTab = tab;
+        this.closePanel();
+        this.openPanel('SHOP');
+      });
+      items.push(btn, txt);
+    });
+
+    const contentY = 150;
+
+    if (this.shopTab === 'DAILY') {
+      const purchased = save.shopLastReset === today ? (save.shopDailyPurchased ?? []) : [];
+      const dailyItems: Array<{ id: string; name: string; cost: number; reward: string }> = [
+        { id: 'daily_gold_sm', name: '소 금괴', cost: 10, reward: '금화 500' },
+        { id: 'daily_gold_lg', name: '대 금괴', cost: 50, reward: '금화 3000' },
+        { id: 'daily_exp_sm', name: '수련서 (소)', cost: 15, reward: 'EXP 2000' },
+        { id: 'daily_exp_lg', name: '수련서 (대)', cost: 80, reward: 'EXP 15000' },
+        { id: 'daily_skill_scroll', name: '무공 비급', cost: 30, reward: '무공 해금 1회' },
+      ];
+
+      items.push(this.add.text(W / 2, contentY + 10, `일일 초기화: ${today}`, this.textStyle(12, '#7a6a50')).setOrigin(0.5).setDepth(703));
+
+      dailyItems.forEach((item, i) => {
+        const y = contentY + 55 + i * 100;
+        const bought = purchased.includes(item.id);
+        const card = this.add.rectangle(W / 2, y, W - 60, 86, bought ? 0x111111 : 0x1e1409)
+          .setStrokeStyle(1, bought ? 0x333333 : 0x60451f).setDepth(703);
+        const name = this.add.text(80, y - 20, item.name, this.titleStyle(16)).setDepth(704);
+        const reward = this.add.text(80, y + 5, item.reward, this.textStyle(13, '#a0e080')).setDepth(704);
+        const costTxt = this.add.text(W - 120, y - 20, `💎 ${item.cost}`, this.textStyle(14, '#a0c8ff')).setDepth(704);
+        const buyBtn = this.add.rectangle(W - 100, y + 15, 90, 30, bought ? 0x333333 : 0x2d4d1e)
+          .setStrokeStyle(1, bought ? 0x444444 : 0x5a9d2f).setInteractive().setDepth(703);
+        const buyTxt = this.add.text(W - 100, y + 15, bought ? '구매완료' : '구매', this.textStyle(13, bought ? '#555555' : '#a0e080'))
+          .setOrigin(0.5).setDepth(704);
+        if (!bought) {
+          buyBtn.on('pointerdown', () => {
+            const gems = save.gems ?? 0;
+            if (gems < item.cost) { this.showNotice('원보가 부족합니다'); return; }
+            save.gems = gems - item.cost;
+            if (item.id === 'daily_gold_sm') save.gold += 500;
+            else if (item.id === 'daily_gold_lg') save.gold += 3000;
+            else if (item.id === 'daily_exp_sm') save.exp += 2000;
+            else if (item.id === 'daily_exp_lg') save.exp += 15000;
+            else if (item.id === 'daily_skill_scroll') {
+              const locked = [...SKILL_DATABASE.values()].filter(s => !save.unlockedSkills.includes(s.id));
+              if (locked.length > 0) {
+                const random = locked[Math.floor(Math.random() * locked.length)];
+                save.unlockedSkills.push(random.id);
+                save.inventory[random.id] = (save.inventory[random.id] ?? 0) + 1;
+              }
+            }
+            save.shopLastReset = today;
+            save.shopDailyPurchased = [...purchased, item.id];
+            saveGame(save);
+            soundSystem.play('synth_ok');
+            this.closePanel();
+            this.openPanel('SHOP');
+          });
+        }
+        items.push(card, name, reward, costTxt, buyBtn, buyTxt);
+      });
+    } else if (this.shopTab === 'SKILLS') {
+      const grades: Array<{ grade: string; label: string; cost: number }> = [
+        { grade: 'LOW',      label: '하급 무공 비급',  cost: 20  },
+        { grade: 'MID',      label: '중급 무공 비급',  cost: 80  },
+        { grade: 'HIGH',     label: '상급 무공 비급',  cost: 250 },
+        { grade: 'ULTIMATE', label: '절기 무공 비급',  cost: 800 },
+      ];
+      items.push(this.add.text(W / 2, contentY + 10, '원보로 무공 비급 구매', this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703));
+      grades.forEach((g, i) => {
+        const y = contentY + 70 + i * 110;
+        const color = this.skillGradeColor(g.grade as SkillData['grade']);
+        const colorHex = `#${color.toString(16).padStart(6, '0')}`;
+        const card = this.add.rectangle(W / 2, y, W - 60, 94, 0x1e1409).setStrokeStyle(2, color).setDepth(703);
+        const lbl = this.add.text(80, y - 22, g.label, { ...this.titleStyle(17), color: colorHex }).setDepth(704);
+        const sub = this.add.text(80, y + 4, '무작위 해당 등급 무공 해금', this.textStyle(13, '#a0a090')).setDepth(704);
+        const cost = this.add.text(W - 115, y - 22, `💎 ${g.cost}`, this.textStyle(14, '#a0c8ff')).setDepth(704);
+        const btn = this.add.rectangle(W - 100, y + 18, 90, 30, 0x2d4d1e).setStrokeStyle(1, 0x5a9d2f).setInteractive().setDepth(703);
+        const btnTxt = this.add.text(W - 100, y + 18, '구매', this.textStyle(13, '#a0e080')).setOrigin(0.5).setDepth(704);
+        btn.on('pointerdown', () => {
+          const gems = save.gems ?? 0;
+          if (gems < g.cost) { this.showNotice('원보가 부족합니다'); return; }
+          const pool = [...SKILL_DATABASE.values()].filter(s => s.grade === g.grade && !save.unlockedSkills.includes(s.id));
+          if (pool.length === 0) { this.showNotice('해금할 무공이 없습니다'); return; }
+          const skill = pool[Math.floor(Math.random() * pool.length)];
+          save.gems = gems - g.cost;
+          save.unlockedSkills.push(skill.id);
+          save.inventory[skill.id] = (save.inventory[skill.id] ?? 0) + 1;
+          saveGame(save);
+          soundSystem.play('synth_ok');
+          this.showNotice(`${skill.nameKo} 획득!`);
+          this.closePanel();
+          this.openPanel('SHOP');
+        });
+        items.push(card, lbl, sub, cost, btn, btnTxt);
+      });
+    } else {
+      // GEMS tab
+      const gems = save.gems ?? 0;
+      items.push(
+        this.add.text(W / 2, contentY + 10, `보유 원보: 💎 ${gems}`, this.titleStyle(18)).setOrigin(0.5).setDepth(703),
+        this.add.text(W / 2, contentY + 46, '(매일 무료 원보 지급 예정)', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703),
+      );
+      const freeKey = `gem_free_${today}`;
+      const gotFree = (save.shopDailyPurchased ?? []).includes(freeKey);
+      const freeBtn = this.add.rectangle(W / 2, contentY + 100, 260, 52, gotFree ? 0x111111 : 0x1a2d0e)
+        .setStrokeStyle(1, gotFree ? 0x333333 : GOLD).setInteractive().setDepth(703);
+      const freeTxt = this.add.text(W / 2, contentY + 100, gotFree ? '오늘 이미 수령함' : '💎 무료 원보 10개 받기', this.textStyle(15, gotFree ? '#555' : '#a0c8ff'))
+        .setOrigin(0.5).setDepth(704);
+      if (!gotFree) {
+        freeBtn.on('pointerdown', () => {
+          save.gems = (save.gems ?? 0) + 10;
+          save.shopLastReset = today;
+          save.shopDailyPurchased = [...(save.shopDailyPurchased ?? []), freeKey];
+          saveGame(save);
+          soundSystem.play('synth_ok');
+          this.showNotice('💎 원보 10개 획득!');
+          this.closePanel();
+          this.openPanel('SHOP');
+        });
+      }
+      items.push(freeBtn, freeTxt);
+      items.push(this.add.text(W / 2, contentY + 180, '원보 획득 방법:', this.titleStyle(16)).setOrigin(0.5).setDepth(703));
+      const tips = ['• 임무 완료 보상', '• 보스 첫 격파 시', '• 매일 무료 수령', '• 업적 달성 보상'];
+      tips.forEach((tip, i) => {
+        items.push(this.add.text(W / 2, contentY + 220 + i * 36, tip, this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703));
+      });
+    }
+  }
+
+  // ─── Tutorial System ──────────────────────────────────────────────────────
+
+  private showTutorial(step: number): void {
+    this.tutorialOverlay?.destroy(true);
+    this.tutorialOverlay = null;
+
+    const steps: Array<{ title: string; body: string; highlight?: { x: number; y: number; r: number } }> = [
+      {
+        title: '⚔ 무공키우기에 오신 것을 환영합니다!',
+        body: '화면을 터치하면 자동으로 전투합니다.\n적을 처치해 경험치와 금화를 획득하세요.',
+      },
+      {
+        title: '🎯 스킬 사용하기',
+        body: '하단 스킬 버튼을 눌러 무공을 시전하세요.\n쿨다운이 차면 자동으로 사용됩니다.',
+        highlight: { x: W / 2, y: 860, r: 60 },
+      },
+      {
+        title: '💨 경공 (회피)',
+        body: '경공 버튼으로 적의 공격을 피하세요.\n무적 시간이 있어 피격을 무효화합니다.',
+        highlight: { x: W - 60, y: 860, r: 40 },
+      },
+      {
+        title: '🔰 수련',
+        body: '수련 패널에서 능력치를 강화하세요.\n공격력, 체력, 금화 획득량 등을 올릴 수 있습니다.',
+        highlight: { x: 38, y: 910, r: 32 },
+      },
+      {
+        title: '⚗ 무공 합성',
+        body: '무공 관리 → 합성 탭에서 상위 무공을 만드세요.\n같은 무공 3개를 합성하면 상위 등급이 됩니다.',
+        highlight: { x: W / 2 - 77, y: 910, r: 32 },
+      },
+      {
+        title: '🏯 문파 & 도감',
+        body: '문파에서 시설을 업그레이드하고,\n도감에서 수집한 정보를 확인하세요.',
+        highlight: { x: W / 2 + 77, y: 910, r: 32 },
+      },
+      {
+        title: '✅ 준비 완료!',
+        body: '이제 강호를 평정할 준비가 되었습니다.\n무공을 갈고 닦아 천하제일이 되세요!',
+      },
+    ];
+
+    const s = steps[Math.min(step, steps.length - 1)];
+    const items: Phaser.GameObjects.GameObject[] = [];
+
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.78).setInteractive().setDepth(900);
+    items.push(dim);
+
+    if (s.highlight) {
+      const { x, y, r } = s.highlight;
+      const hole = this.add.circle(x, y, r + 8, 0x000000, 0)
+        .setStrokeStyle(3, GOLD).setDepth(901);
+      this.tweens.add({ targets: hole, scaleX: 1.15, scaleY: 1.15, duration: 600, yoyo: true, repeat: -1 });
+      items.push(hole);
+    }
+
+    const boxY = s.highlight && s.highlight.y < H / 2 ? H * 0.72 : H * 0.38;
+    const box = this.add.rectangle(W / 2, boxY, W - 60, 220, 0x0d0905).setStrokeStyle(2, GOLD).setDepth(901);
+    const title = this.add.text(W / 2, boxY - 75, s.title, { ...this.titleStyle(18), align: 'center' }).setOrigin(0.5).setDepth(902);
+    const body  = this.add.text(W / 2, boxY - 10, s.body, { ...this.textStyle(15, '#c8b89a'), align: 'center', wordWrap: { width: W - 100 } }).setOrigin(0.5).setDepth(902);
+
+    const isLast = step >= steps.length - 1;
+    const nextBtn = this.add.rectangle(W / 2, boxY + 80, 220, 44, 0x2a1f0e).setStrokeStyle(2, GOLD).setInteractive().setDepth(902);
+    const nextTxt = this.add.text(W / 2, boxY + 80, isLast ? '시작!' : `다음 (${step + 1}/${steps.length})`, this.titleStyle(18)).setOrigin(0.5).setDepth(903);
+
+    nextBtn.on('pointerdown', () => {
+      items.forEach(o => o.destroy());
+      this.tutorialOverlay = null;
+      if (isLast) {
+        const save = loadGame();
+        save.tutorialCompleted = true;
+        saveGame(save);
+      } else {
+        this.showTutorial(step + 1);
+      }
+    });
+
+    const stepDots = steps.map((_, i) => {
+      const dot = this.add.circle(W / 2 - (steps.length - 1) * 12 + i * 24, boxY + 110, 5, i === step ? GOLD : 0x5a4a30).setDepth(903);
+      return dot;
+    });
+
+    items.push(box, title, body, nextBtn, nextTxt, ...stepDots);
+    this.tutorialOverlay = this.add.container(0, 0, items).setDepth(900);
   }
 
   private skillLabel(skill: SkillData | undefined): string {

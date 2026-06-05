@@ -42,6 +42,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private _stamina: number;
   private _maxStamina: number;
   private moveSpeed: number;
+  private baseMoveSpeed = 100;
+  private baseMaxStamina = 50;
   private damageMul: number;
 
   // ─── 무공 장착 ───
@@ -103,7 +105,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this._hp = this._maxHp;
     this._maxStamina = Math.round(50 * stats.staminaMul);
     this._stamina = this._maxStamina;
-    this.moveSpeed = Math.round(100 * stats.speedMul);
+    this.baseMoveSpeed = Math.round(100 * stats.speedMul);
+    this.baseMaxStamina = Math.round(50 * stats.staminaMul);
+    this.moveSpeed = this.baseMoveSpeed;
     this.damageMul = stats.damageMul;
 
     // 기본 무공 장착 (계열 시작 스킬)
@@ -124,6 +128,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   get skills(): readonly SkillData[] { return this.equippedSkills; }
   get dashSkill(): SkillData | null { return this.equippedDash; }
   get characterDamageMul(): number { return this.damageMul; }
+
+  applyTrainingBonuses(speedMul: number, stamMul: number): void {
+    this.moveSpeed = Math.round(this.baseMoveSpeed * speedMul);
+    this._maxStamina = Math.round(this.baseMaxStamina * stamMul);
+    this._stamina = Math.min(this._stamina, this._maxStamina);
+  }
 
   setEquipmentSetSkin(setId: string | null): void {
     if (!setId) {

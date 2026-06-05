@@ -18,6 +18,17 @@ import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
 
+const BOSS_DIALOGUES: Record<string, string[]> = {
+  boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
+  boss_danju:   ['약자는 강자의 양식이다.', '내 앞에 무릎 꿇어라!'],
+  boss_gakju:   ['혈교의 힘을 보여주지.', '너 같은 하찮은 자가 감히!'],
+  boss_magun:   ['마기를 두려워하지 않는 자가 왔군.', '그 용기, 여기서 끝내주마!'],
+  boss_hobup:   ['멈춰라. 이 이상은 허용하지 않겠다.', '내 법도가 네 최후가 되리라!'],
+  boss_saja:    ['혈교의 사자가 출동했다.', '이 세상에서 사라져라!'],
+  boss_bugyoju: ['오랜만에 재미있는 상대로군.', '혈교 부교주를 상대하다니 영광이지!'],
+  boss_hyeolma: ['드디어 이 자리까지 왔군...', '혈마의 힘 앞에 모든 것이 사라진다!'],
+};
+
 /**
  * BattleScene - 상단 횡스크롤 자동전투 씬
  *
@@ -47,19 +58,6 @@ const ENEMY_HP_MUL = 0.45;
 const ENEMY_DMG_MUL = 0.12;
 const BOSS_HP_MUL = 0.38;
 const BOSS_DMG_MUL = 0.14;
-const PLAYTIME_SAVE_INTERVAL_MS = 30000;
-const MAX_DISCIPLE_BONUS_COUNT = 10;
-const DISCIPLE_ATTACK_BONUS = 0.02;
-const STORY_REGION_NAMES = [
-  '입문협',
-  '혈교령',
-  '마운관',
-  '흑풍곡',
-  '천마루',
-  '비월성',
-  '무극전',
-  '혈마궁',
-] as const;
 
 /**
  * 보스 등급별 고유 스킬 정의.
@@ -131,6 +129,8 @@ interface CombatBonuses {
   goldMul: number;
   flatAttack: number;
   flatHp: number;
+  speedMul: number;
+  critChance: number;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -187,7 +187,6 @@ export class BattleScene extends Phaser.Scene {
   // 골드/경험치 세션 누적
   private sessionGold = 0;
   private sessionExp = 0;
-  private playTimeSaveTimer = 0;
 
   // 선택 캐릭터별 공격 이펙트 색
   private slashColor = 0xffffff;
@@ -306,20 +305,7 @@ export class BattleScene extends Phaser.Scene {
     this.updateBossSkill(delta);
     this.updateStatusEffects(delta);
     this.updatePlayerAuraPosition(delta);
-    this.updatePlayTime(delta);
     this.emitState();
-  }
-
-  private updatePlayTime(delta: number): void {
-    this.playTimeSaveTimer += delta;
-    if (this.playTimeSaveTimer < PLAYTIME_SAVE_INTERVAL_MS) return;
-
-    const elapsedSeconds = Math.floor(this.playTimeSaveTimer / 1000);
-    this.playTimeSaveTimer -= elapsedSeconds * 1000;
-
-    const save = loadGame();
-    save.totalPlayTime = (save.totalPlayTime ?? 0) + elapsedSeconds;
-    saveGame(save);
   }
 
   // ─── 보스 HP바 UI ───
@@ -711,10 +697,7 @@ export class BattleScene extends Phaser.Scene {
         save.totalKills = (save.totalKills ?? 0) + 1;
         save.missionProgress = save.missionProgress ?? {};
         save.missionProgress.daily_kill = (save.missionProgress.daily_kill ?? 0) + 1;
-        // 대장간(forge): 장비 드롭 확률 소폭 증가 (성장 루프: 더 빠른 장비 파워업)
-        const forgeForDrop = Math.max(1, save.sectFacilities?.forge ?? 1);
-        const equipChance = 0.22 + Math.min(0.18, (forgeForDrop - 1) * 0.015);
-        if (enemyData && (enemyData.rank === 'BOSS' || Math.random() < equipChance)) {
+        if (enemyData && (enemyData.rank === 'BOSS' || Math.random() < 0.22)) {
           save.equipmentInventory = save.equipmentInventory ?? [];
           save.equipmentInventory.push(createEquipment(enemyData.region ?? 1, undefined, enemyData.rank === 'BOSS'));
           if (save.equipmentInventory.length > 120) save.equipmentInventory.splice(0, save.equipmentInventory.length - 120);
@@ -834,6 +817,7 @@ export class BattleScene extends Phaser.Scene {
     this.showBossHpUI(scaledBossData);
     soundSystem.play('boss_appear');
     this.cameras.main.shake(400, 0.01);
+    this.showBossCutscene(bossId, bossData.name);
 
     // 보스 등장 경고 텍스트
     const rankName = BOSS_RANK_NAMES[bossData.bossRank ?? ''] ?? 'BOSS';
@@ -964,10 +948,10 @@ export class BattleScene extends Phaser.Scene {
     soundSystem.play('level_up');
 
     const save = loadGame();
-    this.ensureDailyMission(save);
     save.stageCleared = Math.max(save.stageCleared, this.waveNumber);
+    this.ensureDailyMission(save);
     save.missionProgress = save.missionProgress ?? {};
-    save.missionProgress.daily_wave = (save.missionProgress.daily_wave ?? 0) + 1;
+    save.missionProgress.daily_waves = (save.missionProgress.daily_waves ?? 0) + 1;
     saveGame(save);
 
     this.events.emit('wave-clear', this.waveNumber);
@@ -991,27 +975,21 @@ export class BattleScene extends Phaser.Scene {
 
     // 보스 처치 기록
     const save = loadGame();
-    this.ensureDailyMission(save);
     save.stageCleared = Math.max(save.stageCleared, this.waveNumber);
+    this.ensureDailyMission(save);
     save.missionProgress = save.missionProgress ?? {};
-    save.missionProgress.daily_wave = (save.missionProgress.daily_wave ?? 0) + 1;
     save.missionProgress.daily_boss = (save.missionProgress.daily_boss ?? 0) + 1;
     if (bossData && !save.defeatedBosses?.includes(bossData.id)) {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
     }
-    const previousRegion = save.storyRegion ?? 1;
-    const nextRegion = Math.max(previousRegion, Math.min(8, (bossData?.region ?? 1) + 1));
-    const didAdvanceRegion = nextRegion > previousRegion;
-    save.storyRegion = nextRegion;
+    save.storyRegion = Math.max(save.storyRegion ?? 1, Math.min(8, (bossData?.region ?? 1) + 1));
     save.codexUnlocked = save.codexUnlocked ?? [];
     if (bossData && !save.codexUnlocked.includes(bossData.id)) save.codexUnlocked.push(bossData.id);
     const bonusGold = 80 + this.waveNumber * 12;
     const bonusExp = 120 + this.waveNumber * 18;
     save.gold += bonusGold;
     save.exp += bonusExp;
-    const regionGemReward = didAdvanceRegion ? Math.max(1, nextRegion) : 0;
-    if (regionGemReward > 0) save.gems = (save.gems ?? 0) + regionGemReward;
     save.equipmentInventory = save.equipmentInventory ?? [];
     if (bossData) {
       const rewardSlots = ['WEAPON', 'ARMOR', 'HELM', 'BOOTS', 'ACCESSORY', 'RELIC'] as const;
@@ -1056,10 +1034,6 @@ export class BattleScene extends Phaser.Scene {
     this.player.heal(this.player.maxHp, this.player.maxStamina);
 
     this.events.emit('boss-clear', this.waveNumber);
-    if (didAdvanceRegion) {
-      const regionName = STORY_REGION_NAMES[nextRegion - 1] ?? `${nextRegion}지역`;
-      this.events.emit('region-clear', nextRegion, regionName, bonusGold, regionGemReward);
-    }
     this.events.emit('wave-clear', this.waveNumber);
 
     this.time.delayedCall(2000, () => {
@@ -1105,7 +1079,8 @@ export class BattleScene extends Phaser.Scene {
       );
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
-        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul);
+        const isCrit = Math.random() < bonuses.critChance;
+        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1));
         const killed = enemy.takeDamage(damage);
 
         // 상태이상 적용
@@ -1358,6 +1333,8 @@ export class BattleScene extends Phaser.Scene {
     save.gold += finalGold;
     save.exp += exp;
     this.sessionGold += finalGold;
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_gold = (save.missionProgress.daily_gold ?? 0) + finalGold;
     this.sessionExp += exp;
 
     // 레벨업 체크
@@ -1968,27 +1945,18 @@ export class BattleScene extends Phaser.Scene {
     const training = save.trainingLevels ?? {};
     const research = save.sectResearch ?? {};
     const classResearch = research[this.playerClass] ?? 0;
-    const disciples = Math.min(MAX_DISCIPLE_BONUS_COUNT, save.disciples?.length ?? 0);
+    const disciples = save.disciples?.length ?? 0;
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
-    // 문파 시설 효과 (성장 루프 영향) - hall, forge (작은 기능 단위)
-    const facilities = save.sectFacilities ?? {};
-    const hallLevel = Math.max(1, facilities.hall ?? 1);
-    const trainingMul = 1 + (hallLevel - 1) * 0.012; // 대전: 수련 효과 증폭
-    const discipleExtra = (hallLevel - 1) * 0.005;   // 대전: 제자 보너스 소폭 추가
-    const forgeLevel = Math.max(1, facilities.forge ?? 1);
-    const forgeGoldMul = 1 + (forgeLevel - 1) * 0.01; // 대장간: 금화 획득 추가
-    const forgeFlat = (forgeLevel - 1) * 2;           // 대장간: 장비 유지/제작 플랫 보너스
-    const libraryLevel = Math.max(1, facilities.library ?? 1);
-    const libraryResearchMul = 1 + (libraryLevel - 1) * 0.015; // 무경각: 계열 연구 효과 증폭
-
     return {
-      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 * trainingMul + classResearch * 0.025 * libraryResearchMul + disciples * DISCIPLE_ATTACK_BONUS + discipleExtra),
-      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02 * trainingMul),
-      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02 * trainingMul) * forgeGoldMul,
-      flatAttack: flatAttack + forgeFlat,
-      flatHp: flatHp + Math.round(forgeFlat * 3.5),
+      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
+      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
+      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
+      flatAttack,
+      flatHp,
+      speedMul: 1 + (training.speed ?? 0) * 0.015,
+      critChance: Math.min(0.5, (training.crit ?? 0) * 0.02),
     };
   }
 
@@ -2017,6 +1985,8 @@ export class BattleScene extends Phaser.Scene {
     if (save.equippedDash) {
       this.player.equipDash(save.equippedDash);
     }
+    const bonuses = this.getCombatBonuses(save);
+    this.player.applyTrainingBonuses(bonuses.speedMul, 1 + (save.trainingLevels?.stamina ?? 0) * 0.03);
     this.applyEquipmentSkin(save);
   }
 
@@ -2096,13 +2066,67 @@ export class BattleScene extends Phaser.Scene {
     save.dailyMissionDate = today;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_kill = 0;
-    save.missionProgress.daily_wave = 0;
+    save.missionProgress.daily_waves = 0;
     save.missionProgress.daily_boss = 0;
+    save.missionProgress.daily_gold = 0;
+    save.missionProgress.daily_synthesis = 0;
     save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
   }
 
   private toggleBattleMode(): void {
     this.battleMode = this.battleMode === 'AUTO' ? 'MANUAL' : 'AUTO';
+  }
+
+  private showBossCutscene(bossId: string, bossName: string): void {
+    const lines = BOSS_DIALOGUES[bossId] ?? [`${bossName}이(가) 나타났다!`];
+    const GAME_W = this.scale.width;
+    const GAME_H = this.scale.height;
+
+    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0)
+      .setScrollFactor(0).setDepth(300).setInteractive();
+    this.tweens.add({ targets: overlay, alpha: 0.75, duration: 300 });
+
+    const redFlash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x8b0000, 0.3)
+      .setScrollFactor(0).setDepth(301);
+    this.tweens.add({ targets: redFlash, alpha: 0, duration: 600, delay: 200, onComplete: () => redFlash.destroy() });
+
+    const nameText = this.add.text(GAME_W / 2, GAME_H / 2 - 60, bossName, {
+      fontSize: '28px', color: '#e05050', fontFamily: 'serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(302).setAlpha(0);
+    this.tweens.add({ targets: nameText, alpha: 1, y: GAME_H / 2 - 80, duration: 500, ease: 'Power2' });
+
+    let lineIndex = 0;
+    const dialogText = this.add.text(GAME_W / 2, GAME_H / 2 + 10, '', {
+      fontSize: '18px', color: '#e8c36a', fontFamily: 'serif',
+      stroke: '#000000', strokeThickness: 3, align: 'center',
+      wordWrap: { width: GAME_W - 80 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(302).setAlpha(0);
+
+    const tapHint = this.add.text(GAME_W / 2, GAME_H / 2 + 80, '(탭하여 계속)', {
+      fontSize: '14px', color: '#7a6a50', fontFamily: 'sans-serif',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(302).setAlpha(0);
+    this.tweens.add({ targets: tapHint, alpha: 1, duration: 400, delay: 800, yoyo: true, repeat: -1 });
+
+    const showLine = (i: number) => {
+      dialogText.setText(lines[i]).setAlpha(0);
+      this.tweens.add({ targets: dialogText, alpha: 1, duration: 300 });
+    };
+    this.time.delayedCall(500, () => showLine(0));
+
+    const dismiss = () => {
+      if (lineIndex < lines.length - 1) {
+        lineIndex++;
+        showLine(lineIndex);
+        return;
+      }
+      overlay.off('pointerdown', dismiss);
+      [overlay, nameText, dialogText, tapHint].forEach(o => {
+        this.tweens.add({ targets: o, alpha: 0, duration: 300, onComplete: () => o.destroy() });
+      });
+    };
+    overlay.on('pointerdown', dismiss);
+    this.time.delayedCall(4000, () => dismiss());
   }
 
   private emitState(): void {
@@ -2126,23 +2150,9 @@ export class BattleScene extends Phaser.Scene {
       battleMode: this.battleMode,
       isBossWave: this.isBossWave,
       gold: save.gold,
-      gems: save.gems ?? 0,
-      combatPower: this.getCombatPower(save),
       level: save.level,
       exp: save.exp,
       expToNext: save.expToNext,
     });
-  }
-
-  private getCombatPower(save: ReturnType<typeof loadGame>): number {
-    const bonuses = this.getCombatBonuses(save);
-    const skillPower = this.player.skills.reduce((sum, skill) => {
-      const level = save.skillLevels?.[skill.id] ?? 0;
-      return sum + Math.round(skill.damageMultiplier * 45 + level * 18);
-    }, 0);
-    const levelPower = save.level * 35;
-    const attackPower = Math.round((50 + bonuses.flatAttack + skillPower) * bonuses.attackMul);
-    const defensePower = Math.round((100 + bonuses.flatHp + levelPower) * bonuses.hpMul * 0.35);
-    return attackPower + defensePower;
   }
 }

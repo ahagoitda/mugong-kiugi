@@ -9,7 +9,7 @@ const GAME_W = 540;
 const GAME_H = 960;
 
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.WEBGL,
+  type: Phaser.AUTO,
   width: GAME_W,
   height: GAME_H,
   parent: 'game-container',

@@ -186,6 +186,10 @@ export interface SaveData {
   missionClaims?: string[];
   dailyMissionDate?: string;
   storyRegion?: number;
+  tutorialCompleted?: boolean;
+  shopLastReset?: string;
+  shopDailyPurchased?: string[];
+  gems?: number;
 }
 
 /**

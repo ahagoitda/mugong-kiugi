@@ -45,7 +45,7 @@ export function createDefaultSave(): SaveData {
     lastOfflineRewardAt: Date.now(),
     equipmentInventory: [],
     equippedItems: {},
-    trainingLevels: { attack: 0, hp: 0, gold: 0 },
+    trainingLevels: { attack: 0, hp: 0, gold: 0, speed: 0, stamina: 0, crit: 0 },
     sectFacilities: { hall: 1, forge: 1, library: 1 },
     sectResearch: { SWORD: 0, BLADE: 0, FIST: 0, SPEAR: 0 },
     disciples: [],
@@ -54,6 +54,10 @@ export function createDefaultSave(): SaveData {
     missionClaims: [],
     dailyMissionDate: new Date().toLocaleDateString('en-CA'),
     storyRegion: 1,
+    tutorialCompleted: false,
+    gems: 30,
+    shopLastReset: '',
+    shopDailyPurchased: [],
   };
 }
 
@@ -172,7 +176,7 @@ function migrateSave(oldData: SaveData): SaveData {
     lastOfflineRewardAt: oldData.lastOfflineRewardAt ?? Date.now(),
     equipmentInventory: oldData.equipmentInventory ?? [],
     equippedItems: oldData.equippedItems ?? {},
-    trainingLevels: oldData.trainingLevels ?? { attack: 0, hp: 0, gold: 0 },
+    trainingLevels: { attack: 0, hp: 0, gold: 0, speed: 0, stamina: 0, crit: 0, ...(oldData.trainingLevels ?? {}) },
     sectFacilities: oldData.sectFacilities ?? { hall: 1, forge: 1, library: 1 },
     sectResearch: oldData.sectResearch ?? { SWORD: 0, BLADE: 0, FIST: 0, SPEAR: 0 },
     disciples: oldData.disciples ?? [],
@@ -181,6 +185,10 @@ function migrateSave(oldData: SaveData): SaveData {
     missionClaims: oldData.missionClaims ?? [],
     dailyMissionDate: oldData.dailyMissionDate ?? new Date().toLocaleDateString('en-CA'),
     storyRegion: oldData.storyRegion ?? 1,
+    tutorialCompleted: oldData.tutorialCompleted ?? false,
+    gems: oldData.gems ?? 30,
+    shopLastReset: oldData.shopLastReset ?? '',
+    shopDailyPurchased: oldData.shopDailyPurchased ?? [],
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);

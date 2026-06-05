@@ -584,6 +584,12 @@ export class UIScene extends Phaser.Scene {
         button, this.add.text(W - 120, y, `${cost} 금화`, this.textStyle(15, '#f0d493')).setOrigin(0.5));
     });
 
+    const autoTrain = this.add.rectangle(W / 2, 470, 260, 46, 0x3b2514).setStrokeStyle(1, GOLD).setInteractive();
+    autoTrain.on('pointerdown', () => this.autoTrain());
+    items.push(this.add.text(55, 456, '\uC790\uB3D9 \uC218\uB828', this.titleStyle(19)),
+      this.add.text(55, 482, '\uBCF4\uC720 \uAE08\uD654\uB85C \uB0AE\uC740 \uC218\uB828\uBD80\uD130', this.textStyle(13, '#d8c9aa')),
+      autoTrain, this.add.text(W / 2, 470, '\uC77C\uAD04 \uC218\uB828', this.textStyle(15, '#f0d493')).setOrigin(0.5));
+
     const supplyCost = 3;
     const supplyGold = this.gemSupplyGold(save);
     const canSupply = (save.gems ?? 0) >= supplyCost;
@@ -915,6 +921,28 @@ export class UIScene extends Phaser.Scene {
     save.trainingLevels = save.trainingLevels ?? {};
     save.trainingLevels[key] = (save.trainingLevels[key] ?? 0) + 1;
     saveGame(save);
+    this.openPanel('TRAINING');
+  }
+
+  private autoTrain(): void {
+    const save = loadGame();
+    save.trainingLevels = save.trainingLevels ?? {};
+    const keys = ['attack', 'hp', 'gold'];
+    let upgraded = 0;
+
+    for (let guard = 0; guard < 200; guard++) {
+      const key = keys.sort((a, b) => (save.trainingLevels?.[a] ?? 0) - (save.trainingLevels?.[b] ?? 0))[0];
+      const level = save.trainingLevels[key] ?? 0;
+      const cost = 100 * (level + 1);
+      if (save.gold < cost) break;
+      save.gold -= cost;
+      save.trainingLevels[key] = level + 1;
+      upgraded += 1;
+    }
+
+    if (upgraded <= 0) return this.showNotice('금화가 부족합니다');
+    saveGame(save);
+    this.showNotice(`\uC218\uB828 +${upgraded}`);
     this.openPanel('TRAINING');
   }
 

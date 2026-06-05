@@ -611,6 +611,12 @@ export class UIScene extends Phaser.Scene {
     items.push(this.add.text(55, 506, '\uC6D0\uBCF4 \uBCF4\uAE09', this.titleStyle(20)),
       this.add.text(55, 532, `+${supplyGold}\uAE08\uD654 · ${supplyCost}${UI.gem}`, this.textStyle(15, '#d8c9aa')),
       supply, this.add.text(W / 2, 540, canSupply ? '\uC989\uC2DC \uBCF4\uAE09' : '\uC6D0\uBCF4 \uBD80\uC871', this.textStyle(15, canSupply ? '#f0d493' : '#8f8778')).setOrigin(0.5));
+
+    const summary = this.growthSummary(save);
+    items.push(this.add.text(55, 605, '\uC131\uC7A5 \uC694\uC57D', this.titleStyle(19)),
+      this.add.text(55, 633, summary[0], this.textStyle(13, '#d8c9aa')),
+      this.add.text(55, 657, summary[1], this.textStyle(13, '#d8c9aa')),
+      this.add.text(55, 681, summary[2], this.textStyle(13, '#d8c9aa')));
     // 점소이 일러스트 추가
     const npc = this.add.image(W - 120, 680, 'npc_jeomsoyi').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
     items.push(npc);
@@ -1023,6 +1029,20 @@ export class UIScene extends Phaser.Scene {
 
   private gemSupplyGold(save: ReturnType<typeof loadGame>): number {
     return 1200 + Math.max(0, save.stageCleared) * 120 + Math.max(0, save.level - 1) * 80;
+  }
+
+  private growthSummary(save: ReturnType<typeof loadGame>): string[] {
+    const training = save.trainingLevels ?? {};
+    const research = save.sectResearch ?? {};
+    const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
+    const sets = equipmentSetBonus(equipped);
+    const discipleBonus = Math.min(10, save.disciples?.length ?? 0) * 2;
+    const classResearch = (research[this.charClass] ?? 0) * 2.5;
+    return [
+      `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2}%`,
+      `\uAE08\uD654 +${(training.gold ?? 0) * 2}% · \uC138\uD2B8 \uACF5\uACA9 x${sets.attackMul.toFixed(2)}`,
+      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length}`,
+    ];
   }
 
   private upgradeSect(key: string, cost: number): void {

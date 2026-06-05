@@ -3,7 +3,7 @@ import { SKILL_DATABASE, SYNTHESIS_RECIPES, getStarterSkill } from '../data/skil
 import { BOSS_RANK_NAMES, BOSS_RANK_COLORS, ENEMY_DATABASE } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 import {
-  EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore,
+  EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore, enhanceCost,
   equippedItems, equipmentSetBonus, dominantSetId,
 } from '../data/equipment';
 import { skillCardKey } from '../data/assets';
@@ -51,6 +51,7 @@ interface PlayerStatePayload {
   dashCooldownRemaining: number; dashCooldown: number;
   killCount: number; waveNumber: number; battleMode: string; isBossWave: boolean;
   gold: number; level: number; exp: number; expToNext: number;
+  activeBuffs?: { atk: boolean; gold: boolean; exp: boolean };
 }
 
 function fmtGold(n: number): string {
@@ -141,6 +142,7 @@ export class UIScene extends Phaser.Scene {
   private shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
   private tutorialOverlay: Phaser.GameObjects.Container | null = null;
   private cachedRebirth = 0;
+  private buffIcons: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super({ key: 'UIScene' });
@@ -206,6 +208,19 @@ export class UIScene extends Phaser.Scene {
     this.goldText = this.add.text(430, 32, '0 금화', this.textStyle(16, '#f2d27d')).setOrigin(0.5).setDepth(203);
     this.waveText = this.add.text(430, 60, '1 웨이브', this.textStyle(15, '#e8dfce')).setOrigin(0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
+
+    // 시간 제한 버프 아이콘 (초기 숨김)
+    const buffDefs = [
+      { x: 302, color: '#ff7070', label: '⚔×1.5' },
+      { x: 355, color: '#ffd740', label: '💰×1.5' },
+      { x: 408, color: '#88ddff', label: '✦×1.5' },
+    ];
+    buffDefs.forEach(({ x, color, label }) => {
+      const t = this.add.text(x, 75, label, this.textStyle(10, color))
+        .setOrigin(0.5).setDepth(205).setAlpha(0)
+        .setBackgroundColor('#00000088').setPadding(3, 1);
+      this.buffIcons.push(t);
+    });
   }
 
   private createTopResourceStrip(): void {
@@ -504,6 +519,15 @@ export class UIScene extends Phaser.Scene {
         this.add.text(x + 55, y + 172, this.skillLabel(skill), { ...this.textStyle(13, '#f3e7ca'), align: 'center', wordWrap: { width: 112 } }).setOrigin(0.5).setDepth(704),
         this.add.text(x + 55, y + 198, `보유 ${save.inventory[skill.id] ?? 0} · +${save.skillLevels?.[skill.id] ?? 0}`, this.textStyle(12, '#d4a74e')).setOrigin(0.5).setDepth(704));
     });
+    const skillCats = save.equippedSkills.map(id => SKILL_DATABASE.get(id)?.category).filter(Boolean);
+    const catCounts = new Map<string, number>();
+    for (const c of skillCats) catCounts.set(c as string, (catCounts.get(c as string) ?? 0) + 1);
+    const maxSame = catCounts.size > 0 ? Math.max(...catCounts.values()) : 0;
+    const synergyPct = maxSame >= 4 ? 20 : maxSame >= 3 ? 10 : 0;
+    const synergyColor = synergyPct >= 20 ? '#ffd740' : '#ffe680';
+    items.push(this.add.text(W / 2, 730, synergyPct > 0
+      ? `⚡ 계열 시너지: 공격력 +${synergyPct}%`
+      : '계열 3종 이상 장착 시 시너지 발동', this.textStyle(14, synergyPct > 0 ? synergyColor : '#7a6a50')).setOrigin(0.5).setDepth(703));
   }
 
   private buildSynthesis(items: Phaser.GameObjects.GameObject[]): void {
@@ -699,9 +723,11 @@ export class UIScene extends Phaser.Scene {
       const x = 55 + (index % 3) * 165;
       const y = 190 + Math.floor(index / 3) * 145;
       const item = save.equipmentInventory?.find(candidate => candidate.id === save.equippedItems?.[slot]);
+      const enh = item?.enhance ?? 0;
       items.push(this.add.rectangle(x, y, 145, 120, 0x15110c).setOrigin(0, 0).setStrokeStyle(1, item ? GOLD : 0x4b4132),
         this.add.text(x + 72, y + 24, EQUIPMENT_SLOT_NAMES[slot], this.textStyle(16, '#d4a74e')).setOrigin(0.5),
         this.add.text(x + 72, y + 68, item ? item.name : '미장착', { ...this.textStyle(13, item ? '#eee0c1' : '#777066'), align: 'center', wordWrap: { width: 125 } }).setOrigin(0.5));
+      if (enh > 0) items.push(this.add.text(x + 138, y + 6, `+${enh}`, this.textStyle(13, '#ffe680')).setOrigin(1, 0).setDepth(703));
     });
 
     const equippedIds = new Set(Object.values(save.equippedItems ?? {}));
@@ -710,13 +736,23 @@ export class UIScene extends Phaser.Scene {
       .sort((a, b) => equipmentScore(b) - equipmentScore(a)).slice(0, 8);
     inventory.forEach((item, index) => {
       const x = 55 + (index % 2) * 245;
-      const y = 540 + Math.floor(index / 2) * 70;
+      const y = 540 + Math.floor(index / 2) * 76;
       const equipped = equippedIds.has(item.id);
-      const button = this.add.rectangle(x, y, 220, 56, equipped ? 0x26301a : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
+      const enhLv = item.enhance ?? 0;
+      const cost = enhanceCost(item);
+      const canEnh = (save.gold ?? 0) >= cost && enhLv < 10;
+      const button = this.add.rectangle(x, y, 220, 66, equipped ? 0x26301a : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
       button.setInteractive().on('pointerdown', () => this.equipItem(item));
+      const enhBtn = this.add.rectangle(x + 192, y + 46, 50, 22, canEnh ? 0x3a2a10 : 0x1a1209)
+        .setOrigin(0.5, 0).setStrokeStyle(1, canEnh ? GOLD : 0x333333).setInteractive();
+      enhBtn.on('pointerdown', () => this.enhanceEquipment(item.id));
       items.push(button,
-        this.add.text(x + 10, y + 10, item.name, { ...this.textStyle(13, '#eee0c1'), wordWrap: { width: 200 } }),
-        this.add.text(x + 10, y + 33, `${equipped ? '장착 · ' : ''}전투력 ${equipmentScore(item)}`, this.textStyle(12, '#d4a74e')));
+        this.add.text(x + 8, y + 6, item.name, { ...this.textStyle(13, '#eee0c1'), wordWrap: { width: 165 } }),
+        this.add.text(x + 8, y + 28, `${equipped ? '장착 · ' : ''}전투력 ${equipmentScore(item)}`, this.textStyle(11, '#d4a74e')),
+        this.add.text(x + 8, y + 48, enhLv < 10 ? `강화비 ${fmtGold(cost)}G` : '최대 강화', this.textStyle(10, canEnh ? '#a0a090' : '#555')),
+        enhBtn,
+        this.add.text(x + 192, y + 57, '강화', this.textStyle(11, canEnh ? '#e8c36a' : '#555')).setOrigin(0.5));
+      if (enhLv > 0) items.push(this.add.text(x + 213, y + 4, `+${enhLv}`, this.textStyle(13, '#ffe680')).setOrigin(1, 0));
     });
     // 대장장이 일러스트 배치
     const npc = this.add.image(W - 90, 440, 'npc_blacksmith').setDisplaySize(160, 160).setDepth(702).setAlpha(0.85);
@@ -1106,6 +1142,11 @@ export class UIScene extends Phaser.Scene {
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
     this.levelText.setText(this.cachedRebirth > 0 ? `Lv.${state.level} ⬆${this.cachedRebirth}` : `Lv.${state.level}`);
     this.goldText.setText(`${fmtGold(state.gold)} 금화`);
+    if (state.activeBuffs && this.buffIcons.length >= 3) {
+      this.buffIcons[0].setAlpha(state.activeBuffs.atk  ? 1 : 0);
+      this.buffIcons[1].setAlpha(state.activeBuffs.gold ? 1 : 0);
+      this.buffIcons[2].setAlpha(state.activeBuffs.exp  ? 1 : 0);
+    }
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
     const isAuto = state.battleMode === 'AUTO';
     this.modeText.setText(isAuto ? 'AUTO' : '수동');
@@ -1250,6 +1291,23 @@ export class UIScene extends Phaser.Scene {
     save.equippedItems = save.equippedItems ?? {};
     save.equippedItems[item.slot] = item.id;
     saveGame(save);
+    this.scene.get('BattleScene').events.emit('equip-changed');
+    this.openPanel('EQUIPMENT');
+  }
+
+  private enhanceEquipment(itemId: string): void {
+    const save = loadGame();
+    const item = save.equipmentInventory?.find(i => i.id === itemId);
+    if (!item) return;
+    const lv = item.enhance ?? 0;
+    if (lv >= 10) return this.showNotice('최대 강화 등급입니다');
+    const cost = enhanceCost(item);
+    if ((save.gold ?? 0) < cost) return this.showNotice(`금화 부족 (${cost}G 필요)`);
+    save.gold -= cost;
+    item.enhance = lv + 1;
+    saveGame(save);
+    soundSystem.play('synth_ok');
+    this.showNotice(`${item.name} +${item.enhance} 강화 성공!`);
     this.scene.get('BattleScene').events.emit('equip-changed');
     this.openPanel('EQUIPMENT');
   }
@@ -1573,12 +1631,47 @@ export class UIScene extends Phaser.Scene {
         });
       }
       items.push(freeBtn, freeTxt);
-      items.push(this.add.text(W / 2, contentY + 180, '원보 획득 방법:', this.titleStyle(16)).setOrigin(0.5).setDepth(703));
-      const tips = ['• 임무 완료 보상', '• 보스 첫 격파 시', '• 매일 무료 수령', '• 업적 달성 보상'];
-      tips.forEach((tip, i) => {
-        items.push(this.add.text(W / 2, contentY + 220 + i * 36, tip, this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703));
+      items.push(this.add.text(W / 2, contentY + 160, '시간 제한 버프', this.titleStyle(16)).setOrigin(0.5).setDepth(703));
+      const now = Date.now();
+      const BUFF_DEFS = [
+        { type: 'ATK_BOOST',  label: '⚔ 공격력 ×1.5', desc: '30분간 공격력 1.5배', cost: 30, color: '#ff9070' },
+        { type: 'GOLD_BOOST', label: '💰 금화 ×1.5',   desc: '30분간 금화 획득 1.5배', cost: 20, color: '#ffd740' },
+        { type: 'EXP_BOOST',  label: '✦ 경험치 ×1.5', desc: '30분간 경험치 1.5배',    cost: 20, color: '#88ddff' },
+      ] as const;
+      BUFF_DEFS.forEach(({ type, label, desc, cost: bCost, color }, i) => {
+        const by = contentY + 200 + i * 88;
+        const active = (save.activeBuffs ?? []).some(b => b.type === type && b.expiresAt > now);
+        const canBuy = (save.gems ?? 0) >= bCost && !active;
+        const card = this.add.rectangle(W / 2, by, W - 80, 72, active ? 0x1a2d1a : 0x17120d)
+          .setStrokeStyle(1, active ? 0x66cc66 : GOLD).setDepth(703);
+        items.push(card,
+          this.add.text(80, by - 14, label, this.textStyle(16, color)).setDepth(704),
+          this.add.text(80, by + 10, active ? '✓ 활성 중' : desc, this.textStyle(12, active ? '#66cc66' : '#7a6a50')).setDepth(704));
+        if (!active) {
+          const bBtn = this.add.rectangle(W - 90, by, 80, 38, canBuy ? 0x3a2a10 : 0x1a1209)
+            .setStrokeStyle(1, canBuy ? GOLD : 0x333333).setInteractive().setDepth(704);
+          bBtn.on('pointerdown', () => this.activateBuff(type, 30 * 60 * 1000, bCost));
+          items.push(bBtn, this.add.text(W - 90, by, `💎${bCost}`, this.textStyle(14, canBuy ? '#e8c36a' : '#555')).setOrigin(0.5).setDepth(705));
+        }
       });
     }
+  }
+
+  private activateBuff(type: string, durationMs: number, gemCost: number): void {
+    const save = loadGame();
+    if ((save.gems ?? 0) < gemCost) return this.showNotice(`원보 부족 (${gemCost}💎 필요)`);
+    save.gems = (save.gems ?? 0) - gemCost;
+    const now = Date.now();
+    const existing = (save.activeBuffs ?? []).filter(b => b.type !== type || b.expiresAt <= now);
+    existing.push({ type, expiresAt: now + durationMs });
+    save.activeBuffs = existing;
+    saveGame(save);
+    soundSystem.play('synth_ok');
+    const BUFF_NAMES: Record<string, string> = { ATK_BOOST: '공격력 ×1.5', GOLD_BOOST: '금화 ×1.5', EXP_BOOST: '경험치 ×1.5' };
+    this.showNotice(`${BUFF_NAMES[type] ?? type} 활성화! (30분)`);
+    this.scene.get('BattleScene').events.emit('buff-changed');
+    this.closePanel();
+    this.openPanel('SHOP');
   }
 
   // ─── Tutorial System ──────────────────────────────────────────────────────

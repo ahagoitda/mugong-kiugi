@@ -15,7 +15,7 @@ import {
 } from '../data/characters';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
-import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
+import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS, enhancedStats } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
 
 function fmtNum(n: number): string {
@@ -139,6 +139,8 @@ interface CombatBonuses {
   speedMul: number;
   critChance: number;
   expMul: number;
+  synergyMul: number;
+  activeBuffs: { atk: boolean; gold: boolean; exp: boolean };
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -2039,8 +2041,25 @@ export class BattleScene extends Phaser.Scene {
     const research = save.sectResearch ?? {};
     const classResearch = research[this.playerClass] ?? 0;
     const disciples = save.disciples?.length ?? 0;
-    const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
-    const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
+    // 강화 등급 반영된 스탯
+    const flatAttack = equipped.reduce((sum, item) => { const s = enhancedStats(item); return sum + s.attack + s.bonus; }, 0);
+    const flatHp     = equipped.reduce((sum, item) => { const s = enhancedStats(item); return sum + s.hp + s.bonus * 4; }, 0);
+
+    // 시간 제한 버프
+    const now = Date.now();
+    const buffs = save.activeBuffs ?? [];
+    const atkBuffMul  = buffs.some(b => b.type === 'ATK_BOOST' && b.expiresAt > now) ? 1.5 : 1;
+    const goldBuffMul = buffs.some(b => b.type === 'GOLD_BOOST' && b.expiresAt > now) ? 1.5 : 1;
+    const expBuffMul  = buffs.some(b => b.type === 'EXP_BOOST'  && b.expiresAt > now) ? 1.5 : 1;
+
+    // 계열 연계 보너스: 장착 스킬 중 같은 계열 비율
+    const skillCats = save.equippedSkills
+      .map(id => SKILL_DATABASE.get(id)?.category)
+      .filter(Boolean) as string[];
+    const catCounts = new Map<string, number>();
+    for (const c of skillCats) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
+    const maxSame = Math.max(0, ...catCounts.values());
+    const synergyMul = maxSame >= 4 ? 1.2 : maxSame >= 3 ? 1.1 : 1.0;
 
     const rebirthCount = save.rebirthCount ?? 0;
     const rebirthMul = 1 + rebirthCount * 0.15;
@@ -2051,14 +2070,16 @@ export class BattleScene extends Phaser.Scene {
     const pathGold = paths.filter(p => p === 'GOLD').length * 0.05;
     const pathExp  = paths.filter(p => p === 'EXP').length  * 0.05;
     return {
-      attackMul: sets.attackMul * rebirthMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01 + pathAtk),
-      hpMul: sets.hpMul * rebirthMul * (1 + (training.hp ?? 0) * 0.02 + pathHp),
-      goldMul: sets.goldMul * rebirthMul * (1 + (training.gold ?? 0) * 0.02 + pathGold),
+      attackMul: sets.attackMul * rebirthMul * synergyMul * atkBuffMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01 + pathAtk),
+      hpMul:     sets.hpMul    * rebirthMul * (1 + (training.hp ?? 0) * 0.02 + pathHp),
+      goldMul:   sets.goldMul  * rebirthMul * goldBuffMul * (1 + (training.gold ?? 0) * 0.02 + pathGold),
       flatAttack,
       flatHp,
-      speedMul: 1 + (training.speed ?? 0) * 0.015,
+      speedMul:   1 + (training.speed ?? 0) * 0.015,
       critChance: Math.min(0.5, (training.crit ?? 0) * 0.02),
-      expMul: 1 + pathExp,
+      expMul:     (1 + pathExp) * expBuffMul,
+      synergyMul,
+      activeBuffs: { atk: atkBuffMul > 1, gold: goldBuffMul > 1, exp: expBuffMul > 1 },
     };
   }
 
@@ -2401,6 +2422,9 @@ export class BattleScene extends Phaser.Scene {
 
   private emitState(): void {
     const dashSkill = this.player.dashSkill;
+    const save = loadGame();
+    const now = Date.now();
+    const buffs = save.activeBuffs ?? [];
     this.events.emit('player-state', {
       hp: this.player.hp,
       maxHp: this.player.maxHp,
@@ -2422,6 +2446,11 @@ export class BattleScene extends Phaser.Scene {
       level: this.hudLevel,
       exp: this.hudExp,
       expToNext: this.hudExpToNext,
+      activeBuffs: {
+        atk:  buffs.some(b => b.type === 'ATK_BOOST'  && b.expiresAt > now),
+        gold: buffs.some(b => b.type === 'GOLD_BOOST' && b.expiresAt > now),
+        exp:  buffs.some(b => b.type === 'EXP_BOOST'  && b.expiresAt > now),
+      },
     });
   }
 }

@@ -1219,11 +1219,15 @@ export class UIScene extends Phaser.Scene {
     resetBtn.on('pointerdown', () => this.confirmReset(items));
     items.push(resetBtn, resetLabel);
 
-    // Version
-    items.push(this.add.text(W / 2, 520, '무공키우기 v1.0.0', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703));
-
-    // Unused save reference to suppress lint warning
-    void save;
+    // Play time + version
+    const totalSec = save.totalPlayTime ?? 0;
+    const hours = Math.floor(totalSec / 3600);
+    const mins  = Math.floor((totalSec % 3600) / 60);
+    const playTimeStr = hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`;
+    items.push(
+      this.add.text(W / 2, 510, `총 플레이: ${playTimeStr}`, this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703),
+      this.add.text(W / 2, 540, '무공키우기 v1.0.0', this.textStyle(12, '#5a4a38')).setOrigin(0.5).setDepth(703),
+    );
   }
 
   private confirmReset(items: Phaser.GameObjects.GameObject[]): void {

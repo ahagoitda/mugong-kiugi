@@ -188,6 +188,10 @@ export class BattleScene extends Phaser.Scene {
   private sessionGold = 0;
   private sessionExp = 0;
 
+  // 플레이 시간 누적 (ms → 저장은 초 단위)
+  private playTimeMs = 0;
+  private playTimeSaveTimer = 0;
+
   // 선택 캐릭터별 공격 이펙트 색
   private slashColor = 0xffffff;
 
@@ -305,7 +309,19 @@ export class BattleScene extends Phaser.Scene {
     this.updateBossSkill(delta);
     this.updateStatusEffects(delta);
     this.updatePlayerAuraPosition(delta);
+    this.updatePlayTime(delta);
     this.emitState();
+  }
+
+  private updatePlayTime(delta: number): void {
+    this.playTimeMs += delta;
+    this.playTimeSaveTimer += delta;
+    if (this.playTimeSaveTimer >= 30_000) {
+      this.playTimeSaveTimer = 0;
+      const save = loadGame();
+      save.totalPlayTime = (save.totalPlayTime ?? 0) + 30;
+      saveGame(save);
+    }
   }
 
   // ─── 보스 HP바 UI ───
@@ -983,7 +999,9 @@ export class BattleScene extends Phaser.Scene {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
     }
-    save.storyRegion = Math.max(save.storyRegion ?? 1, Math.min(8, (bossData?.region ?? 1) + 1));
+    const prevRegion = save.storyRegion ?? 1;
+    const newRegion = Math.max(prevRegion, Math.min(8, (bossData?.region ?? 1) + 1));
+    save.storyRegion = newRegion;
     save.codexUnlocked = save.codexUnlocked ?? [];
     if (bossData && !save.codexUnlocked.includes(bossData.id)) save.codexUnlocked.push(bossData.id);
     const bonusGold = 80 + this.waveNumber * 12;
@@ -1007,6 +1025,10 @@ export class BattleScene extends Phaser.Scene {
       save.expToNext = getExpToNextLevel(save.level);
     }
     saveGame(save);
+
+    if (newRegion > prevRegion) {
+      this.showRegionClear(newRegion);
+    }
 
     const rankName = bossData?.bossRank ? BOSS_RANK_NAMES[bossData.bossRank] : '';
     const bossTitle = bossData?.title ?? bossData?.name ?? 'BOSS';
@@ -2075,6 +2097,36 @@ export class BattleScene extends Phaser.Scene {
 
   private toggleBattleMode(): void {
     this.battleMode = this.battleMode === 'AUTO' ? 'MANUAL' : 'AUTO';
+  }
+
+  private showRegionClear(region: number): void {
+    const REGION_NAMES = ['입문협', '혈교령', '마운관', '천각산', '귀문관', '철혈성', '혈해곡', '무극정'];
+    const name = REGION_NAMES[Math.min(region - 1, REGION_NAMES.length - 1)] ?? `${region}지역`;
+    const gemReward = 5 + region * 2;
+
+    const save = loadGame();
+    save.gems = (save.gems ?? 0) + gemReward;
+    saveGame(save);
+
+    const panel = this.add.rectangle(GAME_W / 2, BATTLE_H * 0.35, GAME_W - 60, 130, 0x0d0a06, 0.95)
+      .setStrokeStyle(2, 0xd4a74e).setScrollFactor(0).setDepth(250);
+    const line1 = this.add.text(GAME_W / 2, BATTLE_H * 0.35 - 28,
+      `✦ ${name} 돌파! ✦`, {
+      fontSize: '22px', color: '#d4a74e', fontFamily: 'serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(251);
+    const line2 = this.add.text(GAME_W / 2, BATTLE_H * 0.35 + 8,
+      `${region}번째 지역 개척  ·  💎 ${gemReward} 획득`, {
+      fontSize: '15px', color: '#c8b89a', fontFamily: 'sans-serif',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(251);
+
+    [panel, line1, line2].forEach(o => {
+      this.tweens.add({
+        targets: o, alpha: 0, duration: 2500, delay: 2000, ease: 'Power2',
+        onComplete: () => o.destroy(),
+      });
+    });
   }
 
   private showBossCutscene(bossId: string, bossName: string): void {

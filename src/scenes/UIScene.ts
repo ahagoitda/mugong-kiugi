@@ -695,6 +695,11 @@ export class UIScene extends Phaser.Scene {
         button, this.add.text(W - 115, y, `${cost} 금화`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
     });
 
+    // 시설 성장 기여 요약 표시 (실제 영향 인지 쉽게)
+    const f = save.sectFacilities ?? {};
+    const fh = Math.max(0, (f.hall ?? 1) - 1), ff = Math.max(0, (f.forge ?? 1) - 1), fl = Math.max(0, (f.library ?? 1) - 1);
+    items.push(this.add.text(55, 485, `성장 기여: 수련+${Math.round(fh*1.2)}% 금+${Math.round(ff*1)}% 연구+${Math.round(fl*1.5)}%`, this.textStyle(12, '#a38b6b')));
+
     items.push(this.add.text(55, 530, '계열 연구', this.titleStyle(22)));
     const libraryLevel = save.sectFacilities?.library ?? 1;
     const libDiscount = Math.min(0.2, (libraryLevel - 1) * 0.02); // 무경각: 연구 비용 할인

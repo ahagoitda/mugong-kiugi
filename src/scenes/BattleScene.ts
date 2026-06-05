@@ -208,6 +208,20 @@ export class BattleScene extends Phaser.Scene {
   // 선택 캐릭터별 공격 이펙트 색
   private slashColor = 0xffffff;
 
+  // 콤보 카운터
+  private comboCount = 0;
+  private comboTimer = 0;
+  private comboText: Phaser.GameObjects.Text | null = null;
+
+  // 보스 분노 페이즈
+  private bossRageActivated = false;
+  private bossRageMul = 1.0;
+
+  // 킬 스트릭
+  private killStreak = 0;
+  private killStreakTimer = 0;
+  private killStreakBonusTimer = 0;
+
   constructor() {
     super({ key: 'BattleScene' });
   }
@@ -269,6 +283,12 @@ export class BattleScene extends Phaser.Scene {
     // 보스 HP바 UI 생성 (초기에는 숨김)
     this.createBossHpUI();
 
+    // 콤보 카운터 텍스트 (우하단)
+    this.comboText = this.add.text(GAME_W - 18, BATTLE_H - 145, '', {
+      fontSize: '15px', color: '#ffd740', fontFamily: 'monospace', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3, align: 'right',
+    }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(195).setAlpha(0);
+
     // 상태이상 초기화
     this.statusEffects = [];
     this.sessionGold = 0;
@@ -323,6 +343,8 @@ export class BattleScene extends Phaser.Scene {
     this.updateStatusEffects(delta);
     this.updatePlayerAuraPosition(delta);
     this.updatePlayTime(delta);
+    this.updateCombo(delta);
+    this.updateKillStreak(delta);
     this.emitState();
   }
 
@@ -388,7 +410,13 @@ export class BattleScene extends Phaser.Scene {
     this.bossHpBar.fillRoundedRect(barX, barY, barWidth * ratio, barHeight, 2);
 
     if (this.bossNameText) {
-      this.bossNameText.setText(`${bossData.title ?? bossData.name}  HP: ${this.bossEnemy.hp}/${bossData.hp}`);
+      const rageMark = this.bossRageActivated ? ' ⚡' : '';
+      this.bossNameText.setText(`${bossData.title ?? bossData.name}${rageMark}  HP: ${this.bossEnemy.hp}/${bossData.hp}`);
+    }
+
+    // 분노 페이즈: HP 50% 이하 진입 시 발동
+    if (ratio <= 0.5 && !this.bossRageActivated) {
+      this.activateBossRage();
     }
   }
 
@@ -719,6 +747,7 @@ export class BattleScene extends Phaser.Scene {
         this.enemyPool.push(enemy);
         this.killCount++;
         this.waveKilled++;
+        if (!isBossDeath) this.addKillStreak();
 
         // 총 처치 수 갱신
         const save = loadGame();
@@ -917,6 +946,8 @@ export class BattleScene extends Phaser.Scene {
     this.waveKilled = 0;
     this.spawnTimer = 0;
     this.isMoving = true;
+    this.bossRageActivated = false;
+    this.bossRageMul = 1.0;
 
     // 10웨이브 마일스톤 보상
     if (wave > 1 && (wave - 1) % 10 === 0) {
@@ -1124,8 +1155,9 @@ export class BattleScene extends Phaser.Scene {
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
         const isCrit = Math.random() < bonuses.critChance;
-        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1));
+        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1) * this.getComboMul());
         const killed = enemy.takeDamage(damage);
+        this.hitCombo();
 
         // 상태이상 적용
         if (!killed && skill.effect) {
@@ -1294,7 +1326,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private onEnemyAttack(enemy: Enemy, damage: number): void {
-    const hit = this.applyPlayerHit(damage);
+    const rageDmg = enemy === this.bossEnemy ? Math.round(damage * this.bossRageMul) : damage;
+    const hit = this.applyPlayerHit(rageDmg);
     if (hit) {
       // 타격 임팩트 이펙트 (적 → 플레이어 사이 충돌 지점)
       const impactX = (this.player.x + enemy.x) / 2;
@@ -1373,7 +1406,8 @@ export class BattleScene extends Phaser.Scene {
   private awardRewards(gold: number, exp: number, x: number, y: number): void {
     const save = loadGame();
     const bonuses = this.getCombatBonuses(save);
-    const finalGold = Math.max(0, Math.round(gold * bonuses.goldMul));
+    const streakMul = this.killStreakBonusTimer > 0 ? 1.5 : 1.0;
+    const finalGold = Math.max(0, Math.round(gold * bonuses.goldMul * streakMul));
     save.gold += finalGold;
     save.exp += exp;
     this.sessionGold += finalGold;
@@ -1858,9 +1892,12 @@ export class BattleScene extends Phaser.Scene {
 
   private showDamageText(x: number, y: number, damage: number, isCritical: boolean, grade?: SkillData['grade']): void {
     const isUltimate = grade === 'ULTIMATE';
-    const fontSize = isUltimate ? '20px' : isCritical ? '16px' : '12px';
-    const color = isUltimate ? '#fff0a8' : isCritical ? '#ffd740' : '#ff4444';
-    const label = isCritical ? `${isUltimate ? '절기 ' : ''}${damage}` : String(damage);
+    // 데미지 크기에 따라 폰트 크기 동적 조정 (성장하면 숫자가 더 커져 보임)
+    const baseSize = damage >= 100_000 ? 22 : damage >= 10_000 ? 18 : damage >= 1_000 ? 15 : 12;
+    const gradeBonus = isUltimate ? 4 : isCritical ? 2 : 0;
+    const fontSize = `${baseSize + gradeBonus}px`;
+    const color = isUltimate ? '#fff0a8' : isCritical ? '#ffd740' : '#ff6655';
+    const label = isCritical ? `${isUltimate ? '절기 ' : ''}${fmtNum(damage)}` : fmtNum(damage);
 
     const text = this.add.text(x, y, label, {
       fontSize,
@@ -2238,6 +2275,109 @@ export class BattleScene extends Phaser.Scene {
     };
     overlay.on('pointerdown', dismiss);
     this.time.delayedCall(4000, () => dismiss());
+  }
+
+  // ─── 콤보 시스템 ───
+
+  private getComboMul(): number {
+    if (this.comboCount >= 30) return 1.5;
+    if (this.comboCount >= 20) return 1.35;
+    if (this.comboCount >= 10) return 1.2;
+    if (this.comboCount >= 5)  return 1.1;
+    return 1.0;
+  }
+
+  private hitCombo(): void {
+    this.comboCount++;
+    this.comboTimer = 2000;
+    if (!this.comboText) return;
+    const mul = this.getComboMul();
+    if (this.comboCount >= 5) {
+      this.comboText.setText(`COMBO ×${this.comboCount}\n×${mul.toFixed(2)}`);
+      this.tweens.killTweensOf(this.comboText);
+      this.comboText.setAlpha(1).setScale(1.1);
+      this.tweens.add({
+        targets: this.comboText, scaleX: 1, scaleY: 1, duration: 180, ease: 'Back.easeOut',
+      });
+    }
+  }
+
+  private updateCombo(delta: number): void {
+    if (this.comboCount === 0) return;
+    this.comboTimer -= delta;
+    if (this.comboTimer <= 0) {
+      this.comboCount = 0;
+      if (this.comboText) {
+        this.tweens.killTweensOf(this.comboText);
+        this.tweens.add({ targets: this.comboText, alpha: 0, duration: 400 });
+      }
+    }
+  }
+
+  // ─── 보스 분노 페이즈 ───
+
+  private activateBossRage(): void {
+    this.bossRageActivated = true;
+    this.bossRageMul = 1.3;
+
+    if (this.bossEnemy) this.bossEnemy.setSpeedMultiplier(1.4);
+    if (this.bossAura) this.bossAura.setFillStyle(0xff0000, 0.6);
+
+    this.cameras.main.shake(280, 0.012);
+    this.cameras.main.flash(350, 180, 0, 0, true);
+    soundSystem.play('boss_appear');
+
+    const t = this.add.text(GAME_W / 2, BATTLE_H * 0.4, '⚡ 분노 발동! ⚡', {
+      fontSize: '24px', color: '#ff4444', fontFamily: 'monospace', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+    const sub = this.add.text(GAME_W / 2, BATTLE_H * 0.4 + 36, '공격력 +30%  속도 +40%', {
+      fontSize: '14px', color: '#ff8888', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+
+    [t, sub].forEach(o => {
+      this.tweens.add({
+        targets: o, alpha: 0, y: o.y - 30, duration: 2200, delay: 800, ease: 'Power2',
+        onComplete: () => o.destroy(),
+      });
+    });
+  }
+
+  // ─── 킬 스트릭 ───
+
+  private addKillStreak(): void {
+    if (this.killStreakTimer > 0) {
+      this.killStreak++;
+    } else {
+      this.killStreak = 1;
+    }
+    this.killStreakTimer = 3500;
+
+    if (this.killStreak === 10 || this.killStreak === 20 || this.killStreak === 30) {
+      this.killStreakBonusTimer = 10_000;
+      soundSystem.play('level_up');
+      const streak = this.killStreak;
+      const t = this.add.text(GAME_W / 2, BATTLE_H * 0.45,
+        `🔥 ${streak}연속 처치!\n10초간 골드 +50%`, {
+        fontSize: '20px', color: '#ff9944', fontFamily: 'monospace', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 3, align: 'center',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+      this.tweens.add({
+        targets: t, alpha: 0, y: t.y - 30, duration: 2000, delay: 1200, ease: 'Power2',
+        onComplete: () => t.destroy(),
+      });
+    }
+  }
+
+  private updateKillStreak(delta: number): void {
+    if (this.killStreakTimer > 0) {
+      this.killStreakTimer -= delta;
+      if (this.killStreakTimer <= 0) this.killStreak = 0;
+    }
+    if (this.killStreakBonusTimer > 0) {
+      this.killStreakBonusTimer -= delta;
+    }
   }
 
   private emitState(): void {

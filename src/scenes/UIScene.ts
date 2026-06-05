@@ -1029,12 +1029,15 @@ export class UIScene extends Phaser.Scene {
     const save = loadGame();
     save.trainingLevels = save.trainingLevels ?? {};
     const keys = ['attack', 'hp', 'gold'];
+    const hallLevel = save.sectFacilities?.hall ?? 1;
+    const hallDiscount = Math.min(0.25, (hallLevel - 1) * 0.025); // 대전 할인 auto에도 적용
     let upgraded = 0;
 
     for (let guard = 0; guard < 200; guard++) {
       const key = keys.sort((a, b) => (save.trainingLevels?.[a] ?? 0) - (save.trainingLevels?.[b] ?? 0))[0];
       const level = save.trainingLevels[key] ?? 0;
-      const cost = 100 * (level + 1);
+      const base = 100 * (level + 1);
+      const cost = Math.max(10, Math.floor(base * (1 - hallDiscount)));
       if (save.gold < cost) break;
       save.gold -= cost;
       save.trainingLevels[key] = level + 1;

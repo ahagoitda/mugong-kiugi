@@ -584,9 +584,12 @@ export class UIScene extends Phaser.Scene {
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     const rows = [['attack', '공격 수련', '공격'], ['hp', '체력 수련', '체력'], ['gold', '재물 수련', '금화 획득']] as const;
+    const hallLevel = save.sectFacilities?.hall ?? 1;
+    const hallDiscount = Math.min(0.25, (hallLevel - 1) * 0.025); // 대전: 수련 비용 할인
     rows.forEach(([key, name, effect], index) => {
       const level = save.trainingLevels?.[key] ?? 0;
-      const cost = 100 * (level + 1);
+      const base = 100 * (level + 1);
+      const cost = Math.max(10, Math.floor(base * (1 - hallDiscount)));
       const y = 170 + index * 120;
       const button = this.add.rectangle(W - 120, y, 150, 52, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
       button.on('pointerdown', () => this.upgradeTraining(key, cost));
@@ -680,8 +683,10 @@ export class UIScene extends Phaser.Scene {
       const y = 170 + index * 105;
       const button = this.add.rectangle(W - 115, y, 150, 48, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
       button.on('pointerdown', () => this.upgradeSect(key, cost));
+      // 대전 효과 표시 (성장 루프 영향 가시화) - 작은 단위부터
+      const effect = key === 'hall' ? ` (수련 +${(level - 1) * 1.2 | 0}%)` : '';
       items.push(this.add.text(55, y - 15, name, this.titleStyle(20)),
-        this.add.text(55, y + 18, `시설 Lv.${level}`, this.textStyle(15, '#d8c9aa')),
+        this.add.text(55, y + 18, `시설 Lv.${level}${effect}`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 115, y, `${cost} 금화`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
     });
 
@@ -964,7 +969,13 @@ export class UIScene extends Phaser.Scene {
 
   private canAffordTraining(save: ReturnType<typeof loadGame>): boolean {
     const levels = save.trainingLevels ?? {};
-    return ['attack', 'hp', 'gold'].some(key => save.gold >= 100 * ((levels[key] ?? 0) + 1));
+    const hallLevel = save.sectFacilities?.hall ?? 1;
+    const hallDiscount = Math.min(0.25, (hallLevel - 1) * 0.025);
+    return ['attack', 'hp', 'gold'].some(key => {
+      const base = 100 * ((levels[key] ?? 0) + 1);
+      const c = Math.max(10, Math.floor(base * (1 - hallDiscount)));
+      return save.gold >= c;
+    });
   }
 
   private hasUpgradeableSkill(save: ReturnType<typeof loadGame>): boolean {
@@ -1038,10 +1049,15 @@ export class UIScene extends Phaser.Scene {
     const sets = equipmentSetBonus(equipped);
     const discipleBonus = Math.min(10, save.disciples?.length ?? 0) * 2;
     const classResearch = (research[this.charClass] ?? 0) * 2.5;
+    // 문파 시설 (대전) 효과 반영 - 성장 요약에 실제 영향 표시
+    const facilities = save.sectFacilities ?? {};
+    const hall = Math.max(1, facilities.hall ?? 1);
+    const hallAtk = Math.round((hall - 1) * 1.2);
+    const hallHp = Math.round((hall - 1) * 1.2);
     return [
-      `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2}%`,
+      `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch + hallAtk}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2 + hallHp}%`,
       `\uAE08\uD654 +${(training.gold ?? 0) * 2}% · \uC138\uD2B8 \uACF5\uACA9 x${sets.attackMul.toFixed(2)}`,
-      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length}`,
+      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length} · \uB300\uC804 Lv.${hall}`,
     ];
   }
 

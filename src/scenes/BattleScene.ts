@@ -1969,10 +1969,16 @@ export class BattleScene extends Phaser.Scene {
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
+    // 문파 시설 효과 (성장 루프 영향) - hall 먼저 적용 (작은 기능 단위)
+    const facilities = save.sectFacilities ?? {};
+    const hallLevel = Math.max(1, facilities.hall ?? 1);
+    const trainingMul = 1 + (hallLevel - 1) * 0.012; // 대전: 수련 효과 증폭
+    const discipleExtra = (hallLevel - 1) * 0.005;   // 대전: 제자 보너스 소폭 추가
+
     return {
-      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * DISCIPLE_ATTACK_BONUS),
-      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
-      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
+      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 * trainingMul + classResearch * 0.025 + disciples * DISCIPLE_ATTACK_BONUS + discipleExtra),
+      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02 * trainingMul),
+      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02 * trainingMul),
       flatAttack,
       flatHp,
     };

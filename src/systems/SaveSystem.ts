@@ -187,7 +187,7 @@ function migrateSave(oldData: SaveData): SaveData {
   return migrated;
 }
 
-export function claimOfflineReward(): { gold: number; exp: number; minutes: number } {
+export function claimOfflineReward(): { gold: number; exp: number; gems: number; minutes: number; levels: number } {
   const save = loadGame();
   const now = Date.now();
   const last = save.lastOfflineRewardAt ?? save.lastSavedAt ?? now;
@@ -196,22 +196,26 @@ export function claimOfflineReward(): { gold: number; exp: number; minutes: numb
   if (minutes < 3) {
     save.lastOfflineRewardAt = now;
     saveGame(save);
-    return { gold: 0, exp: 0, minutes: 0 };
+    return { gold: 0, exp: 0, gems: 0, minutes: 0, levels: 0 };
   }
 
   const waveFactor = Math.max(1, save.stageCleared + 1);
   const gold = Math.floor(minutes * (2 + waveFactor * 0.35));
   const exp = Math.floor(minutes * (3 + waveFactor * 0.45));
+  const gems = Math.min(6, Math.floor(minutes / 60));
 
   save.gold += gold;
   save.exp += exp;
+  if (gems > 0) save.gems = (save.gems ?? 0) + gems;
+  let levels = 0;
   while (save.exp >= save.expToNext) {
     save.exp -= save.expToNext;
     save.level += 1;
     save.expToNext = getExpToNextLevel(save.level);
+    levels += 1;
   }
   save.lastOfflineRewardAt = now;
   saveGame(save);
 
-  return { gold, exp, minutes };
+  return { gold, exp, gems, minutes, levels };
 }

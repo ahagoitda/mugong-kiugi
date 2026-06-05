@@ -181,7 +181,11 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setDepth(500).setStroke('#000000', 5).setAlpha(0);
 
     const reward = claimOfflineReward();
-    if (reward.minutes > 0) this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}`);
+    if (reward.minutes > 0) {
+      const gemText = reward.gems > 0 ? ` · +${reward.gems}${UI.gem}` : '';
+      const levelText = reward.levels > 0 ? ` · Lv.+${reward.levels}` : '';
+      this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}${gemText}${levelText}`);
+    }
   }
 
   private createTopHud(): void {

@@ -57,6 +57,7 @@ export function createDefaultSave(): SaveData {
     gems: 30,
     shopLastReset: '',
     shopDailyPurchased: [],
+    rebirthCount: 0,
   };
 }
 

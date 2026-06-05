@@ -53,6 +53,13 @@ interface PlayerStatePayload {
   gold: number; level: number; exp: number; expToNext: number;
 }
 
+function fmtGold(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 const PANEL_TITLES: Record<Panel, string> = {
   MARTIAL: '무공 관리',
   TRAINING: '수련',
@@ -551,12 +558,12 @@ export class UIScene extends Phaser.Scene {
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     const TRAIN = [
-      { key: 'attack',  name: '공격 수련', sub: '호신강공(護身剛功)', icon: '剑', eff: '공격력',    pct: 2,   maxLv: 20, base: 100, color: 0xe05555 },
-      { key: 'hp',      name: '체력 수련', sub: '금강불괴(金剛不壞)', icon: '氣', eff: '최대 체력',  pct: 2,   maxLv: 20, base: 100, color: 0xcc3333 },
-      { key: 'gold',    name: '재물 수련', sub: '취재술(聚財術)',     icon: '財', eff: '금화 획득',  pct: 2,   maxLv: 20, base: 80,  color: 0xd4a74e },
-      { key: 'speed',   name: '신법 수련', sub: '경공술(輕功術)',     icon: '步', eff: '이동 속도',  pct: 1.5, maxLv: 15, base: 150, color: 0x5aafff },
-      { key: 'stamina', name: '내공 수련', sub: '심기단련(心氣鍛鍊)', icon: '心', eff: '최대 내공',  pct: 3,   maxLv: 20, base: 120, color: 0x50c878 },
-      { key: 'crit',    name: '격파 수련', sub: '파공술(破功術)',     icon: '破', eff: '치명타 확률', pct: 2,   maxLv: 10, base: 250, color: 0xc878ff },
+      { key: 'attack',  name: '공격 수련', sub: '호신강공(護身剛功)', icon: '剑', eff: '공격력',    pct: 2,   base: 80,  color: 0xe05555 },
+      { key: 'hp',      name: '체력 수련', sub: '금강불괴(金剛不壞)', icon: '氣', eff: '최대 체력',  pct: 2,   base: 80,  color: 0xcc3333 },
+      { key: 'gold',    name: '재물 수련', sub: '취재술(聚財術)',     icon: '財', eff: '금화 획득',  pct: 2,   base: 60,  color: 0xd4a74e },
+      { key: 'speed',   name: '신법 수련', sub: '경공술(輕功術)',     icon: '步', eff: '이동 속도',  pct: 1.5, base: 120, color: 0x5aafff },
+      { key: 'stamina', name: '내공 수련', sub: '심기단련(心氣鍛鍊)', icon: '心', eff: '최대 내공',  pct: 3,   base: 100, color: 0x50c878 },
+      { key: 'crit',    name: '격파 수련', sub: '파공술(破功術)',     icon: '破', eff: '치명타 확률', pct: 2,   base: 200, color: 0xc878ff },
     ] as const;
 
     // 2×3 그리드
@@ -568,16 +575,19 @@ export class UIScene extends Phaser.Scene {
       const cx = COL[i % 2];
       const cy = ROW[Math.floor(i / 2)];
       const lv = save.trainingLevels?.[t.key] ?? 0;
-      const isMax = lv >= t.maxLv;
-      const cost = t.base * (lv + 1);
-      const ratio = lv / t.maxLv;
+      // 무한 수련: 초반 저렴, 레벨 오를수록 부드럽게 증가
+      const cost = Math.round(t.base * (1 + lv * 0.4 + Math.pow(lv, 1.7) * 0.06));
+      // 10레벨 단위 진행 표시
+      const chunk = Math.floor(lv / 10);
+      const chunkPct = (lv % 10) / 10;
       const effPct = (t.pct * lv).toFixed(1);
+      const tierLabel = lv === 0 ? '' : lv < 10 ? '입문' : lv < 30 ? '초급' : lv < 60 ? '중급' : lv < 100 ? '고급' : lv < 200 ? '달인' : '신경';
 
       // 카드 배경
       items.push(
         this.add.rectangle(cx, cy, CW, CH, 0x0f0e0c, 1)
-          .setStrokeStyle(2, t.color, isMax ? 1.0 : 0.6).setDepth(702),
-        this.add.rectangle(cx, cy - CH / 2 + 3, CW - 4, 5, t.color, isMax ? 0.9 : 0.55)
+          .setStrokeStyle(2, t.color, 0.65).setDepth(702),
+        this.add.rectangle(cx, cy - CH / 2 + 3, CW - 4, 5, t.color, 0.6)
           .setOrigin(0.5, 0.5).setDepth(703),
       );
       // 아이콘
@@ -589,44 +599,44 @@ export class UIScene extends Phaser.Scene {
       items.push(
         this.add.text(cx - 62, cy - 52, t.name, this.textStyle(14, '#e8c36a')).setDepth(703),
         this.add.text(cx - 62, cy - 34, t.sub, this.textStyle(9, '#6e6254')).setDepth(703),
-        this.add.text(cx + 100, cy - 52, `${lv}/${t.maxLv}`, this.textStyle(12, '#f0d493'))
+        this.add.text(cx + 100, cy - 52, `Lv.${lv}  ${tierLabel}`, this.textStyle(11, '#f0d493'))
           .setOrigin(1, 0).setDepth(703),
       );
       // 효과 텍스트
       items.push(
         this.add.text(cx - 104, cy - 10, `${t.eff}  +${effPct}%`, this.textStyle(13, '#c8b98a')).setDepth(703),
       );
-      // 진행 바
+      // 10단위 진행 바 (chunk * 10 표시)
       const bw = 200;
       items.push(
         this.add.rectangle(cx, cy + 22, bw, 7, 0x1e1a13, 1).setDepth(703),
-        this.add.rectangle(cx - bw / 2, cy + 22, Math.max(3, bw * ratio), 7, t.color, 0.85)
+        this.add.rectangle(cx - bw / 2, cy + 22, Math.max(3, bw * chunkPct), 7, t.color, 0.85)
           .setOrigin(0, 0.5).setDepth(704),
       );
-      // 업그레이드 버튼
-      if (!isMax) {
-        const btn = this.add.rectangle(cx, cy + 52, 200, 28, 0x4a3215)
-          .setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
-        btn.on('pointerdown', () => this.upgradeTraining(t.key, cost));
-        items.push(
-          btn,
-          this.add.text(cx, cy + 52, `수련  ·  ${cost}G`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(704),
-        );
-      } else {
-        items.push(
-          this.add.rectangle(cx, cy + 52, 200, 28, 0x1c1c1c).setStrokeStyle(1, 0x444444).setDepth(703),
-          this.add.text(cx, cy + 52, '수련 완성 (MAX)', this.textStyle(12, '#555555')).setOrigin(0.5).setDepth(704),
-        );
+      if (chunk > 0) {
+        items.push(this.add.text(cx + bw / 2 + 4, cy + 22, `×${chunk}`, this.textStyle(9, '#a09060')).setOrigin(0, 0.5).setDepth(704));
       }
+      // 무한 업그레이드 버튼
+      const btn = this.add.rectangle(cx, cy + 52, 200, 28, 0x4a3215)
+        .setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
+      btn.on('pointerdown', () => this.upgradeTraining(t.key, cost));
+      items.push(
+        btn,
+        this.add.text(cx, cy + 52, `수련  ·  ${fmtGold(cost)}G`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(704),
+      );
     });
 
     // 종합 보너스 요약
     const tl = save.trainingLevels ?? {};
+    const totalAtk = (tl.attack ?? 0) * 2;
+    const totalHp = (tl.hp ?? 0) * 2;
+    const totalSpd = ((tl.speed ?? 0) * 1.5).toFixed(1);
+    const totalCrit = (tl.crit ?? 0) * 2;
     items.push(
       this.add.rectangle(W / 2, 655, W - 52, 46, 0x0c0a07, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
       this.add.text(W / 2, 647, '현재 총 보너스', this.textStyle(11, '#7a6e58')).setOrigin(0.5).setDepth(703),
       this.add.text(W / 2, 665,
-        `공격 +${(tl.attack ?? 0) * 2}%   체력 +${(tl.hp ?? 0) * 2}%   속도 +${((tl.speed ?? 0) * 1.5).toFixed(1)}%   치명타 +${(tl.crit ?? 0) * 2}%`,
+        `공격 +${totalAtk}%   체력 +${totalHp}%   속도 +${totalSpd}%   치명타 +${totalCrit}%`,
         this.textStyle(12, '#d4a74e')).setOrigin(0.5).setDepth(703),
     );
 
@@ -771,8 +781,60 @@ export class UIScene extends Phaser.Scene {
       }
     }
 
+    // ─── 환생 섹션 ───
+    const rebirthCount = save.rebirthCount ?? 0;
+    const canRebirth = save.level >= 30;
+    const rebirthBonus = rebirthCount * 15;
+    items.push(
+      this.add.rectangle(W / 2, 842, W - 52, 2, 0x60451f, 0.5).setDepth(702),
+      this.add.rectangle(W / 2, 876, W - 52, 68, 0x0e0a06).setStrokeStyle(2, rebirthCount > 0 ? 0xd4a74e : 0x3a2a1a).setDepth(702),
+      this.add.text(55, 861, `환생 (還生)  ·  ${rebirthCount}회`, this.titleStyle(16)).setOrigin(0, 0.5).setDepth(703),
+      this.add.text(55, 880, canRebirth ? `처음부터 시작, 영구 +${rebirthBonus + 15}% 능력치` : `Lv.30 도달 시 환생 가능 (현재 Lv.${save.level})`,
+        this.textStyle(12, canRebirth ? '#c8b89a' : '#5a4a38')).setDepth(703),
+    );
+    if (rebirthCount > 0) {
+      items.push(this.add.text(W - 55, 861, `현재 +${rebirthBonus}% 영구 보너스`, this.textStyle(11, '#d4a74e')).setOrigin(1, 0.5).setDepth(703));
+    }
+    const rebirthBtn = this.add.rectangle(W - 90, 882, 120, 28, canRebirth ? 0x4a2a08 : 0x1a1209)
+      .setStrokeStyle(1, canRebirth ? 0xd4a74e : 0x3a2a18).setInteractive().setDepth(703);
+    const rebirthTxt = this.add.text(W - 90, 882, '환생하기', this.textStyle(13, canRebirth ? '#d4a74e' : '#4a3828')).setOrigin(0.5).setDepth(704);
+    if (canRebirth) {
+      rebirthBtn.on('pointerdown', () => this.confirmRebirth(items));
+    }
+    items.push(rebirthBtn, rebirthTxt);
+
     const npc = this.add.image(W - 90, 840, 'npc_master').setDisplaySize(170, 190).setDepth(702).setAlpha(0.82);
     items.push(npc);
+  }
+
+  private confirmRebirth(items: Phaser.GameObjects.GameObject[]): void {
+    const save = loadGame();
+    const nextBonus = ((save.rebirthCount ?? 0) + 1) * 15;
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(800);
+    const box = this.add.rectangle(W / 2, H / 2, 400, 250, 0x110c07).setStrokeStyle(2, 0xd4a74e).setDepth(801);
+    const msg = this.add.text(W / 2, H / 2 - 70, '⚡ 환생 확인', this.titleStyle(22)).setOrigin(0.5).setDepth(802);
+    const desc = this.add.text(W / 2, H / 2 - 20,
+      `레벨·골드·수련이 초기화됩니다.\n무공·장비·보스 기록은 유지됩니다.\n\n보상: 영구 능력치 +${nextBonus}% 획득`, {
+      ...this.textStyle(14, '#c8b89a'), align: 'center',
+    }).setOrigin(0.5).setDepth(802);
+    const yes = this.add.text(W / 2 - 80, H / 2 + 85, '환생!', this.titleStyle(22)).setOrigin(0.5).setInteractive().setDepth(802);
+    const no  = this.add.text(W / 2 + 80, H / 2 + 85, '취소', this.titleStyle(22)).setOrigin(0.5).setInteractive().setDepth(802);
+    yes.on('pointerdown', () => {
+      save.rebirthCount = (save.rebirthCount ?? 0) + 1;
+      save.level = 1;
+      save.exp = 0;
+      save.expToNext = 30;
+      save.gold = 0;
+      save.trainingLevels = { attack: 0, hp: 0, gold: 0, speed: 0, stamina: 0, crit: 0 };
+      save.stageCleared = 0;
+      saveGame(save);
+      items.push(overlay, box, msg, desc, yes, no);
+      this.closePanel();
+      soundSystem.play('level_up');
+      this.showNotice(`환생 완료! 영구 +${save.rebirthCount * 15}% 능력치 획득!`);
+    });
+    no.on('pointerdown', () => [overlay, box, msg, desc, yes, no].forEach(o => o.destroy()));
+    items.push(overlay, box, msg, desc, yes, no);
   }
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
@@ -960,7 +1022,7 @@ export class UIScene extends Phaser.Scene {
     this.spFill.width = 190 * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
     this.levelText.setText(`Lv.${state.level}`);
-    this.goldText.setText(`${state.gold} 금화`);
+    this.goldText.setText(`${fmtGold(state.gold)} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
     const isAuto = state.battleMode === 'AUTO';
     this.modeText.setText(isAuto ? 'AUTO' : '수동');
@@ -1040,7 +1102,7 @@ export class UIScene extends Phaser.Scene {
     save.skillLevels = save.skillLevels ?? {};
     const level = save.skillLevels[skill.id] ?? 0;
     const cost = Math.round((skill.upgradeGoldBase ?? 40) * (1 + level * 0.32));
-    if (save.gold < cost || (save.inventory[skill.id] ?? 0) < 2) return this.showNotice('강화 재료가 부족합니다');
+    if (save.gold < cost || (save.inventory[skill.id] ?? 0) < 1) return this.showNotice('강화 재료가 부족합니다');
     save.gold -= cost;
     save.inventory[skill.id] -= 1;
     save.skillLevels[skill.id] = level + 1;

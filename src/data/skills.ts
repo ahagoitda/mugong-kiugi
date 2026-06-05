@@ -591,7 +591,8 @@ export const GRADE_COLORS: Readonly<Record<string, number>> = {
  * 후반에는 점진적으로 느려져 장기 플레이를 유도합니다.
  */
 export function getExpToNextLevel(level: number): number {
-  return Math.round(50 + (level - 1) * 30 + Math.pow(level, 1.5) * 10);
+  // Fast early (lv1≈30, lv10≈350, lv50≈5k, lv100≈18k, lv500≈350k)
+  return Math.round(30 + (level - 1) * 18 + Math.pow(level, 1.65) * 6);
 }
 
 export const SKILL_NAME_MAP: Readonly<Record<string, string>> = {

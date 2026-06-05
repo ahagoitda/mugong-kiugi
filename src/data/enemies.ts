@@ -32,8 +32,8 @@ const entries: [string, EnemyData][] = ENEMY_NAMES.map((name, index) => {
     rank: n % 3 === 0 ? 'ELITE' : 'MINION',
     region,
     setId: `blood_set_${region}`,
-    goldReward: 4 + n * 3,
-    expReward: 6 + n * 4,
+    goldReward: 20 + n * 12,
+    expReward: 25 + n * 15,
     dropTable: [{ skillId: SKILLS[Math.min(SKILLS.length - 1, Math.floor(index / 4))], chance: 0.18 }],
   }];
 });
@@ -55,8 +55,8 @@ for (let index = 0; index < BOSS_IDS.length; index++) {
     bossRank: BOSS_RANKS[index],
     region: index + 1,
     setId: `blood_set_${index + 1}`,
-    goldReward: 120 + index * 260,
-    expReward: 180 + index * 360,
+    goldReward: 600 + index * 1400,
+    expReward: 900 + index * 1800,
     dropTable: [{ skillId: SKILLS[Math.min(SKILLS.length - 1, index)], chance: 0.55 }],
   }]);
 }

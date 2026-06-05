@@ -188,6 +188,7 @@ export interface SaveData {
   shopLastReset?: string;
   shopDailyPurchased?: string[];
   gems?: number;
+  rebirthCount?: number;
 }
 
 /**

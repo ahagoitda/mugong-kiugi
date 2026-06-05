@@ -18,6 +18,13 @@ import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
 
+function fmtNum(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 const BOSS_DIALOGUES: Record<string, string[]> = {
   boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
   boss_danju:   ['약자는 강자의 양식이다.', '내 앞에 무릎 꿇어라!'],
@@ -905,6 +912,11 @@ export class BattleScene extends Phaser.Scene {
     this.spawnTimer = 0;
     this.isMoving = true;
 
+    // 10웨이브 마일스톤 보상
+    if (wave > 1 && (wave - 1) % 10 === 0) {
+      this.showMilestone(wave - 1);
+    }
+
     // 배경 전환 체크
     this.checkBackgroundChange();
 
@@ -1372,30 +1384,25 @@ export class BattleScene extends Phaser.Scene {
 
     if (leveledUp) {
       soundSystem.play('level_up');
-      const lvlText = this.add.text(this.player.x, this.player.y - 50, `LEVEL UP! Lv.${save.level}`, {
-        fontSize: '14px',
-        color: '#ffd740',
-        fontFamily: 'monospace',
-        fontStyle: 'bold',
-        stroke: '#000000',
-        strokeThickness: 2,
-      }).setOrigin(0.5).setDepth(200);
-
+      // Big level-up flash
+      const flash = this.add.rectangle(GAME_W / 2, BATTLE_H / 2, GAME_W, BATTLE_H, 0xffd740, 0.18)
+        .setScrollFactor(0).setDepth(199);
+      this.tweens.add({ targets: flash, alpha: 0, duration: 600, onComplete: () => flash.destroy() });
+      const lvlText = this.add.text(GAME_W / 2, BATTLE_H / 2 - 40, `⬆ LEVEL UP!  Lv.${save.level}`, {
+        fontSize: '22px', color: '#ffd740', fontFamily: 'serif', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 4,
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
       this.tweens.add({
-        targets: lvlText,
-        y: lvlText.y - 30,
-        alpha: 0,
-        duration: 2000,
-        onComplete: () => { lvlText.destroy(); },
+        targets: lvlText, y: lvlText.y - 50, alpha: 0, duration: 2200, ease: 'Power2',
+        onComplete: () => lvlText.destroy(),
       });
-
       this.events.emit('level-up', save.level);
     }
 
-    // 골드 획득 표시 (작은 텍스트)
+    // 골드 획득 표시
     if (finalGold > 0) {
-      const goldText = this.add.text(x + 10, y - 8, `+${finalGold}G`, {
-        fontSize: '8px',
+      const goldText = this.add.text(x + 10, y - 8, `+${fmtNum(finalGold)}G`, {
+        fontSize: '9px',
         color: '#ffd740',
         fontFamily: 'monospace',
       }).setOrigin(0.5).setDepth(150);
@@ -1971,10 +1978,11 @@ export class BattleScene extends Phaser.Scene {
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
+    const rebirthMul = 1 + (save.rebirthCount ?? 0) * 0.15;
     return {
-      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
-      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
-      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
+      attackMul: sets.attackMul * rebirthMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
+      hpMul: sets.hpMul * rebirthMul * (1 + (training.hp ?? 0) * 0.02),
+      goldMul: sets.goldMul * rebirthMul * (1 + (training.gold ?? 0) * 0.02),
       flatAttack,
       flatHp,
       speedMul: 1 + (training.speed ?? 0) * 0.015,
@@ -2097,6 +2105,35 @@ export class BattleScene extends Phaser.Scene {
 
   private toggleBattleMode(): void {
     this.battleMode = this.battleMode === 'AUTO' ? 'MANUAL' : 'AUTO';
+  }
+
+  private showMilestone(wave: number): void {
+    const goldBonus = wave * 150;
+    const gemBonus = Math.floor(wave / 10);
+    const save = loadGame();
+    save.gold += goldBonus;
+    save.gems = (save.gems ?? 0) + gemBonus;
+    saveGame(save);
+
+    const panel = this.add.rectangle(GAME_W / 2, BATTLE_H * 0.25, GAME_W - 60, 110, 0x0d0a06, 0.95)
+      .setStrokeStyle(2, 0xffd740).setScrollFactor(0).setDepth(249);
+    const title = this.add.text(GAME_W / 2, BATTLE_H * 0.25 - 24,
+      `🏆 ${wave}웨이브 돌파!`, {
+      fontSize: '20px', color: '#ffd740', fontFamily: 'serif', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(250);
+    const sub = this.add.text(GAME_W / 2, BATTLE_H * 0.25 + 12,
+      `💰 ${fmtNum(goldBonus)}G  +  💎 ${gemBonus}원보 획득!`, {
+      fontSize: '15px', color: '#c8e890', fontFamily: 'sans-serif',
+      stroke: '#000000', strokeThickness: 2,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(250);
+
+    [panel, title, sub].forEach(o => {
+      this.tweens.add({
+        targets: o, alpha: 0, duration: 2000, delay: 2500, ease: 'Power2',
+        onComplete: () => o.destroy(),
+      });
+    });
   }
 
   private showRegionClear(region: number): void {

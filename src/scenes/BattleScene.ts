@@ -1399,21 +1399,21 @@ export class BattleScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(1);
-    this.bgLayerBg.tileScaleX = GAME_W / 1024;
+    this.bgLayerBg.tileScaleX = 1.5;
     this.bgLayerBg.tileScaleY = BATTLE_H / 1024;
 
     this.bgLayerMg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_mg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(2);
-    this.bgLayerMg.tileScaleX = GAME_W / 1024;
+    this.bgLayerMg.tileScaleX = 1.5;
     this.bgLayerMg.tileScaleY = BATTLE_H / 1024;
 
     this.bgLayerFg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_fg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(3);
-    this.bgLayerFg.tileScaleX = GAME_W / 1024;
+    this.bgLayerFg.tileScaleX = 1.5;
     this.bgLayerFg.tileScaleY = BATTLE_H / 1024;
 
     this.groundShadowLayer = this.add.tileSprite(0, GROUND_Y + 34, GAME_W, 106, `${id}_fg`)
@@ -1422,7 +1422,7 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(6)
       .setTint(0x080604)
       .setAlpha(0.42);
-    this.groundShadowLayer.tileScaleX = GAME_W / 1024;
+    this.groundShadowLayer.tileScaleX = 1.5;
     this.groundShadowLayer.tileScaleY = 0.22;
 
     this.foregroundMistLayer = this.add.tileSprite(0, GROUND_Y + 2, GAME_W, 72, `${id}_mg`)
@@ -1432,7 +1432,7 @@ export class BattleScene extends Phaser.Scene {
       .setTint(0x6d7680)
       .setAlpha(0.16)
       .setBlendMode(Phaser.BlendModes.SCREEN);
-    this.foregroundMistLayer.tileScaleX = GAME_W / 1024;
+    this.foregroundMistLayer.tileScaleX = 1.5;
     this.foregroundMistLayer.tileScaleY = 0.18;
 
     this.add.rectangle(GAME_W / 2, 20, GAME_W, 120, 0x000000, 0.28)

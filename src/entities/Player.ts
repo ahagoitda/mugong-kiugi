@@ -89,6 +89,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // 128x128 스프라이트를 0.8배로 표시 (화면에서 ~102x102 크기)
     this.setDisplaySize(210, 210);
+    this.setFlipX(true); // 아트가 왼쪽을 향하므로 항상 flip → 오른쪽(적 방향)을 바라봄
 
     // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -253,7 +254,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     body.setVelocity(nx * this.moveSpeed, ny * this.moveSpeed);
     this.facingRight = dx >= 0;
-    this.setFlipX(!this.facingRight);
+    this.setFlipX(this.facingRight);
     if (this.currentState !== 'RUN') {
       this.playAnim('run', true);
     }
@@ -431,12 +432,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (newFrame !== this.currentFrame && newFrame < skill.totalFrames) {
       this.currentFrame = newFrame;
-
-      // 이동 오프셋 적용 (돌진기)
-      if (skill.moveOffset.x !== 0) {
-        const dir = this.facingRight ? 1 : -1;
-        this.x += dir * (skill.moveOffset.x / skill.totalFrames);
-      }
 
       // 히트 프레임 체크
       if (this.hitFrameIndex < skill.hitFrames.length &&

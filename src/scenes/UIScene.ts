@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SKILL_DATABASE, SYNTHESIS_RECIPES, getStarterSkill } from '../data/skills';
-import { BOSS_RANK_NAMES, BOSS_RANK_COLORS } from '../data/enemies';
+import { BOSS_RANK_NAMES, BOSS_RANK_COLORS, ENEMY_DATABASE } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 import {
   EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore,
@@ -43,6 +43,7 @@ type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
 type EquipmentFilter = 'ALL' | 'SET' | EquipmentGrade;
 type MissionTab = 'DAILY' | 'ACHIEVEMENT';
+type CodexTab = 'SKILLS' | 'ENEMIES' | 'BOSSES';
 
 interface MissionDef {
   id: string;
@@ -127,6 +128,7 @@ export class UIScene extends Phaser.Scene {
   private charClass: CharacterClass = 'SWORD';
   private martialTab: MartialTab = 'SKILLS';
   private missionTab: MissionTab = 'DAILY';
+  private codexTab: CodexTab = 'SKILLS';
   private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
   private hpFill!: Phaser.GameObjects.Rectangle;
@@ -682,21 +684,67 @@ export class UIScene extends Phaser.Scene {
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
-    const stats = [
-      ['영웅', '8 / 8'], ['무공', `${save.unlockedSkills.length} / ${SKILL_DATABASE.size}`],
-      ['보스', `${save.defeatedBosses?.length ?? 0} / 8`], ['장비 세트', `${new Set((save.equipmentInventory ?? []).map(item => item.setId).filter(Boolean)).size} / 8`],
-      ['지역', `${STORY_REGION_NAMES[(save.storyRegion ?? 1) - 1] ?? `${save.storyRegion ?? 1}지역`} · ${save.storyRegion ?? 1} / 8`], ['총 플레이 시간', this.formatPlayTime(save.totalPlayTime ?? 0)],
-    ];
-    stats.forEach(([label, value], index) => {
-      const x = 55 + (index % 2) * 245;
-      const y = 170 + Math.floor(index / 2) * 130;
-      items.push(this.add.rectangle(x, y, 220, 100, 0x15110c).setOrigin(0, 0).setStrokeStyle(1, 0x75572b),
-        this.add.text(x + 110, y + 30, label, this.titleStyle(19)).setOrigin(0.5),
-        this.add.text(x + 110, y + 68, value, this.textStyle(18, '#e8dfce')).setOrigin(0.5));
+    const tabs: [CodexTab, string][] = [['SKILLS', '\uBB34\uACF5'], ['ENEMIES', '\uC801'], ['BOSSES', '\uBCF4\uC2A4']];
+    tabs.forEach(([tab, label], index) => {
+      const x = 48 + index * 115;
+      const button = this.add.rectangle(x, 105, 96, 38, tab === this.codexTab ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(1, tab === this.codexTab ? GOLD : 0x75572b)
+        .setInteractive();
+      button.on('pointerdown', () => { this.codexTab = tab; this.openPanel('CODEX'); });
+      items.push(button, this.add.text(x, 105, label, this.textStyle(14, '#f0d493')).setOrigin(0.5));
     });
+
+    if (this.codexTab === 'SKILLS') this.buildCodexSkills(items, save);
+    if (this.codexTab === 'ENEMIES') this.buildCodexEnemies(items, save);
+    if (this.codexTab === 'BOSSES') this.buildCodexBosses(items, save);
+
     // 신비상인 일러스트 배치
     const npc = this.add.image(W - 120, 680, 'npc_merchant').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
     items.push(npc);
+  }
+
+  private buildCodexSkills(items: Phaser.GameObjects.GameObject[], save: ReturnType<typeof loadGame>): void {
+    const skills = [...SKILL_DATABASE.values()]
+      .filter(skill => skill.type === 'ACTIVE')
+      .sort((a, b) => Number(save.unlockedSkills.includes(b.id)) - Number(save.unlockedSkills.includes(a.id)))
+      .slice(0, 8);
+    items.push(this.add.text(55, 148, `\uBB34\uACF5 ${save.unlockedSkills.length} / ${SKILL_DATABASE.size}`, this.titleStyle(20)),
+      this.add.text(W - 55, 153, this.formatPlayTime(save.totalPlayTime ?? 0), this.textStyle(13, '#d8c9aa')).setOrigin(1, 0.5));
+    skills.forEach((skill, index) => {
+      const y = 190 + index * 62;
+      const unlocked = save.unlockedSkills.includes(skill.id);
+      const level = save.skillLevels?.[skill.id] ?? 0;
+      items.push(this.add.rectangle(W / 2, y, W - 78, 48, unlocked ? 0x162416 : 0x17120d).setStrokeStyle(1, unlocked ? GOLD : 0x4b4132),
+        this.add.text(55, y - 8, unlocked ? this.skillLabel(skill) : '\uBBF8\uD655\uC778 \uBB34\uACF5', this.textStyle(15, unlocked ? '#f0d493' : '#8f8778')),
+        this.add.text(W - 65, y + 7, unlocked ? `${GRADE_KO[skill.grade]} +${level}` : UI.locked, this.textStyle(13, unlocked ? '#d8c9aa' : '#777066')).setOrigin(1, 0.5));
+    });
+  }
+
+  private buildCodexEnemies(items: Phaser.GameObjects.GameObject[], save: ReturnType<typeof loadGame>): void {
+    const enemies = [...ENEMY_DATABASE.values()].filter(enemy => enemy.rank !== 'BOSS').slice(0, 12);
+    const region = save.storyRegion ?? 1;
+    items.push(this.add.text(55, 148, `\uC9C0\uC5ED ${STORY_REGION_NAMES[region - 1] ?? `${region}\uC9C0\uC5ED`} · ${region} / 8`, this.titleStyle(20)));
+    enemies.forEach((enemy, index) => {
+      const x = 55 + (index % 2) * 245;
+      const y = 190 + Math.floor(index / 2) * 78;
+      const unlocked = (enemy.region ?? 1) <= region;
+      items.push(this.add.rectangle(x, y, 220, 58, unlocked ? 0x151d16 : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, unlocked ? 0x75572b : 0x3b3329),
+        this.add.text(x + 12, y + 15, unlocked ? enemy.name : '\uBBF8\uD655\uC778 \uC801', this.textStyle(14, unlocked ? '#e8dfce' : '#8f8778')),
+        this.add.text(x + 12, y + 38, unlocked ? `${enemy.region}\uC9C0\uC5ED · ${enemy.rank}` : UI.locked, this.textStyle(12, unlocked ? '#d4a74e' : '#777066')));
+    });
+  }
+
+  private buildCodexBosses(items: Phaser.GameObjects.GameObject[], save: ReturnType<typeof loadGame>): void {
+    const bosses = [...ENEMY_DATABASE.values()].filter(enemy => enemy.rank === 'BOSS');
+    items.push(this.add.text(55, 148, `\uBCF4\uC2A4 ${save.defeatedBosses?.length ?? 0} / ${bosses.length}`, this.titleStyle(20)));
+    bosses.forEach((boss, index) => {
+      const y = 190 + index * 62;
+      const defeated = save.defeatedBosses?.includes(boss.id);
+      const color = BOSS_RANK_COLORS[boss.bossRank ?? 'DAEJU'] ?? 0x75572b;
+      items.push(this.add.rectangle(W / 2, y, W - 78, 48, defeated ? 0x241816 : 0x17120d).setStrokeStyle(1, defeated ? color : 0x4b4132),
+        this.add.text(55, y - 8, defeated ? (boss.title ?? boss.name) : `${boss.region}\uC7A5 \uBCF4\uC2A4`, this.textStyle(15, defeated ? '#f0d493' : '#8f8778')),
+        this.add.text(W - 65, y + 7, defeated ? '\uACA9\uD30C \uC644\uB8CC' : UI.locked, this.textStyle(13, defeated ? '#83d68a' : '#777066')).setOrigin(1, 0.5));
+    });
   }
 
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {

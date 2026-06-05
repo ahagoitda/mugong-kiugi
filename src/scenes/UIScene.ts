@@ -152,6 +152,8 @@ export class UIScene extends Phaser.Scene {
   private progressNodes: Phaser.GameObjects.Arc[] = [];
   private bossNode!: Phaser.GameObjects.Star;
   private progressGoalText!: Phaser.GameObjects.Text;
+  private navBadges: Partial<Record<Panel, Phaser.GameObjects.Text>> = {};
+  private lastNavBadgeUpdate = 0;
   private notif!: Phaser.GameObjects.Text;
   private portraitImage!: Phaser.GameObjects.Image;
 
@@ -464,8 +466,15 @@ export class UIScene extends Phaser.Scene {
         .setStrokeStyle(panel === 'MARTIAL' ? 3 : 1, panel === 'MARTIAL' ? GOLD : 0x75572b).setDepth(202).setInteractive();
       this.add.text(x, 907, glyph, this.titleStyle(panel === 'MARTIAL' ? 24 : 20)).setOrigin(0.5).setDepth(203);
       this.add.text(x, 943, label, this.textStyle(13, '#d5c6a7')).setOrigin(0.5).setDepth(203);
+      this.navBadges[panel] = this.add.text(x + 20, 891, '!', this.textStyle(12, '#fff4ce'))
+        .setOrigin(0.5)
+        .setDepth(206)
+        .setBackgroundColor('#b72616')
+        .setPadding(4, 1, 4, 1)
+        .setVisible(false);
       button.on('pointerdown', () => this.openPanel(panel));
     });
+    this.updateNavBadges(undefined, true);
   }
 
   private openPanel(panel: Panel): void {
@@ -864,6 +873,7 @@ export class UIScene extends Phaser.Scene {
 
     // 초상화 일러스트 실시간 갱신
     const save = loadGame();
+    this.updateNavBadges(save);
     const equipped = equippedItems(save.equipmentInventory ?? [], save.equippedItems);
     const dominantSet = dominantSetId(equipped, 4);
     const charId = save.selectedCharacter ?? 'sword_male';
@@ -923,6 +933,56 @@ export class UIScene extends Phaser.Scene {
     save.trainingLevels[key] = (save.trainingLevels[key] ?? 0) + 1;
     saveGame(save);
     this.openPanel('TRAINING');
+  }
+
+  private updateNavBadges(save = loadGame(), force = false): void {
+    if (!force && this.time.now - this.lastNavBadgeUpdate < 1000) return;
+    this.lastNavBadgeUpdate = this.time.now;
+    (Object.keys(this.navBadges) as Panel[]).forEach(panel => {
+      this.navBadges[panel]?.setVisible(this.hasPanelAlert(panel, save));
+    });
+  }
+
+  private hasPanelAlert(panel: Panel, save: ReturnType<typeof loadGame>): boolean {
+    if (panel === 'TRAINING') return this.canAffordTraining(save);
+    if (panel === 'EQUIPMENT') return this.hasBetterEquipment(save) || (save.equipmentInventory?.length ?? 0) >= 100;
+    if (panel === 'MARTIAL') return this.hasUpgradeableSkill(save);
+    if (panel === 'SECT') return this.canAffordSectAction(save);
+    if (panel === 'MISSIONS') return [...this.dailyMissions(save), ...this.achievementMissions(save)]
+      .some(mission => mission.progress >= mission.target && !(save.missionClaims ?? []).includes(mission.id));
+    return false;
+  }
+
+  private canAffordTraining(save: ReturnType<typeof loadGame>): boolean {
+    const levels = save.trainingLevels ?? {};
+    return ['attack', 'hp', 'gold'].some(key => save.gold >= 100 * ((levels[key] ?? 0) + 1));
+  }
+
+  private hasUpgradeableSkill(save: ReturnType<typeof loadGame>): boolean {
+    return this.ownedSkills(save).some(skill => {
+      const level = save.skillLevels?.[skill.id] ?? 0;
+      const cost = Math.round((skill.upgradeGoldBase ?? 40) * (1 + level * 0.32));
+      return save.gold >= cost && (save.inventory[skill.id] ?? 0) >= 2;
+    });
+  }
+
+  private hasBetterEquipment(save: ReturnType<typeof loadGame>): boolean {
+    const equippedIds = save.equippedItems ?? {};
+    return (save.equipmentInventory ?? []).some(item => {
+      const current = (save.equipmentInventory ?? []).find(candidate => candidate.id === equippedIds[item.slot]);
+      return !current || equipmentScore(item) > equipmentScore(current);
+    });
+  }
+
+  private canAffordSectAction(save: ReturnType<typeof loadGame>): boolean {
+    const facilities = save.sectFacilities ?? {};
+    const research = save.sectResearch ?? {};
+    const facilityReady = ['hall', 'forge', 'library'].some(key => save.gold >= (facilities[key] ?? 1) * 250);
+    const researchReady = (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[])
+      .some(key => save.gold >= 220 * ((research[key] ?? 0) + 1));
+    const discipleCount = save.disciples?.length ?? 0;
+    const discipleReady = discipleCount < 10 && save.gold >= 600 + discipleCount * 350;
+    return facilityReady || researchReady || discipleReady;
   }
 
   private autoTrain(): void {

@@ -195,6 +195,10 @@ export interface SaveData {
   rebirthPaths?: string[];
   /** 시간 제한 버프 목록 */
   activeBuffs?: { type: string; expiresAt: number }[];
+  /** 장비 분해로 획득하는 강화 재료 */
+  enhanceStones?: number;
+  /** 제자 집단 파견 임무 완료 시각 (Unix ms) */
+  discipleMissionEnd?: number;
 }
 
 /**

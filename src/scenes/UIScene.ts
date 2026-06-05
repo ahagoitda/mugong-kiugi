@@ -3,7 +3,7 @@ import { SKILL_DATABASE, SYNTHESIS_RECIPES, getStarterSkill } from '../data/skil
 import { BOSS_RANK_NAMES, BOSS_RANK_COLORS, ENEMY_DATABASE } from '../data/enemies';
 import { CHARACTER_MAP, type CharacterClass } from '../data/characters';
 import {
-  EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore, enhanceCost,
+  EQUIPMENT_SLOTS, EQUIPMENT_SLOT_NAMES, equipmentScore, enhanceCost, enhanceStonesCost, SALVAGE_STONES,
   equippedItems, equipmentSetBonus, dominantSetId,
 } from '../data/equipment';
 import { skillCardKey } from '../data/assets';
@@ -717,7 +717,10 @@ export class UIScene extends Phaser.Scene {
     items.push(auto, this.add.text(W - 72, 105, '최적', this.textStyle(13, '#f0d493')).setOrigin(0.5));
 
     const setBonus = equipmentSetBonus(equippedItems(save.equipmentInventory ?? [], save.equippedItems));
-    items.push(this.add.text(55, 148, `세트 효과  공격 x${setBonus.attackMul.toFixed(2)}  체력 x${setBonus.hpMul.toFixed(2)}  금화 x${setBonus.goldMul.toFixed(2)}`, this.textStyle(13, '#d4a74e')));
+    items.push(
+      this.add.text(55, 148, `세트 효과  공격 x${setBonus.attackMul.toFixed(2)}  체력 x${setBonus.hpMul.toFixed(2)}  금화 x${setBonus.goldMul.toFixed(2)}`, this.textStyle(13, '#d4a74e')),
+      this.add.text(W - 55, 148, `🔮 ${save.enhanceStones ?? 0}`, this.textStyle(14, '#88aaff')).setOrigin(1, 0.5),
+    );
 
     EQUIPMENT_SLOTS.forEach((slot, index) => {
       const x = 55 + (index % 3) * 165;
@@ -739,17 +742,21 @@ export class UIScene extends Phaser.Scene {
       const y = 540 + Math.floor(index / 2) * 76;
       const equipped = equippedIds.has(item.id);
       const enhLv = item.enhance ?? 0;
-      const cost = enhanceCost(item);
-      const canEnh = (save.gold ?? 0) >= cost && enhLv < 10;
+      const goldCost = enhanceCost(item);
+      const stoneReq = enhanceStonesCost(item);
+      const canEnh = (save.gold ?? 0) >= goldCost && enhLv < 10 && (save.enhanceStones ?? 0) >= stoneReq;
       const button = this.add.rectangle(x, y, 220, 66, equipped ? 0x26301a : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
       button.setInteractive().on('pointerdown', () => this.equipItem(item));
       const enhBtn = this.add.rectangle(x + 192, y + 46, 50, 22, canEnh ? 0x3a2a10 : 0x1a1209)
         .setOrigin(0.5, 0).setStrokeStyle(1, canEnh ? GOLD : 0x333333).setInteractive();
       enhBtn.on('pointerdown', () => this.enhanceEquipment(item.id));
+      const costLabel = enhLv < 10
+        ? `강화비 ${fmtGold(goldCost)}G${stoneReq > 0 ? ` +🔮${stoneReq}` : ''}`
+        : '최대 강화';
       items.push(button,
         this.add.text(x + 8, y + 6, item.name, { ...this.textStyle(13, '#eee0c1'), wordWrap: { width: 165 } }),
         this.add.text(x + 8, y + 28, `${equipped ? '장착 · ' : ''}전투력 ${equipmentScore(item)}`, this.textStyle(11, '#d4a74e')),
-        this.add.text(x + 8, y + 48, enhLv < 10 ? `강화비 ${fmtGold(cost)}G` : '최대 강화', this.textStyle(10, canEnh ? '#a0a090' : '#555')),
+        this.add.text(x + 8, y + 48, costLabel, this.textStyle(10, canEnh ? '#a0a090' : '#555')),
         enhBtn,
         this.add.text(x + 192, y + 57, '강화', this.textStyle(11, canEnh ? '#e8c36a' : '#555')).setOrigin(0.5));
       if (enhLv > 0) items.push(this.add.text(x + 213, y + 4, `+${enhLv}`, this.textStyle(13, '#ffe680')).setOrigin(1, 0));
@@ -826,7 +833,7 @@ export class UIScene extends Phaser.Scene {
     recruit.on('pointerdown', () => this.recruitDisciple(recruitCost));
     items.push(recruit, this.add.text(W - 95, 532, `모집  ${recruitCost}G`, this.textStyle(12, '#f0d493')).setOrigin(0.5).setDepth(704));
 
-    const maxShow = 5;
+    const maxShow = 4;
     for (let d = 0; d < maxShow; d++) {
       const y = 570 + d * 52;
       const hasDisciple = d < discipleCount;
@@ -846,6 +853,36 @@ export class UIScene extends Phaser.Scene {
           this.add.text(W / 2, y, '비어있음', this.textStyle(13, '#3a3530')).setOrigin(0.5).setDepth(703),
         );
       }
+    }
+
+    // ─── 파견 임무 섹션 ───
+    const missionEnd = save.discipleMissionEnd;
+    const nowMs = Date.now();
+    const missionActive = missionEnd !== undefined && missionEnd > nowMs;
+    const missionComplete = missionEnd !== undefined && !missionActive;
+    const dispatchReward = Math.max(1, discipleCount) * 150;
+    items.push(
+      this.add.rectangle(W / 2, 796, W - 52, 30, 0x1a1410, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
+      this.add.text(56, 796, '집단 파견 (派遣)', this.titleStyle(17)).setOrigin(0, 0.5).setDepth(703),
+    );
+    if (discipleCount === 0) {
+      items.push(this.add.text(W / 2, 830, '제자를 모집하면 파견 임무를 진행할 수 있습니다', this.textStyle(12, '#3a3530')).setOrigin(0.5).setDepth(703));
+    } else if (missionActive) {
+      const minsLeft = Math.max(1, Math.ceil((missionEnd! - nowMs) / 60000));
+      items.push(
+        this.add.rectangle(W / 2, 830, W - 60, 36, 0x0d1a0d).setStrokeStyle(1, 0x449944).setDepth(702),
+        this.add.text(W / 2, 830, `⏳ 파견 중 — ${minsLeft}분 후 귀환  (+${dispatchReward}G +🔮${discipleCount})`, this.textStyle(14, '#88cc88')).setOrigin(0.5).setDepth(703),
+      );
+    } else if (missionComplete) {
+      const collectBtn = this.add.rectangle(W / 2, 830, 280, 36, 0x1a3a1a).setStrokeStyle(2, 0x66cc66).setInteractive().setDepth(703);
+      collectBtn.on('pointerdown', () => this.collectDiscipleMission(dispatchReward, discipleCount));
+      items.push(collectBtn, this.add.text(W / 2, 830, `✅ 파견 완료! 수령  (+${dispatchReward}G +🔮${discipleCount})`, this.textStyle(14, '#66cc66')).setOrigin(0.5).setDepth(704));
+    } else {
+      const dispBtn = this.add.rectangle(W - 90, 830, 130, 36, 0x3a2a10).setStrokeStyle(1, 0xaa8833).setInteractive().setDepth(703);
+      dispBtn.on('pointerdown', () => this.dispatchDiscipleMission(discipleCount));
+      items.push(
+        this.add.text(56, 830, `${discipleCount}명 → +${dispatchReward}G +🔮${discipleCount}`, this.textStyle(14, '#c8a860')).setOrigin(0, 0.5).setDepth(703),
+        dispBtn, this.add.text(W - 90, 830, '전원 파견 (1h)', this.textStyle(12, '#f0d493')).setOrigin(0.5).setDepth(704));
     }
 
     // ─── 환생 섹션 ───
@@ -1270,19 +1307,23 @@ export class UIScene extends Phaser.Scene {
     const save = loadGame();
     const equippedIds = new Set(Object.values(save.equippedItems ?? {}));
     const keep: EquipmentItem[] = [];
-    let refund = 0;
+    let refundGold = 0;
+    let refundStones = 0;
     for (const item of save.equipmentInventory ?? []) {
       const matched = this.equipmentFilter === 'ALL' || (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter);
       const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY';
-      if (matched && !protectedItem) refund += Math.max(5, Math.round(equipmentScore(item) * 0.08));
-      else keep.push(item);
+      if (matched && !protectedItem) {
+        refundGold += Math.max(5, Math.round(equipmentScore(item) * 0.08));
+        refundStones += (SALVAGE_STONES[item.grade] ?? 1) + (item.enhance ?? 0) * 2;
+      } else keep.push(item);
     }
-    if (refund <= 0) return this.showNotice('분해할 장비가 없습니다');
+    if (refundGold <= 0) return this.showNotice('분해할 장비가 없습니다');
     save.equipmentInventory = keep;
-    save.gold += refund;
+    save.gold += refundGold;
+    save.enhanceStones = (save.enhanceStones ?? 0) + refundStones;
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
-    this.showNotice(`분해 보상 +${refund}G`);
+    this.showNotice(`분해 보상 +${refundGold}G  🔮+${refundStones}`);
     this.openPanel('EQUIPMENT');
   }
 
@@ -1301,9 +1342,12 @@ export class UIScene extends Phaser.Scene {
     if (!item) return;
     const lv = item.enhance ?? 0;
     if (lv >= 10) return this.showNotice('최대 강화 등급입니다');
-    const cost = enhanceCost(item);
-    if ((save.gold ?? 0) < cost) return this.showNotice(`금화 부족 (${cost}G 필요)`);
-    save.gold -= cost;
+    const goldCost = enhanceCost(item);
+    const stoneReq = enhanceStonesCost(item);
+    if ((save.gold ?? 0) < goldCost) return this.showNotice(`금화 부족 (${goldCost}G 필요)`);
+    if ((save.enhanceStones ?? 0) < stoneReq) return this.showNotice(`강화석 부족 (🔮${stoneReq}개 필요)`);
+    save.gold -= goldCost;
+    if (stoneReq > 0) save.enhanceStones = (save.enhanceStones ?? 0) - stoneReq;
     item.enhance = lv + 1;
     saveGame(save);
     soundSystem.play('synth_ok');
@@ -1329,6 +1373,27 @@ export class UIScene extends Phaser.Scene {
     save.disciples = save.disciples ?? [];
     save.disciples.push(`disciple_${Date.now()}_${save.disciples.length + 1}`);
     saveGame(save);
+    this.openPanel('SECT');
+  }
+
+  private dispatchDiscipleMission(count: number): void {
+    if (count === 0) return this.showNotice('파견할 제자가 없습니다');
+    const save = loadGame();
+    save.discipleMissionEnd = Date.now() + 60 * 60 * 1000;
+    saveGame(save);
+    soundSystem.play('synth_ok');
+    this.showNotice(`제자 ${count}명 파견 완료! 1시간 후 귀환합니다`);
+    this.openPanel('SECT');
+  }
+
+  private collectDiscipleMission(reward: number, stoneReward: number): void {
+    const save = loadGame();
+    save.gold += reward;
+    save.enhanceStones = (save.enhanceStones ?? 0) + stoneReward;
+    save.discipleMissionEnd = undefined;
+    saveGame(save);
+    soundSystem.play('synth_ok');
+    this.showNotice(`파견 보상 수령! +${reward}G  🔮+${stoneReward}`);
     this.openPanel('SECT');
   }
 
@@ -1459,6 +1524,7 @@ export class UIScene extends Phaser.Scene {
     );
     const statsLeft = 55;
     const statsRight = W / 2 + 20;
+    const missionOngoing = (save.discipleMissionEnd ?? 0) > Date.now();
     const statEntries: [number, number, string, string][] = [
       [statsLeft,  616, '최고 웨이브', `${save.stageCleared}웨이브`],
       [statsRight, 616, '총 처치',     `${fmtGold(save.totalKills ?? 0)}명`],
@@ -1466,6 +1532,8 @@ export class UIScene extends Phaser.Scene {
       [statsRight, 652, '환생',        `${save.rebirthCount ?? 0}회`],
       [statsLeft,  688, '해금 스킬',   `${save.unlockedSkills?.length ?? 0}종`],
       [statsRight, 688, '장비 보유',   `${save.equipmentInventory?.length ?? 0}개`],
+      [statsLeft,  724, '강화석',      `🔮 ${save.enhanceStones ?? 0}개`],
+      [statsRight, 724, '제자 파견',   missionOngoing ? '파견 중' : `${save.disciples?.length ?? 0}명 대기`],
     ];
     for (const [x, y, label, val] of statEntries) {
       items.push(

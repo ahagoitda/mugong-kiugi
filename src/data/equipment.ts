@@ -88,6 +88,16 @@ export function enhanceCost(item: EquipmentItem): number {
   return Math.round(60 * (gradeMul[item.grade] ?? 1) * Math.pow(lv + 1, 1.6));
 }
 
+export function enhanceStonesCost(item: EquipmentItem): number {
+  const lv = item.enhance ?? 0;
+  if (lv < 6) return 0;
+  return (lv - 5) * 3;
+}
+
+export const SALVAGE_STONES: Readonly<Record<EquipmentGrade, number>> = {
+  COMMON: 1, RARE: 3, EPIC: 8, LEGENDARY: 20,
+};
+
 export interface EquipmentSetBonus {
   attackMul: number;
   hpMul: number;

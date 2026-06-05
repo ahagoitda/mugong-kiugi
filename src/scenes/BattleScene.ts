@@ -711,7 +711,10 @@ export class BattleScene extends Phaser.Scene {
         save.totalKills = (save.totalKills ?? 0) + 1;
         save.missionProgress = save.missionProgress ?? {};
         save.missionProgress.daily_kill = (save.missionProgress.daily_kill ?? 0) + 1;
-        if (enemyData && (enemyData.rank === 'BOSS' || Math.random() < 0.22)) {
+        // 대장간(forge): 장비 드롭 확률 소폭 증가 (성장 루프: 더 빠른 장비 파워업)
+        const forgeForDrop = Math.max(1, save.sectFacilities?.forge ?? 1);
+        const equipChance = 0.22 + Math.min(0.18, (forgeForDrop - 1) * 0.015);
+        if (enemyData && (enemyData.rank === 'BOSS' || Math.random() < equipChance)) {
           save.equipmentInventory = save.equipmentInventory ?? [];
           save.equipmentInventory.push(createEquipment(enemyData.region ?? 1, undefined, enemyData.rank === 'BOSS'));
           if (save.equipmentInventory.length > 120) save.equipmentInventory.splice(0, save.equipmentInventory.length - 120);
@@ -1969,18 +1972,21 @@ export class BattleScene extends Phaser.Scene {
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
-    // 문파 시설 효과 (성장 루프 영향) - hall 먼저 적용 (작은 기능 단위)
+    // 문파 시설 효과 (성장 루프 영향) - hall, forge (작은 기능 단위)
     const facilities = save.sectFacilities ?? {};
     const hallLevel = Math.max(1, facilities.hall ?? 1);
     const trainingMul = 1 + (hallLevel - 1) * 0.012; // 대전: 수련 효과 증폭
     const discipleExtra = (hallLevel - 1) * 0.005;   // 대전: 제자 보너스 소폭 추가
+    const forgeLevel = Math.max(1, facilities.forge ?? 1);
+    const forgeGoldMul = 1 + (forgeLevel - 1) * 0.01; // 대장간: 금화 획득 추가
+    const forgeFlat = (forgeLevel - 1) * 2;           // 대장간: 장비 유지/제작 플랫 보너스
 
     return {
       attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 * trainingMul + classResearch * 0.025 + disciples * DISCIPLE_ATTACK_BONUS + discipleExtra),
       hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02 * trainingMul),
-      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02 * trainingMul),
-      flatAttack,
-      flatHp,
+      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02 * trainingMul) * forgeGoldMul,
+      flatAttack: flatAttack + forgeFlat,
+      flatHp: flatHp + Math.round(forgeFlat * 3.5),
     };
   }
 

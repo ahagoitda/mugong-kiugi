@@ -683,8 +683,10 @@ export class UIScene extends Phaser.Scene {
       const y = 170 + index * 105;
       const button = this.add.rectangle(W - 115, y, 150, 48, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
       button.on('pointerdown', () => this.upgradeSect(key, cost));
-      // 대전 효과 표시 (성장 루프 영향 가시화) - 작은 단위부터
-      const effect = key === 'hall' ? ` (수련 +${(level - 1) * 1.2 | 0}%)` : '';
+      // 시설별 효과 표시 (성장 루프 영향 가시화)
+      let effect = '';
+      if (key === 'hall') effect = ` (수련 +${(level - 1) * 1.2 | 0}%)`;
+      if (key === 'forge') effect = ` (골드+${(level - 1) * 1 | 0}%·드롭↑)`;
       items.push(this.add.text(55, y - 15, name, this.titleStyle(20)),
         this.add.text(55, y + 18, `시설 Lv.${level}${effect}`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 115, y, `${cost} 금화`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
@@ -1049,15 +1051,17 @@ export class UIScene extends Phaser.Scene {
     const sets = equipmentSetBonus(equipped);
     const discipleBonus = Math.min(10, save.disciples?.length ?? 0) * 2;
     const classResearch = (research[this.charClass] ?? 0) * 2.5;
-    // 문파 시설 (대전) 효과 반영 - 성장 요약에 실제 영향 표시
+    // 문파 시설 효과 반영 - 성장 요약에 실제 영향 표시 (hall + forge)
     const facilities = save.sectFacilities ?? {};
     const hall = Math.max(1, facilities.hall ?? 1);
+    const forge = Math.max(1, facilities.forge ?? 1);
     const hallAtk = Math.round((hall - 1) * 1.2);
     const hallHp = Math.round((hall - 1) * 1.2);
+    const forgeGold = Math.round((forge - 1) * 1);
     return [
       `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch + hallAtk}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2 + hallHp}%`,
-      `\uAE08\uD654 +${(training.gold ?? 0) * 2}% · \uC138\uD2B8 \uACF5\uACA9 x${sets.attackMul.toFixed(2)}`,
-      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length} · \uB300\uC804 Lv.${hall}`,
+      `\uAE08\uD654 +${(training.gold ?? 0) * 2 + forgeGold}% · \uC138\uD2B8 \uACF5\uACA9 x${sets.attackMul.toFixed(2)}`,
+      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length} · \uB300\uC804${hall} \uB300\uC7A5${forge}`,
     ];
   }
 

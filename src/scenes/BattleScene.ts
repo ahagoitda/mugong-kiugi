@@ -47,6 +47,19 @@ const ENEMY_HP_MUL = 0.45;
 const ENEMY_DMG_MUL = 0.12;
 const BOSS_HP_MUL = 0.38;
 const BOSS_DMG_MUL = 0.14;
+const PLAYTIME_SAVE_INTERVAL_MS = 30000;
+const MAX_DISCIPLE_BONUS_COUNT = 10;
+const DISCIPLE_ATTACK_BONUS = 0.02;
+const STORY_REGION_NAMES = [
+  '입문협',
+  '혈교령',
+  '마운관',
+  '흑풍곡',
+  '천마루',
+  '비월성',
+  '무극전',
+  '혈마궁',
+] as const;
 
 /**
  * 보스 등급별 고유 스킬 정의.
@@ -174,6 +187,7 @@ export class BattleScene extends Phaser.Scene {
   // 골드/경험치 세션 누적
   private sessionGold = 0;
   private sessionExp = 0;
+  private playTimeSaveTimer = 0;
 
   // 선택 캐릭터별 공격 이펙트 색
   private slashColor = 0xffffff;
@@ -292,7 +306,20 @@ export class BattleScene extends Phaser.Scene {
     this.updateBossSkill(delta);
     this.updateStatusEffects(delta);
     this.updatePlayerAuraPosition(delta);
+    this.updatePlayTime(delta);
     this.emitState();
+  }
+
+  private updatePlayTime(delta: number): void {
+    this.playTimeSaveTimer += delta;
+    if (this.playTimeSaveTimer < PLAYTIME_SAVE_INTERVAL_MS) return;
+
+    const elapsedSeconds = Math.floor(this.playTimeSaveTimer / 1000);
+    this.playTimeSaveTimer -= elapsedSeconds * 1000;
+
+    const save = loadGame();
+    save.totalPlayTime = (save.totalPlayTime ?? 0) + elapsedSeconds;
+    saveGame(save);
   }
 
   // ─── 보스 HP바 UI ───
@@ -963,13 +990,18 @@ export class BattleScene extends Phaser.Scene {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
     }
-    save.storyRegion = Math.max(save.storyRegion ?? 1, Math.min(8, (bossData?.region ?? 1) + 1));
+    const previousRegion = save.storyRegion ?? 1;
+    const nextRegion = Math.max(previousRegion, Math.min(8, (bossData?.region ?? 1) + 1));
+    const didAdvanceRegion = nextRegion > previousRegion;
+    save.storyRegion = nextRegion;
     save.codexUnlocked = save.codexUnlocked ?? [];
     if (bossData && !save.codexUnlocked.includes(bossData.id)) save.codexUnlocked.push(bossData.id);
     const bonusGold = 80 + this.waveNumber * 12;
     const bonusExp = 120 + this.waveNumber * 18;
     save.gold += bonusGold;
     save.exp += bonusExp;
+    const regionGemReward = didAdvanceRegion ? Math.max(1, nextRegion) : 0;
+    if (regionGemReward > 0) save.gems = (save.gems ?? 0) + regionGemReward;
     save.equipmentInventory = save.equipmentInventory ?? [];
     if (bossData) {
       const rewardSlots = ['WEAPON', 'ARMOR', 'HELM', 'BOOTS', 'ACCESSORY', 'RELIC'] as const;
@@ -1014,6 +1046,10 @@ export class BattleScene extends Phaser.Scene {
     this.player.heal(this.player.maxHp, this.player.maxStamina);
 
     this.events.emit('boss-clear', this.waveNumber);
+    if (didAdvanceRegion) {
+      const regionName = STORY_REGION_NAMES[nextRegion - 1] ?? `${nextRegion}지역`;
+      this.events.emit('region-clear', nextRegion, regionName, bonusGold, regionGemReward);
+    }
     this.events.emit('wave-clear', this.waveNumber);
 
     this.time.delayedCall(2000, () => {
@@ -1922,12 +1958,12 @@ export class BattleScene extends Phaser.Scene {
     const training = save.trainingLevels ?? {};
     const research = save.sectResearch ?? {};
     const classResearch = research[this.playerClass] ?? 0;
-    const disciples = save.disciples?.length ?? 0;
+    const disciples = Math.min(MAX_DISCIPLE_BONUS_COUNT, save.disciples?.length ?? 0);
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
     return {
-      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
+      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * DISCIPLE_ATTACK_BONUS),
       hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
       goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
       flatAttack,

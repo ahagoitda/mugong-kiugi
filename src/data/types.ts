@@ -152,6 +152,8 @@ export interface SaveData {
   expToNext: number;
   /** 보유 골드 */
   gold: number;
+  /** 보유 원보 */
+  gems?: number;
   hp: number;
   maxHp: number;
   stamina: number;

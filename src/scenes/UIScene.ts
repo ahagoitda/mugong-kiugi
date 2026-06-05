@@ -74,6 +74,17 @@ const GRADE_KO: Record<string, string> = {
   ULTIMATE: '절기',
 };
 
+const STORY_REGION_NAMES = [
+  '\uC785\uBB38\uD611',
+  '\uD608\uAD50\uB839',
+  '\uB9C8\uC6B4\uAD00',
+  '\uD751\uD48D\uACE1',
+  '\uCC9C\uB9C8\uB8E8',
+  '\uBE44\uC6D4\uC131',
+  '\uBB34\uADF9\uC804',
+  '\uD608\uB9C8\uAD81',
+] as const;
+
 const SKILL_NAME_KO: Record<string, string> = {
   samjae: '삼재검법',
   yukhap: '육합검',
@@ -139,6 +150,9 @@ export class UIScene extends Phaser.Scene {
     battle.events.on('player-state', this.updateHUD, this);
     battle.events.on('wave-clear', (wave: number) => this.showNotice(`${wave} ${UI.wave} ${UI.clear}`), this);
     battle.events.on('boss-clear', (wave: number) => this.showNotice(`${UI.boss} ${UI.clear} · ${wave} ${UI.wave}`), this);
+    battle.events.on('region-clear', (region: number, name: string, gold: number, gems: number) => {
+      this.showNotice(`${region}\uC9C0\uC5ED ${name} \uB3CC\uD30C! · +${gold}G · +${gems}${UI.gem}`);
+    }, this);
     battle.events.on('item-drop', (id: string) => this.showNotice(`${UI.martial} ${UI.acquired} · ${this.skillLabel(SKILL_DATABASE.get(id))}`), this);
     battle.events.on('level-up', (level: number) => this.showNotice(`${UI.levelUp} · Lv.${level}`), this);
 
@@ -619,11 +633,14 @@ export class UIScene extends Phaser.Scene {
     });
 
     const discipleCount = save.disciples?.length ?? 0;
+    const discipleBonus = Math.min(10, discipleCount) * 2;
     const recruitCost = 600 + discipleCount * 350;
-    const recruit = this.add.rectangle(W / 2, 735, 210, 46, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
+    const canRecruit = discipleCount < 10;
+    const recruit = this.add.rectangle(W / 2, 735, 210, 46, canRecruit ? 0x4a3215 : 0x1a1712).setStrokeStyle(1, canRecruit ? GOLD : 0x4b4132).setInteractive();
     recruit.on('pointerdown', () => this.recruitDisciple(recruitCost));
-    items.push(this.add.text(55, 700, `제자 ${discipleCount}명`, this.titleStyle(20)),
-      recruit, this.add.text(W / 2, 735, `모집 ${recruitCost}G`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
+    items.push(this.add.text(55, 700, `\uC81C\uC790 ${discipleCount}/10\uBA85`, this.titleStyle(20)),
+      this.add.text(55, 728, `\uACF5\uACA9\uB825 +${discipleBonus}%`, this.textStyle(15, '#d8c9aa')),
+      recruit, this.add.text(W / 2, 735, canRecruit ? `\uBAA8\uC9D1 ${recruitCost}G` : '\uCD5C\uB300 \uC81C\uC790', this.textStyle(14, canRecruit ? '#f0d493' : '#8f8778')).setOrigin(0.5));
     // 문파 장문인 일러스트 배치
     const npc = this.add.image(W - 95, 750, 'npc_master').setDisplaySize(180, 180).setDepth(702).setAlpha(0.85);
     items.push(npc);
@@ -634,7 +651,7 @@ export class UIScene extends Phaser.Scene {
     const stats = [
       ['영웅', '8 / 8'], ['무공', `${save.unlockedSkills.length} / ${SKILL_DATABASE.size}`],
       ['보스', `${save.defeatedBosses?.length ?? 0} / 8`], ['장비 세트', `${new Set((save.equipmentInventory ?? []).map(item => item.setId).filter(Boolean)).size} / 8`],
-      ['지역', `${save.storyRegion ?? 1} / 8`], ['일반 적', `${Math.min(24, Math.floor((save.totalKills ?? 0) / 10))} / 24`],
+      ['지역', `${STORY_REGION_NAMES[(save.storyRegion ?? 1) - 1] ?? `${save.storyRegion ?? 1}지역`} · ${save.storyRegion ?? 1} / 8`], ['총 플레이 시간', this.formatPlayTime(save.totalPlayTime ?? 0)],
     ];
     stats.forEach(([label, value], index) => {
       const x = 55 + (index % 2) * 245;
@@ -835,12 +852,19 @@ export class UIScene extends Phaser.Scene {
 
   private recruitDisciple(cost: number): void {
     const save = loadGame();
+    save.disciples = save.disciples ?? [];
+    if (save.disciples.length >= 10) return this.showNotice('\uC81C\uC790\uB294 \uCD5C\uB300 10\uBA85\uAE4C\uC9C0 \uBAA8\uC9D1\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4');
     if (save.gold < cost) return this.showNotice('금화가 부족합니다');
     save.gold -= cost;
-    save.disciples = save.disciples ?? [];
     save.disciples.push(`disciple_${Date.now()}_${save.disciples.length + 1}`);
     saveGame(save);
     this.openPanel('SECT');
+  }
+
+  private formatPlayTime(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours}\uC2DC\uAC04 ${minutes}\uBD84`;
   }
 
   private ensureDailyMission(save: ReturnType<typeof loadGame>): void {

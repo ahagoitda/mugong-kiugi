@@ -2112,6 +2112,7 @@ export class BattleScene extends Phaser.Scene {
       battleMode: this.battleMode,
       isBossWave: this.isBossWave,
       gold: save.gold,
+      gems: save.gems ?? 0,
       level: save.level,
       exp: save.exp,
       expToNext: save.expToNext,

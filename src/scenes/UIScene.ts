@@ -59,7 +59,7 @@ interface PlayerStatePayload {
   skills: { id: string; nameKo: string; cooldownRemaining: number; cooldown: number }[];
   dashCooldownRemaining: number; dashCooldown: number;
   killCount: number; waveNumber: number; battleMode: string; isBossWave: boolean;
-  gold: number; level: number; exp: number; expToNext: number;
+  gold: number; gems: number; level: number; exp: number; expToNext: number;
 }
 
 const PANEL_TITLES: Record<Panel, string> = {
@@ -134,6 +134,9 @@ export class UIScene extends Phaser.Scene {
   private expFill!: Phaser.GameObjects.Rectangle;
   private levelText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
+  private resourceGoldText!: Phaser.GameObjects.Text;
+  private gemText!: Phaser.GameObjects.Text;
+  private energyText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private modeText!: Phaser.GameObjects.Text;
   private modeButton!: Phaser.GameObjects.Arc;
@@ -213,21 +216,25 @@ export class UIScene extends Phaser.Scene {
   }
 
   private createTopResourceStrip(): void {
+    const save = loadGame();
     const resources = [
-      { x: 302, y: 20, icon: '\u25CE', text: UI.gold, color: 0xd4a74e },
-      { x: 394, y: 20, icon: '\u25C6', text: UI.gem, color: 0xffc85a },
-      { x: 486, y: 20, icon: '\u2726', text: UI.energy, color: 0x55a7ff },
+      { x: 302, y: 20, icon: '\u25CE', text: this.formatCompactNumber(save.gold), color: 0xd4a74e },
+      { x: 394, y: 20, icon: '\u25C6', text: this.formatCompactNumber(save.gems ?? 0), color: 0xffc85a },
+      { x: 486, y: 20, icon: '\u2726', text: '--/--', color: 0x55a7ff },
     ];
-    resources.forEach(({ x, y, icon, text, color }) => {
+    resources.forEach(({ x, y, icon, text, color }, index) => {
       this.add.rectangle(x, y, 82, 24, 0x0b0907, 0.86)
         .setStrokeStyle(1, 0x8d6b32)
         .setDepth(204);
       this.add.text(x - 26, y, icon, this.textStyle(15, `#${color.toString(16).padStart(6, '0')}`))
         .setOrigin(0.5)
         .setDepth(205);
-      this.add.text(x + 2, y, text, this.textStyle(12, '#d9caa8'))
+      const value = this.add.text(x + 5, y, text, this.textStyle(12, '#f1dfbc'))
         .setOrigin(0.5)
         .setDepth(205);
+      if (index === 0) this.resourceGoldText = value;
+      if (index === 1) this.gemText = value;
+      if (index === 2) this.energyText = value;
       this.add.text(x + 34, y, '+', this.titleStyle(17))
         .setOrigin(0.5)
         .setDepth(205);
@@ -566,6 +573,17 @@ export class UIScene extends Phaser.Scene {
         this.add.text(55, y + 16, `${effect} +${level * 2}%`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 120, y, `${cost} 금화`, this.textStyle(15, '#f0d493')).setOrigin(0.5));
     });
+
+    const supplyCost = 3;
+    const supplyGold = this.gemSupplyGold(save);
+    const canSupply = (save.gems ?? 0) >= supplyCost;
+    const supply = this.add.rectangle(W / 2, 540, 260, 54, canSupply ? 0x4a3215 : 0x1a1712)
+      .setStrokeStyle(1, canSupply ? GOLD : 0x4b4132)
+      .setInteractive();
+    supply.on('pointerdown', () => this.buyGoldSupply(supplyCost));
+    items.push(this.add.text(55, 506, '\uC6D0\uBCF4 \uBCF4\uAE09', this.titleStyle(20)),
+      this.add.text(55, 532, `+${supplyGold}\uAE08\uD654 · ${supplyCost}${UI.gem}`, this.textStyle(15, '#d8c9aa')),
+      supply, this.add.text(W / 2, 540, canSupply ? '\uC989\uC2DC \uBCF4\uAE09' : '\uC6D0\uBCF4 \uBD80\uC871', this.textStyle(15, canSupply ? '#f0d493' : '#8f8778')).setOrigin(0.5));
     // 점소이 일러스트 추가
     const npc = this.add.image(W - 120, 680, 'npc_jeomsoyi').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
     items.push(npc);
@@ -739,6 +757,9 @@ export class UIScene extends Phaser.Scene {
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
     this.levelText.setText(`Lv.${state.level}`);
     this.goldText.setText(`${state.gold} 금화`);
+    this.resourceGoldText?.setText(this.formatCompactNumber(state.gold));
+    this.gemText?.setText(this.formatCompactNumber(state.gems));
+    this.energyText?.setText(`${Math.floor(state.stamina)}/${state.maxStamina}`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
     const isAuto = state.battleMode === 'AUTO';
     this.modeText.setText(isAuto ? 'AUTO' : '수동');
@@ -834,6 +855,21 @@ export class UIScene extends Phaser.Scene {
     this.openPanel('TRAINING');
   }
 
+  private buyGoldSupply(gemCost: number): void {
+    const save = loadGame();
+    if ((save.gems ?? 0) < gemCost) return this.showNotice('\uC6D0\uBCF4\uAC00 \uBD80\uC871\uD569\uB2C8\uB2E4');
+    const gold = this.gemSupplyGold(save);
+    save.gems = (save.gems ?? 0) - gemCost;
+    save.gold += gold;
+    saveGame(save);
+    this.showNotice(`\uBCF4\uAE09 \uD68D\uB4DD · +${gold}G`);
+    this.openPanel('TRAINING');
+  }
+
+  private gemSupplyGold(save: ReturnType<typeof loadGame>): number {
+    return 1200 + Math.max(0, save.stageCleared) * 120 + Math.max(0, save.level - 1) * 80;
+  }
+
   private upgradeSect(key: string, cost: number): void {
     const save = loadGame();
     if (save.gold < cost) return this.showNotice('금화가 부족합니다');
@@ -910,6 +946,12 @@ export class UIScene extends Phaser.Scene {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     return `${hours}\uC2DC\uAC04 ${minutes}\uBD84`;
+  }
+
+  private formatCompactNumber(value: number): string {
+    if (value >= 1000000) return `${Math.floor(value / 100000) / 10}M`;
+    if (value >= 10000) return `${Math.floor(value / 100) / 10}K`;
+    return `${Math.floor(value)}`;
   }
 
   private ensureDailyMission(save: ReturnType<typeof loadGame>): void {

@@ -140,6 +140,7 @@ export class UIScene extends Phaser.Scene {
   private portraitImage!: Phaser.GameObjects.Image;
   private shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
   private tutorialOverlay: Phaser.GameObjects.Container | null = null;
+  private cachedRebirth = 0;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -167,9 +168,10 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setDepth(500).setStroke('#000000', 5).setAlpha(0);
 
     const reward = claimOfflineReward();
-    if (reward.minutes > 0) this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}`);
+    if (reward.minutes > 0) this.showNotice(`${UI.offline} ${reward.minutes}분 · +${fmtGold(reward.gold)}G · +${fmtGold(reward.exp)}EXP`);
 
     const saveData = loadGame();
+    this.cachedRebirth = saveData.rebirthCount ?? 0;
     if (!saveData.tutorialCompleted) {
       this.time.delayedCall(800, () => this.showTutorial(0));
     }
@@ -828,6 +830,7 @@ export class UIScene extends Phaser.Scene {
       save.trainingLevels = { attack: 0, hp: 0, gold: 0, speed: 0, stamina: 0, crit: 0 };
       save.stageCleared = 0;
       saveGame(save);
+      this.cachedRebirth = save.rebirthCount;
       items.push(overlay, box, msg, desc, yes, no);
       this.closePanel();
       soundSystem.play('level_up');
@@ -1021,7 +1024,7 @@ export class UIScene extends Phaser.Scene {
     this.hpFill.width = 220 * Phaser.Math.Clamp(state.hp / state.maxHp, 0, 1);
     this.spFill.width = 190 * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
-    this.levelText.setText(`Lv.${state.level}`);
+    this.levelText.setText(this.cachedRebirth > 0 ? `Lv.${state.level} ⬆${this.cachedRebirth}` : `Lv.${state.level}`);
     this.goldText.setText(`${fmtGold(state.gold)} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
     const isAuto = state.battleMode === 'AUTO';

@@ -195,6 +195,12 @@ export class BattleScene extends Phaser.Scene {
   private sessionGold = 0;
   private sessionExp = 0;
 
+  // HUD용 캐시 (매 프레임 localStorage 읽기 방지)
+  private hudGold = 0;
+  private hudLevel = 1;
+  private hudExp = 0;
+  private hudExpToNext = 30;
+
   // 플레이 시간 누적 (ms → 저장은 초 단위)
   private playTimeMs = 0;
   private playTimeSaveTimer = 0;
@@ -253,7 +259,7 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // 이펙트 풀 초기화
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 24; i++) {
       const fx = this.add.sprite(-100, -100, 'fx_slash_white');
       fx.setActive(false);
       fx.setVisible(false);
@@ -1037,6 +1043,10 @@ export class BattleScene extends Phaser.Scene {
       save.expToNext = getExpToNextLevel(save.level);
     }
     saveGame(save);
+    this.hudGold = save.gold;
+    this.hudLevel = save.level;
+    this.hudExp = save.exp;
+    this.hudExpToNext = save.expToNext;
 
     if (newRegion > prevRegion) {
       this.showRegionClear(newRegion);
@@ -1381,6 +1391,12 @@ export class BattleScene extends Phaser.Scene {
     }
 
     saveGame(save);
+
+    // HUD 캐시 갱신
+    this.hudGold = save.gold;
+    this.hudLevel = save.level;
+    this.hudExp = save.exp;
+    this.hudExpToNext = save.expToNext;
 
     if (leveledUp) {
       soundSystem.play('level_up');
@@ -2001,6 +2017,12 @@ export class BattleScene extends Phaser.Scene {
     const save = loadGame();
     const cls = this.playerClass;
 
+    // HUD 캐시 초기화
+    this.hudGold = save.gold;
+    this.hudLevel = save.level;
+    this.hudExp = save.exp;
+    this.hudExpToNext = save.expToNext;
+
     // 안전망: 장착 스킬 중 현재 계열과 다른 ACTIVE 스킬은 제외(구버전 세이브 교정).
     // MOVEMENT(회피기)는 계열 무관이라 유지.
     const valid = save.equippedSkills.filter(id => {
@@ -2219,7 +2241,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private emitState(): void {
-    const save = loadGame();
     const dashSkill = this.player.dashSkill;
     this.events.emit('player-state', {
       hp: this.player.hp,
@@ -2238,10 +2259,10 @@ export class BattleScene extends Phaser.Scene {
       waveNumber: this.waveNumber,
       battleMode: this.battleMode,
       isBossWave: this.isBossWave,
-      gold: save.gold,
-      level: save.level,
-      exp: save.exp,
-      expToNext: save.expToNext,
+      gold: this.hudGold,
+      level: this.hudLevel,
+      exp: this.hudExp,
+      expToNext: this.hudExpToNext,
     });
   }
 }

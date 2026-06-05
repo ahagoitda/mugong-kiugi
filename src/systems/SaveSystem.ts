@@ -207,8 +207,9 @@ export function claimOfflineReward(): { gold: number; exp: number; minutes: numb
   }
 
   const waveFactor = Math.max(1, save.stageCleared + 1);
-  const gold = Math.floor(minutes * (2 + waveFactor * 0.35));
-  const exp = Math.floor(minutes * (3 + waveFactor * 0.45));
+  const rebirthMul = 1 + (save.rebirthCount ?? 0) * 0.15;
+  const gold = Math.floor(minutes * (10 + waveFactor * 1.8) * rebirthMul);
+  const exp  = Math.floor(minutes * (15 + waveFactor * 2.2) * rebirthMul);
 
   save.gold += gold;
   save.exp += exp;

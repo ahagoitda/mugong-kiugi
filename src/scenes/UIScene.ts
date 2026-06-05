@@ -687,16 +687,20 @@ export class UIScene extends Phaser.Scene {
       let effect = '';
       if (key === 'hall') effect = ` (수련 +${(level - 1) * 1.2 | 0}%)`;
       if (key === 'forge') effect = ` (골드+${(level - 1) * 1 | 0}%·드롭↑)`;
+      if (key === 'library') effect = ` (연구 +${(level - 1) * 1.5 | 0}%·할인)`;
       items.push(this.add.text(55, y - 15, name, this.titleStyle(20)),
         this.add.text(55, y + 18, `시설 Lv.${level}${effect}`, this.textStyle(15, '#d8c9aa')),
         button, this.add.text(W - 115, y, `${cost} 금화`, this.textStyle(14, '#f0d493')).setOrigin(0.5));
     });
 
     items.push(this.add.text(55, 530, '계열 연구', this.titleStyle(22)));
+    const libraryLevel = save.sectFacilities?.library ?? 1;
+    const libDiscount = Math.min(0.2, (libraryLevel - 1) * 0.02); // 무경각: 연구 비용 할인
     (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[]).forEach((key, index) => {
       const level = save.sectResearch?.[key] ?? 0;
       const x = 65 + index * 115;
-      const cost = 220 * (level + 1);
+      const baseCost = 220 * (level + 1);
+      const cost = Math.max(50, Math.floor(baseCost * (1 - libDiscount)));
       const button = this.add.rectangle(x, 635, 88, 36, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive();
       button.on('pointerdown', () => this.upgradeResearch(key, cost));
       items.push(this.add.text(x, 585, `${CLASS_KO[key]}\nLv.${level}`, { ...this.textStyle(15, '#d4a74e'), align: 'center' }).setOrigin(0.5),
@@ -1000,8 +1004,15 @@ export class UIScene extends Phaser.Scene {
     const facilities = save.sectFacilities ?? {};
     const research = save.sectResearch ?? {};
     const facilityReady = ['hall', 'forge', 'library'].some(key => save.gold >= (facilities[key] ?? 1) * 250);
+    // 무경각 할인 반영한 연구 비용 체크
+    const libraryLevel = facilities.library ?? 1;
+    const libDiscount = Math.min(0.2, (libraryLevel - 1) * 0.02);
     const researchReady = (['SWORD', 'BLADE', 'FIST', 'SPEAR'] as CharacterClass[])
-      .some(key => save.gold >= 220 * ((research[key] ?? 0) + 1));
+      .some(key => {
+        const base = 220 * ((research[key] ?? 0) + 1);
+        const c = Math.max(50, Math.floor(base * (1 - libDiscount)));
+        return save.gold >= c;
+      });
     const discipleCount = save.disciples?.length ?? 0;
     const discipleReady = discipleCount < 10 && save.gold >= 600 + discipleCount * 350;
     return facilityReady || researchReady || discipleReady;
@@ -1051,17 +1062,19 @@ export class UIScene extends Phaser.Scene {
     const sets = equipmentSetBonus(equipped);
     const discipleBonus = Math.min(10, save.disciples?.length ?? 0) * 2;
     const classResearch = (research[this.charClass] ?? 0) * 2.5;
-    // 문파 시설 효과 반영 - 성장 요약에 실제 영향 표시 (hall + forge)
+    // 문파 시설 효과 반영 - 성장 요약에 실제 영향 표시 (hall + forge + library)
     const facilities = save.sectFacilities ?? {};
     const hall = Math.max(1, facilities.hall ?? 1);
     const forge = Math.max(1, facilities.forge ?? 1);
+    const library = Math.max(1, facilities.library ?? 1);
     const hallAtk = Math.round((hall - 1) * 1.2);
     const hallHp = Math.round((hall - 1) * 1.2);
     const forgeGold = Math.round((forge - 1) * 1);
+    const libResearch = Math.round((library - 1) * 1.5);
     return [
-      `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch + hallAtk}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2 + hallHp}%`,
+      `\uACF5\uACA9 +${(training.attack ?? 0) * 2 + discipleBonus + classResearch + hallAtk + libResearch}% · \uCCB4\uB825 +${(training.hp ?? 0) * 2 + hallHp}%`,
       `\uAE08\uD654 +${(training.gold ?? 0) * 2 + forgeGold}% · \uC138\uD2B8 \uACF5\uACA9 x${sets.attackMul.toFixed(2)}`,
-      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length} · \uB300\uC804${hall} \uB300\uC7A5${forge}`,
+      `\uC81C\uC790 ${save.disciples?.length ?? 0}/10 · \uC7A5\uBE44 ${equipped.length}/${EQUIPMENT_SLOTS.length} · \uB300\uC804${hall} \uB300\uC7A5${forge} \uBB34\uACBD${library}`,
     ];
   }
 

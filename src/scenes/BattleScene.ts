@@ -1980,9 +1980,11 @@ export class BattleScene extends Phaser.Scene {
     const forgeLevel = Math.max(1, facilities.forge ?? 1);
     const forgeGoldMul = 1 + (forgeLevel - 1) * 0.01; // 대장간: 금화 획득 추가
     const forgeFlat = (forgeLevel - 1) * 2;           // 대장간: 장비 유지/제작 플랫 보너스
+    const libraryLevel = Math.max(1, facilities.library ?? 1);
+    const libraryResearchMul = 1 + (libraryLevel - 1) * 0.015; // 무경각: 계열 연구 효과 증폭
 
     return {
-      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 * trainingMul + classResearch * 0.025 + disciples * DISCIPLE_ATTACK_BONUS + discipleExtra),
+      attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 * trainingMul + classResearch * 0.025 * libraryResearchMul + disciples * DISCIPLE_ATTACK_BONUS + discipleExtra),
       hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02 * trainingMul),
       goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02 * trainingMul) * forgeGoldMul,
       flatAttack: flatAttack + forgeFlat,

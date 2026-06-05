@@ -17,13 +17,7 @@ import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS, enhancedStats } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
-
-function fmtNum(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
+import { fmtNum } from '../utils/format';
 
 const BOSS_DIALOGUES: Record<string, string[]> = {
   boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
@@ -336,6 +330,20 @@ export class BattleScene extends Phaser.Scene {
         });
       });
     }
+  }
+
+  shutdown(): void {
+    this.events.off('enemy-attack', this.onEnemyAttack, this);
+    this.events.off('toggle-battle-mode', this.toggleBattleMode, this);
+    this.events.off('equip-changed', this.applySaveData, this);
+    this.events.off('use-skill', this.onUseSkill, this);
+    this.events.off('use-dash', this.onUseDash, this);
+    this.events.removeAllListeners('challenge-boss');
+    this.events.removeAllListeners('buff-changed');
+    this.tweens.killAll();
+    this.time.removeAllEvents();
+    if (this.playerAuraFeet) this.tweens.killTweensOf(this.playerAuraFeet);
+    this.destroyBossAura();
   }
 
   update(time: number, delta: number): void {
@@ -951,6 +959,8 @@ export class BattleScene extends Phaser.Scene {
   // ─── 웨이브 관리 ───
 
   private startWave(wave: number): void {
+    this.time.removeAllEvents();
+    this.statusEffects = [];
     this.waveNumber = wave;
     this.waveSpawned = 0;
     this.waveKilled = 0;

@@ -106,12 +106,12 @@ export function loadGame(): SaveData {
       return createDefaultSave();
     }
 
-    // 버전 마이그레이션 (v1 → v2)
+    // 버전 마이그레이션 (v1 → v4)
     if (parsed.version < CURRENT_VERSION) {
-      return migrateSave(parsed);
+      return sanitizeSave(migrateSave(parsed));
     }
 
-    return parsed;
+    return sanitizeSave(parsed);
   } catch {
     console.error('[SaveSystem] 로드 실패: 데이터 파싱 오류');
     return createDefaultSave();
@@ -129,20 +129,74 @@ export function deleteSave(): void {
   }
 }
 
+const VALID_EQUIPMENT_SLOTS = new Set(['WEAPON', 'ARMOR', 'HELM', 'BOOTS', 'ACCESSORY', 'RELIC']);
+const VALID_EQUIPMENT_GRADES = new Set(['COMMON', 'RARE', 'EPIC', 'LEGENDARY']);
+const VALID_BUFF_TYPES = new Set(['ATK_BOOST', 'GOLD_BOOST', 'EXP_BOOST']);
+
+function isValidEquipmentItem(item: unknown): boolean {
+  if (typeof item !== 'object' || item === null) return false;
+  const e = item as Record<string, unknown>;
+  return (
+    typeof e.id === 'string' && e.id.length > 0 && e.id.length < 64 &&
+    typeof e.name === 'string' && e.name.length <= 60 &&
+    typeof e.slot === 'string' && VALID_EQUIPMENT_SLOTS.has(e.slot) &&
+    typeof e.grade === 'string' && VALID_EQUIPMENT_GRADES.has(e.grade) &&
+    typeof e.attack === 'number' && isFinite(e.attack) && e.attack >= 0 && e.attack <= 2_000_000 &&
+    typeof e.hp === 'number' && isFinite(e.hp) && e.hp >= 0 && e.hp <= 100_000_000 &&
+    typeof e.bonus === 'number' && isFinite(e.bonus) && e.bonus >= 0 && e.bonus <= 1_000_000 &&
+    (e.enhance === undefined || (typeof e.enhance === 'number' && e.enhance >= 0 && e.enhance <= 10))
+  );
+}
+
+function isValidActiveBuff(buff: unknown): boolean {
+  if (typeof buff !== 'object' || buff === null) return false;
+  const b = buff as Record<string, unknown>;
+  return (
+    typeof b.type === 'string' && VALID_BUFF_TYPES.has(b.type) &&
+    typeof b.expiresAt === 'number' && isFinite(b.expiresAt) && b.expiresAt > 0
+  );
+}
+
+/**
+ * 로드된 세이브 데이터의 수치를 안전한 범위로 클램프합니다.
+ * 손상된 데이터나 치트 시도로부터 게임 상태를 보호합니다.
+ */
+function sanitizeSave(data: SaveData): SaveData {
+  data.level = Math.max(1, Math.min(100_000, Math.trunc(data.level)));
+  data.exp = Math.max(0, Math.trunc(data.exp));
+  data.maxHp = Math.max(1, Math.trunc(data.maxHp));
+  data.hp = Math.max(0, Math.min(data.maxHp, Math.trunc(data.hp)));
+  data.maxStamina = Math.max(1, Math.trunc(data.maxStamina));
+  data.stamina = Math.max(0, Math.min(data.maxStamina, Math.trunc(data.stamina)));
+  data.gold = Math.max(0, Math.trunc(data.gold ?? 0));
+  data.gems = Math.max(0, Math.trunc(data.gems ?? 0));
+  data.stageCleared = Math.max(0, Math.trunc(data.stageCleared));
+  data.totalPlayTime = Math.max(0, Math.trunc(data.totalPlayTime));
+  data.enhanceStones = Math.max(0, Math.trunc(data.enhanceStones ?? 0));
+  // 만료된 버프 및 구조 무효 버프 제거
+  const now = Date.now();
+  data.activeBuffs = (data.activeBuffs ?? []).filter(b => isValidActiveBuff(b) && b.expiresAt > now);
+  // 무효 장비 아이템 제거
+  data.equipmentInventory = (data.equipmentInventory ?? []).filter(isValidEquipmentItem);
+  // 인벤토리 수량 클램프 (음수 방지)
+  if (data.inventory) {
+    for (const key of Object.keys(data.inventory)) {
+      data.inventory[key] = Math.max(0, Math.trunc(data.inventory[key] ?? 0));
+    }
+  }
+  return data;
+}
+
 /**
  * 타입 가드: unknown 데이터가 유효한 SaveData인지 검증합니다.
- *
- * 이 함수는 외부에서 주입될 수 있는 악의적인 데이터를 차단하는
- * 방어적 프로그래밍의 핵심입니다.
- *
- * v1과 v2 모두 허용 (마이그레이션 대상 포함)
+ * 배열 내부 콘텐츠와 수치 범위까지 검증하여 악성 데이터 주입을 방어합니다.
  */
 function isValidSaveData(data: unknown): data is SaveData {
   if (typeof data !== 'object' || data === null) return false;
 
   const d = data as Record<string, unknown>;
 
-  return (
+  if (!(
     typeof d.version === 'number' &&
     typeof d.level === 'number' &&
     typeof d.exp === 'number' &&
@@ -152,12 +206,39 @@ function isValidSaveData(data: unknown): data is SaveData {
     typeof d.maxStamina === 'number' &&
     Array.isArray(d.equippedSkills) &&
     typeof d.equippedDash === 'string' &&
-    typeof d.inventory === 'object' &&
-    d.inventory !== null &&
+    typeof d.inventory === 'object' && d.inventory !== null &&
     Array.isArray(d.unlockedSkills) &&
     typeof d.stageCleared === 'number' &&
     typeof d.totalPlayTime === 'number'
-  );
+  )) return false;
+
+  // 수치 범위 검증
+  if (!isFinite(d.level as number) || (d.level as number) < 1) return false;
+  if (!isFinite(d.exp as number) || (d.exp as number) < 0) return false;
+  if (!isFinite(d.maxHp as number) || (d.maxHp as number) < 1) return false;
+  if (!isFinite(d.stageCleared as number) || (d.stageCleared as number) < 0) return false;
+
+  // 배열 원소 타입 검증
+  if (!(d.equippedSkills as unknown[]).every(s => typeof s === 'string')) return false;
+  if (!(d.unlockedSkills as unknown[]).every(s => typeof s === 'string')) return false;
+
+  // 장비 인벤토리 구조 검증
+  if (d.equipmentInventory !== undefined) {
+    if (!Array.isArray(d.equipmentInventory)) return false;
+    if (!(d.equipmentInventory as unknown[]).every(isValidEquipmentItem)) return false;
+  }
+
+  // 버프 구조 검증
+  if (d.activeBuffs !== undefined) {
+    if (!Array.isArray(d.activeBuffs)) return false;
+    if (!(d.activeBuffs as unknown[]).every(isValidActiveBuff)) return false;
+  }
+
+  // 인벤토리 값 타입 검증 (키: string, 값: number)
+  const inv = d.inventory as Record<string, unknown>;
+  if (!Object.values(inv).every(v => typeof v === 'number')) return false;
+
+  return true;
 }
 
 /**

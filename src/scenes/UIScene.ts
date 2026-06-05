@@ -10,7 +10,10 @@ import { skillCardKey } from '../data/assets';
 import { claimOfflineReward, loadGame, saveGame, deleteSave } from '../systems/SaveSystem';
 import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
 import { soundSystem } from '../systems/SoundSystem';
-import { bgmSystem } from '../systems/BgmSystem';
+import { fmtNum as fmtGold } from '../utils/format';
+import { buildMissions } from './panels/MissionsPanel';
+import { buildSettings } from './panels/SettingsPanel';
+import { buildShop } from './panels/ShopPanel';
 
 const W = 540;
 const H = 960;
@@ -52,13 +55,6 @@ interface PlayerStatePayload {
   killCount: number; waveNumber: number; battleMode: string; isBossWave: boolean;
   gold: number; level: number; exp: number; expToNext: number;
   activeBuffs?: { atk: boolean; gold: boolean; exp: boolean };
-}
-
-function fmtGold(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }
 
 const PANEL_TITLES: Record<Panel, string> = {
@@ -119,7 +115,7 @@ export class UIScene extends Phaser.Scene {
   private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
   private codexTab: 'SKILLS' | 'ENEMIES' | 'BOSSES' = 'SKILLS';
-  private missionsTab: 'DAILY' | 'ACHIEVEMENT' = 'DAILY';
+  missionsTab: 'DAILY' | 'ACHIEVEMENT' = 'DAILY';
   private hpFill!: Phaser.GameObjects.Rectangle;
   private spFill!: Phaser.GameObjects.Rectangle;
   private expFill!: Phaser.GameObjects.Rectangle;
@@ -139,7 +135,7 @@ export class UIScene extends Phaser.Scene {
   private bossNode!: Phaser.GameObjects.Star;
   private notif!: Phaser.GameObjects.Text;
   private portraitImage!: Phaser.GameObjects.Image;
-  private shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
+  shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
   private tutorialOverlay: Phaser.GameObjects.Container | null = null;
   private cachedRebirth = 0;
   private buffIcons: Phaser.GameObjects.Text[] = [];
@@ -468,7 +464,7 @@ export class UIScene extends Phaser.Scene {
     });
   }
 
-  private openPanel(panel: Panel): void {
+  openPanel(panel: Panel): void {
     this.overlay?.destroy(true);
     const items: Phaser.GameObjects.GameObject[] = [];
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.82).setInteractive();
@@ -482,9 +478,9 @@ export class UIScene extends Phaser.Scene {
     if (panel === 'EQUIPMENT') this.buildEquipment(items);
     if (panel === 'SECT') this.buildSect(items);
     if (panel === 'CODEX') this.buildCodex(items);
-    if (panel === 'MISSIONS') this.buildMissions(items);
-    if (panel === 'SETTINGS') this.buildSettings(items);
-    if (panel === 'SHOP') this.buildShop(items);
+    if (panel === 'MISSIONS') buildMissions(this, items);
+    if (panel === 'SETTINGS') buildSettings(this, items);
+    if (panel === 'SHOP') buildShop(this, items);
     this.overlay = this.add.container(0, 0, items).setDepth(700);
   }
 
@@ -1057,122 +1053,6 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
-  private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
-    const save = loadGame();
-    this.ensureDailyMission(save);
-    const mp = save.missionProgress ?? {};
-    const claims = save.missionClaims ?? [];
-
-    // ─── 탭 바 ───
-    const TABS: [typeof this.missionsTab, string][] = [['DAILY', '일일 임무'], ['ACHIEVEMENT', '업적']];
-    TABS.forEach(([tab, label], i) => {
-      const x = 135 + i * 178;
-      const isActive = this.missionsTab === tab;
-      const btn = this.add.rectangle(x, 103, 158, 38, isActive ? 0x5a3d18 : 0x17120d)
-        .setStrokeStyle(isActive ? 2 : 1, isActive ? GOLD : 0x60451f).setInteractive().setDepth(702);
-      btn.on('pointerdown', () => { this.missionsTab = tab; this.openPanel('MISSIONS'); });
-      items.push(btn, this.add.text(x, 103, label, this.textStyle(15, isActive ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(703));
-    });
-
-    if (this.missionsTab === 'DAILY') {
-      // 일일 임무 리셋 날짜 표시
-      items.push(this.add.text(W / 2, 137, `자정에 초기화 · ${save.dailyMissionDate ?? '오늘'}`, this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
-
-      const daily = [
-        { id: 'daily_kill',      name: '적 30명 처치',       prog: mp.daily_kill ?? 0,      target: 30,  reward: 500  },
-        { id: 'daily_waves',     name: '웨이브 5회 클리어',  prog: mp.daily_waves ?? 0,     target: 5,   reward: 400  },
-        { id: 'daily_boss',      name: '보스 1회 처치',       prog: mp.daily_boss ?? 0,      target: 1,   reward: 800  },
-        { id: 'daily_gold',      name: '금화 500개 수집',     prog: mp.daily_gold ?? 0,      target: 500, reward: 300  },
-        { id: 'daily_synthesis', name: '합성 1회 성공',       prog: mp.daily_synthesis ?? 0, target: 1,   reward: 400  },
-      ];
-
-      daily.forEach(({ id, name, prog, target, reward }, i) => {
-        const y = 158 + i * 128;
-        const claimed = claims.includes(id);
-        const done = prog >= target;
-        const canClaim = done && !claimed;
-        const ratio = Math.min(1, prog / target);
-        const cardColor = claimed ? 0x131e0e : canClaim ? 0x1e2010 : 0x110f0c;
-        const borderColor = claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528;
-        items.push(
-          this.add.rectangle(W / 2, y + 46, W - 52, 110, cardColor, 1)
-            .setStrokeStyle(2, borderColor, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
-          this.add.text(56, y + 18, name, this.titleStyle(18)).setDepth(703),
-          this.add.text(56, y + 44, `보상  ${reward}G`, this.textStyle(13, '#d4a74e')).setDepth(703),
-          // 진행 바
-          this.add.rectangle(56, y + 68, W - 108, 10, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
-          this.add.rectangle(56, y + 68, Math.max(4, (W - 108) * ratio), 10, canClaim || claimed ? 0x83d68a : GOLD, 0.85).setOrigin(0, 0.5).setDepth(704),
-          this.add.text(56, y + 87, `${Math.min(prog, target)} / ${target}`, this.textStyle(12, '#8a7d6a')).setDepth(703),
-        );
-        const btn = this.add.rectangle(W - 95, y + 65, 120, 38, canClaim ? 0x4a3215 : 0x17120d)
-          .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
-        btn.on('pointerdown', () => this.claimMission(id, canClaim));
-        items.push(btn, this.add.text(W - 95, y + 65, claimed ? '수령 완료' : canClaim ? '보상 수령' : '진행 중',
-          this.textStyle(13, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#666666')).setOrigin(0.5).setDepth(704));
-      });
-    } else {
-      // 업적
-      items.push(this.add.text(W / 2, 137, '영구적으로 달성되는 업적입니다', this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
-
-      const totalKills = save.totalKills ?? 0;
-      const bossCount = save.defeatedBosses?.length ?? 0;
-      const skillCount = save.unlockedSkills.length;
-      const eqCount = save.equipmentInventory?.length ?? 0;
-      const waveMax = save.stageCleared ?? 0;
-      const rebirths = save.rebirthCount ?? 0;
-
-      // 업적 목록: id, 이름, 설명, 진행, 목표, 골드 보상, 젬 보상
-      type AchDef = { id: string; name: string; desc: string; prog: number; target: number; reward: number; gems: number };
-      const achievements: AchDef[] = [
-        { id: 'ach_kill100',   name: '첫 번째 백인도',  desc: '적 100명 처치',    prog: totalKills, target: 100,   reward: 1000,  gems: 2  },
-        { id: 'ach_kill500',   name: '오백인도',        desc: '적 500명 처치',    prog: totalKills, target: 500,   reward: 2500,  gems: 5  },
-        { id: 'ach_kill2000',  name: '이천인도',        desc: '적 2000명 처치',   prog: totalKills, target: 2000,  reward: 5000,  gems: 10 },
-        { id: 'ach_kill10000', name: '만인지적(萬人之敵)',desc: '적 10000명 처치', prog: totalKills, target: 10000, reward: 20000, gems: 30 },
-        { id: 'ach_boss1',     name: '혈교 첫 타도',   desc: '보스 1회 격파',    prog: bossCount,  target: 1,     reward: 1500,  gems: 5  },
-        { id: 'ach_boss4',     name: '사악한 사천왕',  desc: '보스 4회 격파',    prog: bossCount,  target: 4,     reward: 3000,  gems: 10 },
-        { id: 'ach_boss8',     name: '혈교 완전 소탕', desc: '보스 8회 모두 격파',prog: bossCount,  target: 8,     reward: 10000, gems: 50 },
-        { id: 'ach_wave10',    name: '초보 도전자',    desc: '10웨이브 돌파',    prog: waveMax,    target: 10,    reward: 800,   gems: 2  },
-        { id: 'ach_wave30',    name: '혈교 정예',      desc: '30웨이브 돌파',    prog: waveMax,    target: 30,    reward: 3000,  gems: 8  },
-        { id: 'ach_wave50',    name: '혈교 중견',      desc: '50웨이브 돌파',    prog: waveMax,    target: 50,    reward: 8000,  gems: 20 },
-        { id: 'ach_lvl10',     name: '초입 경지',      desc: '레벨 10 달성',    prog: save.level, target: 10,    reward: 1000,  gems: 3  },
-        { id: 'ach_lvl30',     name: '화경(化境) 돌입',desc: '레벨 30 달성',    prog: save.level, target: 30,    reward: 5000,  gems: 10 },
-        { id: 'ach_lvl50',     name: '고수 입문',      desc: '레벨 50 달성',    prog: save.level, target: 50,    reward: 10000, gems: 20 },
-        { id: 'ach_lvl100',    name: '초절정 경지',    desc: '레벨 100 달성',   prog: save.level, target: 100,   reward: 30000, gems: 50 },
-        { id: 'ach_rebirth1',  name: '환생자',         desc: '환생 1회',         prog: rebirths,   target: 1,     reward: 5000,  gems: 15 },
-        { id: 'ach_rebirth3',  name: '삼생삼세',       desc: '환생 3회',         prog: rebirths,   target: 3,     reward: 15000, gems: 40 },
-        { id: 'ach_skill8',    name: '팔방진인',       desc: '무공 8개 습득',   prog: skillCount, target: 8,     reward: 2000,  gems: 5  },
-        { id: 'ach_skill16',   name: '무공 종사',      desc: '무공 16개 습득',  prog: skillCount, target: 16,    reward: 6000,  gems: 15 },
-        { id: 'ach_equip10',   name: '무장 강화',      desc: '장비 10개 수집',  prog: eqCount,    target: 10,    reward: 1500,  gems: 3  },
-        { id: 'ach_equip30',   name: '병기 수집가',    desc: '장비 30개 수집',  prog: eqCount,    target: 30,    reward: 4000,  gems: 8  },
-      ];
-
-      const claimedCount = achievements.filter(a => claims.includes(a.id)).length;
-      items.push(this.add.text(W / 2, 137, `달성: ${claimedCount} / ${achievements.length}`, this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
-
-      achievements.forEach(({ id, name, desc, prog, target, reward, gems: gemReward }, i) => {
-        const y = 152 + i * 78;
-        const claimed = claims.includes(id);
-        const canClaim = prog >= target && !claimed;
-        const ratio = Math.min(1, prog / target);
-        const rewardStr = gemReward > 0 ? `${reward}G + ${gemReward}💎` : `${reward}G`;
-        items.push(
-          this.add.rectangle(W / 2, y + 30, W - 52, 64, claimed ? 0x131e0e : 0x110f0c, 1)
-            .setStrokeStyle(1, claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
-          this.add.text(56, y + 14, name, this.textStyle(14, claimed ? '#83d68a' : canClaim ? '#e8c36a' : '#8a7d6a')).setDepth(703),
-          this.add.text(56, y + 34, `${desc}  ·  ${rewardStr}`, this.textStyle(11, '#7a6e58')).setDepth(703),
-          this.add.rectangle(56, y + 52, 240, 5, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
-          this.add.rectangle(56, y + 52, Math.max(3, 240 * ratio), 5, canClaim || claimed ? 0x83d68a : GOLD, 0.8).setOrigin(0, 0.5).setDepth(704),
-          this.add.text(304, y + 52, `${Math.min(prog, target)}/${target}`, this.textStyle(10, '#5a5048')).setOrigin(0, 0.5).setDepth(703),
-        );
-        const btn = this.add.rectangle(W - 88, y + 30, 110, 34, canClaim ? 0x4a3215 : 0x17120d)
-          .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
-        btn.on('pointerdown', () => this.claimMission(id, canClaim, gemReward));
-        items.push(btn, this.add.text(W - 88, y + 30, claimed ? '달성 ✓' : canClaim ? '수령' : `${Math.floor(ratio * 100)}%`,
-          this.textStyle(12, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#555555')).setOrigin(0.5).setDepth(704));
-      });
-    }
-  }
-
   private updateHUD(state: PlayerStatePayload): void {
     this.hpFill.width = 220 * Phaser.Math.Clamp(state.hp / state.maxHp, 0, 1);
     this.spFill.width = 190 * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
@@ -1397,7 +1277,7 @@ export class UIScene extends Phaser.Scene {
     this.openPanel('SECT');
   }
 
-  private ensureDailyMission(save: ReturnType<typeof loadGame>): void {
+  ensureDailyMission(save: ReturnType<typeof loadGame>): void {
     const today = new Date().toLocaleDateString('en-CA');
     if (save.dailyMissionDate === today) return;
     save.dailyMissionDate = today;
@@ -1411,7 +1291,7 @@ export class UIScene extends Phaser.Scene {
     saveGame(save);
   }
 
-  private claimMission(id: string, can: boolean, bonusGems = 0): void {
+  claimMission(id: string, can: boolean, bonusGems = 0): void {
     if (!can) return;
     const save = loadGame();
     save.missionClaims = save.missionClaims ?? [];
@@ -1436,114 +1316,12 @@ export class UIScene extends Phaser.Scene {
     this.openPanel('MISSIONS');
   }
 
-  private closePanel(): void {
+  closePanel(): void {
     this.overlay?.destroy(true);
     this.overlay = null;
   }
 
-  // ─── Settings Panel ───────────────────────────────────────────────────────
-
-  private buildSettings(items: Phaser.GameObjects.GameObject[]): void {
-    const save = loadGame();
-    let bgmVol = bgmSystem.volume;
-    let sfxVol = soundSystem.volume;
-
-    // 전투력 계산 (간략 표시)
-    const training = save.trainingLevels ?? {};
-    const rebirthMul = 1 + (save.rebirthCount ?? 0) * 0.15;
-    const atkMul = rebirthMul * (1 + (training.attack ?? 0) * 0.02);
-    const hpMul  = rebirthMul * (1 + (training.hp ?? 0) * 0.02);
-    const lv = save.level;
-    const approxAtk = Math.round((10 + (lv - 1) * 0.5) * atkMul * 10);
-    const approxHp  = Math.round(100 * hpMul * (1 + (lv - 1) * 0.05));
-    const powerScore = Math.round(approxAtk * 0.7 + approxHp * 0.3 + (save.stageCleared ?? 0) * 8 + lv * 25);
-    items.push(
-      this.add.rectangle(W / 2, 100, W - 60, 48, 0x1a1206).setStrokeStyle(1, 0x8b6932).setDepth(703),
-      this.add.text(W / 2, 92, '전투력', this.textStyle(13, '#a08060')).setOrigin(0.5).setDepth(704),
-      this.add.text(W / 2, 112, fmtGold(powerScore), this.titleStyle(22)).setOrigin(0.5).setDepth(704),
-    );
-
-    const row = (y: number, label: string, value: number, onMinus: () => void, onPlus: () => void) => {
-      items.push(
-        this.add.text(55, y, label, this.titleStyle(18)).setDepth(703),
-      );
-      const valText = this.add.text(W / 2, y + 2, `${Math.round(value * 100)}%`,
-        this.textStyle(17, '#e8c36a')).setOrigin(0.5).setDepth(703);
-      items.push(valText);
-      const minus = this.add.text(W / 2 - 70, y, '◀', this.titleStyle(20)).setOrigin(0.5)
-        .setInteractive().setDepth(703);
-      const plus  = this.add.text(W / 2 + 70, y, '▶', this.titleStyle(20)).setOrigin(0.5)
-        .setInteractive().setDepth(703);
-      minus.on('pointerdown', () => { onMinus(); });
-      plus.on('pointerdown', () => { onPlus(); });
-      items.push(minus, plus);
-      return valText;
-    };
-
-    const bgmText = row(175, '배경음악', bgmVol,
-      () => { bgmVol = Math.max(0, bgmVol - 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
-      () => { bgmVol = Math.min(1, bgmVol + 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
-    );
-    const sfxText = row(240, '효과음', sfxVol,
-      () => { sfxVol = Math.max(0, sfxVol - 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
-      () => { sfxVol = Math.min(1, sfxVol + 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
-    );
-
-    // Divider
-    items.push(this.add.rectangle(W / 2, 305, W - 60, 1, 0x60451f).setDepth(703));
-
-    // Tutorial restart
-    const tutBtn = this.add.rectangle(W / 2, 355, 300, 48, 0x2a1f0e).setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
-    const tutLabel = this.add.text(W / 2, 355, '튜토리얼 다시 보기', this.textStyle(16, '#e8c36a')).setOrigin(0.5).setDepth(704);
-    tutBtn.on('pointerdown', () => {
-      this.closePanel();
-      this.time.delayedCall(100, () => this.showTutorial(0));
-    });
-    items.push(tutBtn, tutLabel);
-
-    // Reset save
-    const resetBtn = this.add.rectangle(W / 2, 435, 300, 48, 0x2a1f0e).setStrokeStyle(1, 0x9c3b28).setInteractive().setDepth(703);
-    const resetLabel = this.add.text(W / 2, 435, '세이브 초기화', this.textStyle(16, '#e05050')).setOrigin(0.5).setDepth(704);
-    resetBtn.on('pointerdown', () => this.confirmReset(items));
-    items.push(resetBtn, resetLabel);
-
-    // Play time + version
-    const totalSec = save.totalPlayTime ?? 0;
-    const hours = Math.floor(totalSec / 3600);
-    const mins  = Math.floor((totalSec % 3600) / 60);
-    const playTimeStr = hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`;
-    items.push(
-      this.add.text(W / 2, 503, `총 플레이: ${playTimeStr}`, this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703),
-      this.add.text(W / 2, 528, '무공키우기 v1.0.0', this.textStyle(11, '#5a4a38')).setOrigin(0.5).setDepth(703),
-    );
-
-    // 기록 섹션
-    items.push(
-      this.add.rectangle(W / 2, 566, W - 60, 1, 0x60451f).setDepth(703),
-      this.add.text(W / 2, 586, '무림 기록', this.titleStyle(17)).setOrigin(0.5).setDepth(703),
-    );
-    const statsLeft = 55;
-    const statsRight = W / 2 + 20;
-    const missionOngoing = (save.discipleMissionEnd ?? 0) > Date.now();
-    const statEntries: [number, number, string, string][] = [
-      [statsLeft,  616, '최고 웨이브', `${save.stageCleared}웨이브`],
-      [statsRight, 616, '총 처치',     `${fmtGold(save.totalKills ?? 0)}명`],
-      [statsLeft,  652, '보스 격파',   `${save.defeatedBosses?.length ?? 0} / 8`],
-      [statsRight, 652, '환생',        `${save.rebirthCount ?? 0}회`],
-      [statsLeft,  688, '해금 스킬',   `${save.unlockedSkills?.length ?? 0}종`],
-      [statsRight, 688, '장비 보유',   `${save.equipmentInventory?.length ?? 0}개`],
-      [statsLeft,  724, '강화석',      `🔮 ${save.enhanceStones ?? 0}개`],
-      [statsRight, 724, '제자 파견',   missionOngoing ? '파견 중' : `${save.disciples?.length ?? 0}명 대기`],
-    ];
-    for (const [x, y, label, val] of statEntries) {
-      items.push(
-        this.add.text(x, y, label, this.textStyle(13, '#7a6a50')).setDepth(703),
-        this.add.text(x, y + 20, val, this.textStyle(15, '#e8c36a')).setDepth(703),
-      );
-    }
-  }
-
-  private confirmReset(items: Phaser.GameObjects.GameObject[]): void {
+  confirmReset(items: Phaser.GameObjects.GameObject[]): void {
     const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(800);
     const box = this.add.rectangle(W / 2, H / 2, 380, 220, 0x110c07).setStrokeStyle(2, 0x9c3b28).setDepth(801);
     const msg = this.add.text(W / 2, H / 2 - 60, '정말 초기화하시겠습니까?\n모든 진행이 삭제됩니다.', {
@@ -1564,168 +1342,7 @@ export class UIScene extends Phaser.Scene {
     items.push(overlay, box, msg, yes, no);
   }
 
-  // ─── Shop Panel ───────────────────────────────────────────────────────────
-
-  private buildShop(items: Phaser.GameObjects.GameObject[]): void {
-    const save = loadGame();
-    const today = new Date().toLocaleDateString('en-CA');
-    const TABS: ['DAILY' | 'SKILLS' | 'GEMS', string][] = [['DAILY', '일일상점'], ['SKILLS', '무공구매'], ['GEMS', '원보']];
-
-    TABS.forEach(([tab, label], i) => {
-      const x = 90 + i * 130;
-      const btn = this.add.rectangle(x, 115, 115, 36, this.shopTab === tab ? 0x4a3520 : 0x1e1409)
-        .setStrokeStyle(1, this.shopTab === tab ? GOLD : 0x60451f).setInteractive().setDepth(703);
-      const txt = this.add.text(x, 115, label, this.textStyle(14, this.shopTab === tab ? '#e8c36a' : '#8a7a60'))
-        .setOrigin(0.5).setDepth(704);
-      btn.on('pointerdown', () => {
-        this.shopTab = tab;
-        this.closePanel();
-        this.openPanel('SHOP');
-      });
-      items.push(btn, txt);
-    });
-
-    const contentY = 150;
-
-    if (this.shopTab === 'DAILY') {
-      const purchased = save.shopLastReset === today ? (save.shopDailyPurchased ?? []) : [];
-      const dailyItems: Array<{ id: string; name: string; cost: number; reward: string }> = [
-        { id: 'daily_gold_sm', name: '소 금괴', cost: 10, reward: '금화 500' },
-        { id: 'daily_gold_lg', name: '대 금괴', cost: 50, reward: '금화 3000' },
-        { id: 'daily_exp_sm', name: '수련서 (소)', cost: 15, reward: 'EXP 2000' },
-        { id: 'daily_exp_lg', name: '수련서 (대)', cost: 80, reward: 'EXP 15000' },
-        { id: 'daily_skill_scroll', name: '무공 비급', cost: 30, reward: '무공 해금 1회' },
-      ];
-
-      items.push(this.add.text(W / 2, contentY + 10, `일일 초기화: ${today}`, this.textStyle(12, '#7a6a50')).setOrigin(0.5).setDepth(703));
-
-      dailyItems.forEach((item, i) => {
-        const y = contentY + 55 + i * 100;
-        const bought = purchased.includes(item.id);
-        const card = this.add.rectangle(W / 2, y, W - 60, 86, bought ? 0x111111 : 0x1e1409)
-          .setStrokeStyle(1, bought ? 0x333333 : 0x60451f).setDepth(703);
-        const name = this.add.text(80, y - 20, item.name, this.titleStyle(16)).setDepth(704);
-        const reward = this.add.text(80, y + 5, item.reward, this.textStyle(13, '#a0e080')).setDepth(704);
-        const costTxt = this.add.text(W - 120, y - 20, `💎 ${item.cost}`, this.textStyle(14, '#a0c8ff')).setDepth(704);
-        const buyBtn = this.add.rectangle(W - 100, y + 15, 90, 30, bought ? 0x333333 : 0x2d4d1e)
-          .setStrokeStyle(1, bought ? 0x444444 : 0x5a9d2f).setInteractive().setDepth(703);
-        const buyTxt = this.add.text(W - 100, y + 15, bought ? '구매완료' : '구매', this.textStyle(13, bought ? '#555555' : '#a0e080'))
-          .setOrigin(0.5).setDepth(704);
-        if (!bought) {
-          buyBtn.on('pointerdown', () => {
-            const gems = save.gems ?? 0;
-            if (gems < item.cost) { this.showNotice('원보가 부족합니다'); return; }
-            save.gems = gems - item.cost;
-            if (item.id === 'daily_gold_sm') save.gold += 500;
-            else if (item.id === 'daily_gold_lg') save.gold += 3000;
-            else if (item.id === 'daily_exp_sm') save.exp += 2000;
-            else if (item.id === 'daily_exp_lg') save.exp += 15000;
-            else if (item.id === 'daily_skill_scroll') {
-              const locked = [...SKILL_DATABASE.values()].filter(s => !save.unlockedSkills.includes(s.id));
-              if (locked.length > 0) {
-                const random = locked[Math.floor(Math.random() * locked.length)];
-                save.unlockedSkills.push(random.id);
-                save.inventory[random.id] = (save.inventory[random.id] ?? 0) + 1;
-              }
-            }
-            save.shopLastReset = today;
-            save.shopDailyPurchased = [...purchased, item.id];
-            saveGame(save);
-            soundSystem.play('synth_ok');
-            this.closePanel();
-            this.openPanel('SHOP');
-          });
-        }
-        items.push(card, name, reward, costTxt, buyBtn, buyTxt);
-      });
-    } else if (this.shopTab === 'SKILLS') {
-      const grades: Array<{ grade: string; label: string; cost: number }> = [
-        { grade: 'LOW',      label: '하급 무공 비급',  cost: 20  },
-        { grade: 'MID',      label: '중급 무공 비급',  cost: 80  },
-        { grade: 'HIGH',     label: '상급 무공 비급',  cost: 250 },
-        { grade: 'ULTIMATE', label: '절기 무공 비급',  cost: 800 },
-      ];
-      items.push(this.add.text(W / 2, contentY + 10, '원보로 무공 비급 구매', this.textStyle(14, '#a0a090')).setOrigin(0.5).setDepth(703));
-      grades.forEach((g, i) => {
-        const y = contentY + 70 + i * 110;
-        const color = this.skillGradeColor(g.grade as SkillData['grade']);
-        const colorHex = `#${color.toString(16).padStart(6, '0')}`;
-        const card = this.add.rectangle(W / 2, y, W - 60, 94, 0x1e1409).setStrokeStyle(2, color).setDepth(703);
-        const lbl = this.add.text(80, y - 22, g.label, { ...this.titleStyle(17), color: colorHex }).setDepth(704);
-        const sub = this.add.text(80, y + 4, '무작위 해당 등급 무공 해금', this.textStyle(13, '#a0a090')).setDepth(704);
-        const cost = this.add.text(W - 115, y - 22, `💎 ${g.cost}`, this.textStyle(14, '#a0c8ff')).setDepth(704);
-        const btn = this.add.rectangle(W - 100, y + 18, 90, 30, 0x2d4d1e).setStrokeStyle(1, 0x5a9d2f).setInteractive().setDepth(703);
-        const btnTxt = this.add.text(W - 100, y + 18, '구매', this.textStyle(13, '#a0e080')).setOrigin(0.5).setDepth(704);
-        btn.on('pointerdown', () => {
-          const gems = save.gems ?? 0;
-          if (gems < g.cost) { this.showNotice('원보가 부족합니다'); return; }
-          const pool = [...SKILL_DATABASE.values()].filter(s => s.grade === g.grade && !save.unlockedSkills.includes(s.id));
-          if (pool.length === 0) { this.showNotice('해금할 무공이 없습니다'); return; }
-          const skill = pool[Math.floor(Math.random() * pool.length)];
-          save.gems = gems - g.cost;
-          save.unlockedSkills.push(skill.id);
-          save.inventory[skill.id] = (save.inventory[skill.id] ?? 0) + 1;
-          saveGame(save);
-          soundSystem.play('synth_ok');
-          this.showNotice(`${skill.nameKo} 획득!`);
-          this.closePanel();
-          this.openPanel('SHOP');
-        });
-        items.push(card, lbl, sub, cost, btn, btnTxt);
-      });
-    } else {
-      // GEMS tab
-      const gems = save.gems ?? 0;
-      items.push(
-        this.add.text(W / 2, contentY + 10, `보유 원보: 💎 ${gems}`, this.titleStyle(18)).setOrigin(0.5).setDepth(703),
-        this.add.text(W / 2, contentY + 46, '(매일 무료 원보 지급 예정)', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703),
-      );
-      const freeKey = `gem_free_${today}`;
-      const gotFree = (save.shopDailyPurchased ?? []).includes(freeKey);
-      const freeBtn = this.add.rectangle(W / 2, contentY + 100, 260, 52, gotFree ? 0x111111 : 0x1a2d0e)
-        .setStrokeStyle(1, gotFree ? 0x333333 : GOLD).setInteractive().setDepth(703);
-      const freeTxt = this.add.text(W / 2, contentY + 100, gotFree ? '오늘 이미 수령함' : '💎 무료 원보 10개 받기', this.textStyle(15, gotFree ? '#555' : '#a0c8ff'))
-        .setOrigin(0.5).setDepth(704);
-      if (!gotFree) {
-        freeBtn.on('pointerdown', () => {
-          save.gems = (save.gems ?? 0) + 10;
-          save.shopLastReset = today;
-          save.shopDailyPurchased = [...(save.shopDailyPurchased ?? []), freeKey];
-          saveGame(save);
-          soundSystem.play('synth_ok');
-          this.showNotice('💎 원보 10개 획득!');
-          this.closePanel();
-          this.openPanel('SHOP');
-        });
-      }
-      items.push(freeBtn, freeTxt);
-      items.push(this.add.text(W / 2, contentY + 160, '시간 제한 버프', this.titleStyle(16)).setOrigin(0.5).setDepth(703));
-      const now = Date.now();
-      const BUFF_DEFS = [
-        { type: 'ATK_BOOST',  label: '⚔ 공격력 ×1.5', desc: '30분간 공격력 1.5배', cost: 30, color: '#ff9070' },
-        { type: 'GOLD_BOOST', label: '💰 금화 ×1.5',   desc: '30분간 금화 획득 1.5배', cost: 20, color: '#ffd740' },
-        { type: 'EXP_BOOST',  label: '✦ 경험치 ×1.5', desc: '30분간 경험치 1.5배',    cost: 20, color: '#88ddff' },
-      ] as const;
-      BUFF_DEFS.forEach(({ type, label, desc, cost: bCost, color }, i) => {
-        const by = contentY + 200 + i * 88;
-        const active = (save.activeBuffs ?? []).some(b => b.type === type && b.expiresAt > now);
-        const canBuy = (save.gems ?? 0) >= bCost && !active;
-        const card = this.add.rectangle(W / 2, by, W - 80, 72, active ? 0x1a2d1a : 0x17120d)
-          .setStrokeStyle(1, active ? 0x66cc66 : GOLD).setDepth(703);
-        items.push(card,
-          this.add.text(80, by - 14, label, this.textStyle(16, color)).setDepth(704),
-          this.add.text(80, by + 10, active ? '✓ 활성 중' : desc, this.textStyle(12, active ? '#66cc66' : '#7a6a50')).setDepth(704));
-        if (!active) {
-          const bBtn = this.add.rectangle(W - 90, by, 80, 38, canBuy ? 0x3a2a10 : 0x1a1209)
-            .setStrokeStyle(1, canBuy ? GOLD : 0x333333).setInteractive().setDepth(704);
-          bBtn.on('pointerdown', () => this.activateBuff(type, 30 * 60 * 1000, bCost));
-          items.push(bBtn, this.add.text(W - 90, by, `💎${bCost}`, this.textStyle(14, canBuy ? '#e8c36a' : '#555')).setOrigin(0.5).setDepth(705));
-        }
-      });
-    }
-  }
-
-  private activateBuff(type: string, durationMs: number, gemCost: number): void {
+  activateBuff(type: string, durationMs: number, gemCost: number): void {
     const save = loadGame();
     if ((save.gems ?? 0) < gemCost) return this.showNotice(`원보 부족 (${gemCost}💎 필요)`);
     save.gems = (save.gems ?? 0) - gemCost;
@@ -1744,7 +1361,7 @@ export class UIScene extends Phaser.Scene {
 
   // ─── Tutorial System ──────────────────────────────────────────────────────
 
-  private showTutorial(step: number): void {
+  showTutorial(step: number): void {
     this.tutorialOverlay?.destroy(true);
     this.tutorialOverlay = null;
 
@@ -1858,21 +1475,21 @@ export class UIScene extends Phaser.Scene {
     text.setText((remaining / 1000).toFixed(1));
   }
 
-  private skillGradeColor(grade: SkillData['grade']): number {
+  skillGradeColor(grade: SkillData['grade']): number {
     return { LOW: 0x9c3b28, MID: 0x5a9d2f, HIGH: 0x2f8fc6, ULTIMATE: 0xd08a2f }[grade];
   }
 
-  private showNotice(message: string): void {
+  showNotice(message: string): void {
     this.notif.setText(message).setAlpha(1);
     this.tweens.killTweensOf(this.notif);
     this.tweens.add({ targets: this.notif, alpha: 0, duration: 900, delay: 1300 });
   }
 
-  private titleStyle(size: number): Phaser.Types.GameObjects.Text.TextStyle {
+  titleStyle(size: number): Phaser.Types.GameObjects.Text.TextStyle {
     return { fontFamily: 'serif', fontSize: `${size}px`, color: '#e8c36a', fontStyle: 'bold', stroke: '#1a0d03', strokeThickness: 3 };
   }
 
-  private textStyle(size: number, color: string): Phaser.Types.GameObjects.Text.TextStyle {
+  textStyle(size: number, color: string): Phaser.Types.GameObjects.Text.TextStyle {
     return { fontFamily: 'sans-serif', fontSize: `${size}px`, color };
   }
 }

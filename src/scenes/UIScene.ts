@@ -151,6 +151,7 @@ export class UIScene extends Phaser.Scene {
   private cooldownTexts: Phaser.GameObjects.Text[] = [];
   private progressNodes: Phaser.GameObjects.Arc[] = [];
   private bossNode!: Phaser.GameObjects.Star;
+  private progressGoalText!: Phaser.GameObjects.Text;
   private notif!: Phaser.GameObjects.Text;
   private portraitImage!: Phaser.GameObjects.Image;
 
@@ -306,6 +307,9 @@ export class UIScene extends Phaser.Scene {
       .setStrokeStyle(3, 0xf1b34f)
       .setDepth(207);
     this.add.text(W / 2, y - 1, '\u9B54', this.titleStyle(18)).setOrigin(0.5).setDepth(208);
+    this.progressGoalText = this.add.text(W / 2, y + 35, '', this.textStyle(12, '#d8c9aa'))
+      .setOrigin(0.5)
+      .setDepth(208);
   }
 
   private createCombatSkillDockV2(): void {
@@ -813,6 +817,13 @@ export class UIScene extends Phaser.Scene {
     this.gemText?.setText(this.formatCompactNumber(state.gems));
     this.energyText?.setText(`${Math.floor(state.stamina)}/${state.maxStamina}`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
+    const bossWave = Math.ceil(state.waveNumber / 5) * 5;
+    const region = Math.min(8, Math.max(1, Math.floor((bossWave - 1) / 5) + 1));
+    const regionName = STORY_REGION_NAMES[region - 1] ?? `${region}\uC9C0\uC5ED`;
+    const remaining = Math.max(0, bossWave - state.waveNumber);
+    this.progressGoalText?.setText(state.isBossWave
+      ? `${regionName} \uBCF4\uC2A4 \uB3C4\uC804 \uC911`
+      : `${regionName} \uBCF4\uC2A4\uAE4C\uC9C0 ${remaining}\uC6E8\uC774\uBE0C`);
     const isAuto = state.battleMode === 'AUTO';
     this.modeText.setText(isAuto ? 'AUTO' : '수동');
     if (this.modeButton) {

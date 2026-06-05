@@ -200,8 +200,14 @@ export function claimOfflineReward(): { gold: number; exp: number; gems: number;
   }
 
   const waveFactor = Math.max(1, save.stageCleared + 1);
-  const gold = Math.floor(minutes * (2 + waveFactor * 0.35));
-  const exp = Math.floor(minutes * (3 + waveFactor * 0.45));
+  // 문파 시설 전체가 오프라인 성장 루프(패시브)에 영향 (작은 기능 단위 마무리)
+  const fac = save.sectFacilities ?? { hall: 1, forge: 1, library: 1 };
+  const hall = fac.hall ?? 1;
+  const forge = fac.forge ?? 1;
+  const library = fac.library ?? 1;
+  const facMul = 1 + (hall - 1) * 0.01 + (forge - 1) * 0.008 + (library - 1) * 0.006;
+  const gold = Math.floor(minutes * (2 + waveFactor * 0.35) * facMul);
+  const exp = Math.floor(minutes * (3 + waveFactor * 0.45) * facMul);
   const gems = Math.min(6, Math.floor(minutes / 60));
 
   save.gold += gold;

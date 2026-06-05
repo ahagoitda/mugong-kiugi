@@ -190,7 +190,9 @@ export class UIScene extends Phaser.Scene {
     if (reward.minutes > 0) {
       const gemText = reward.gems > 0 ? ` · +${reward.gems}${UI.gem}` : '';
       const levelText = reward.levels > 0 ? ` · Lv.+${reward.levels}` : '';
-      this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}${gemText}${levelText}`);
+      const fac = loadGame().sectFacilities ?? {};
+      const facNote = ((fac.hall ?? 1) + (fac.forge ?? 1) + (fac.library ?? 1) > 3) ? ' · 시설 보너스' : '';
+      this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}${gemText}${levelText}${facNote}`);
     }
   }
 

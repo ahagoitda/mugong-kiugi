@@ -58,6 +58,7 @@ export function createDefaultSave(): SaveData {
     shopLastReset: '',
     shopDailyPurchased: [],
     rebirthCount: 0,
+    rebirthPaths: [],
   };
 }
 
@@ -188,6 +189,7 @@ function migrateSave(oldData: SaveData): SaveData {
     gems: oldData.gems ?? 30,
     shopLastReset: oldData.shopLastReset ?? '',
     shopDailyPurchased: oldData.shopDailyPurchased ?? [],
+    rebirthPaths: oldData.rebirthPaths ?? [],
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);

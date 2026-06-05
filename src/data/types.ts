@@ -189,6 +189,8 @@ export interface SaveData {
   shopDailyPurchased?: string[];
   gems?: number;
   rebirthCount?: number;
+  /** 환생 시 선택한 특화 경로 (각 환생마다 하나씩 누적) */
+  rebirthPaths?: string[];
 }
 
 /**

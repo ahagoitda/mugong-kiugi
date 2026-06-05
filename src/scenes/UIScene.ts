@@ -546,15 +546,38 @@ export class UIScene extends Phaser.Scene {
   private buildBossList(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     const ranks = ['DAEJU', 'DANJU', 'GAKJU', 'MAGUN', 'HOBUP', 'SAJA', 'BUGYOJU', 'HYEOLMA'];
+    const BOSS_SHORT = ['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'];
+    const gems = save.gems ?? 0;
+
+    items.push(this.add.text(W / 2, 137, `재도전: 보스 5💎 소모 · 보상 ×2.5`, this.textStyle(11, '#7a6e5a')).setOrigin(0.5).setDepth(702));
+
     ranks.forEach((rank, index) => {
-      const y = 165 + index * 72;
-      const id = `boss_${['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'][index]}`;
-      const done = save.defeatedBosses?.includes(id);
+      const y = 162 + index * 72;
+      const id = `boss_${BOSS_SHORT[index]}`;
+      const done = save.defeatedBosses?.includes(id) ?? false;
       const row = this.add.rectangle(W / 2, y, W - 76, 58, done ? 0x162416 : 0x17120d).setStrokeStyle(1, BOSS_RANK_COLORS[rank]);
       items.push(row,
-        this.add.text(55, y, `${index + 1}장 · ${BOSS_RANK_NAMES[rank] ?? rank}`, this.textStyle(17, '#f0d493')).setOrigin(0, 0.5),
-        this.add.text(W - 60, y, done ? '격파' : '도전 중', this.textStyle(15, done ? '#83d68a' : '#b6a98d')).setOrigin(1, 0.5));
+        this.add.text(55, y - 10, `${index + 1}장 · ${BOSS_RANK_NAMES[rank] ?? rank}`, this.textStyle(17, '#f0d493')).setOrigin(0, 0.5),
+        this.add.text(55, y + 10, done ? '✓ 격파 완료' : '도전 중...', this.textStyle(11, done ? '#83d68a' : '#7a6e5a')).setOrigin(0, 0.5),
+      );
+      if (done) {
+        const canChallenge = gems >= 5;
+        const cBtn = this.add.rectangle(W - 90, y, 130, 36, canChallenge ? 0x3a2a10 : 0x1a1209)
+          .setStrokeStyle(1, canChallenge ? 0xd4a74e : 0x3a3020).setInteractive().setDepth(703);
+        cBtn.on('pointerdown', () => this.rechallengeBoss(index, 5 * (index + 1)));
+        items.push(cBtn, this.add.text(W - 90, y, canChallenge ? '재도전 💎5' : '💎 부족', this.textStyle(12, canChallenge ? '#e8c36a' : '#5a4a38')).setOrigin(0.5).setDepth(704));
+      }
     });
+  }
+
+  private rechallengeBoss(index: number, wave: number): void {
+    const save = loadGame();
+    if ((save.gems ?? 0) < 5) return this.showNotice('원보가 부족합니다 (5💎 필요)');
+    save.gems = (save.gems ?? 0) - 5;
+    saveGame(save);
+    this.closePanel();
+    this.scene.get('BattleScene').events.emit('challenge-boss', wave);
+    this.showNotice(`${index + 1}장 보스 재도전 — 보상 ×2.5`);
   }
 
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
@@ -618,13 +641,19 @@ export class UIScene extends Phaser.Scene {
       if (chunk > 0) {
         items.push(this.add.text(cx + bw / 2 + 4, cy + 22, `×${chunk}`, this.textStyle(9, '#a09060')).setOrigin(0, 0.5).setDepth(704));
       }
-      // 무한 업그레이드 버튼
-      const btn = this.add.rectangle(cx, cy + 52, 200, 28, 0x4a3215)
+      // 수련 버튼 (×1 / ×10)
+      const cost10 = Array.from({ length: 10 }, (_, k) =>
+        Math.round(t.base * (1 + (lv + k) * 0.4 + Math.pow(lv + k, 1.7) * 0.06))
+      ).reduce((a, b) => a + b, 0);
+      const btn1 = this.add.rectangle(cx - 55, cy + 52, 86, 28, 0x4a3215)
         .setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
-      btn.on('pointerdown', () => this.upgradeTraining(t.key, cost));
+      btn1.on('pointerdown', () => this.upgradeTraining(t.key, cost, 1));
+      const btn10 = this.add.rectangle(cx + 55, cy + 52, 86, 28, 0x3a2a12)
+        .setStrokeStyle(1, 0xb8922a).setInteractive().setDepth(703);
+      btn10.on('pointerdown', () => this.upgradeTraining(t.key, cost10, 10));
       items.push(
-        btn,
-        this.add.text(cx, cy + 52, `수련  ·  ${fmtGold(cost)}G`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(704),
+        btn1,  this.add.text(cx - 55, cy + 52, `×1  ${fmtGold(cost)}G`, this.textStyle(11, '#f0d493')).setOrigin(0.5).setDepth(704),
+        btn10, this.add.text(cx + 55, cy + 52, `×10  ${fmtGold(cost10)}G`, this.textStyle(11, '#c89a60')).setOrigin(0.5).setDepth(704),
       );
     });
 
@@ -795,7 +824,11 @@ export class UIScene extends Phaser.Scene {
         this.textStyle(12, canRebirth ? '#c8b89a' : '#5a4a38')).setDepth(703),
     );
     if (rebirthCount > 0) {
-      items.push(this.add.text(W - 55, 861, `현재 +${rebirthBonus}% 영구 보너스`, this.textStyle(11, '#d4a74e')).setOrigin(1, 0.5).setDepth(703));
+      const paths = save.rebirthPaths ?? [];
+      const pathSummary = paths.length > 0
+        ? paths.slice(-3).map(p => ({ ATK: '공격', HP: '체력', GOLD: '재물', EXP: '경험' }[p] ?? p).slice(0, 2)).join('·')
+        : '';
+      items.push(this.add.text(W - 55, 861, `+${rebirthBonus}% · ${pathSummary}`, this.textStyle(11, '#d4a74e')).setOrigin(1, 0.5).setDepth(703));
     }
     const rebirthBtn = this.add.rectangle(W - 90, 882, 120, 28, canRebirth ? 0x4a2a08 : 0x1a1209)
       .setStrokeStyle(1, canRebirth ? 0xd4a74e : 0x3a2a18).setInteractive().setDepth(703);
@@ -812,32 +845,61 @@ export class UIScene extends Phaser.Scene {
   private confirmRebirth(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     const nextBonus = ((save.rebirthCount ?? 0) + 1) * 15;
-    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(800);
-    const box = this.add.rectangle(W / 2, H / 2, 400, 250, 0x110c07).setStrokeStyle(2, 0xd4a74e).setDepth(801);
-    const msg = this.add.text(W / 2, H / 2 - 70, '⚡ 환생 확인', this.titleStyle(22)).setOrigin(0.5).setDepth(802);
-    const desc = this.add.text(W / 2, H / 2 - 20,
-      `레벨·골드·수련이 초기화됩니다.\n무공·장비·보스 기록은 유지됩니다.\n\n보상: 영구 능력치 +${nextBonus}% 획득`, {
-      ...this.textStyle(14, '#c8b89a'), align: 'center',
-    }).setOrigin(0.5).setDepth(802);
-    const yes = this.add.text(W / 2 - 80, H / 2 + 85, '환생!', this.titleStyle(22)).setOrigin(0.5).setInteractive().setDepth(802);
-    const no  = this.add.text(W / 2 + 80, H / 2 + 85, '취소', this.titleStyle(22)).setOrigin(0.5).setInteractive().setDepth(802);
+    let selectedPath: string | null = null;
+
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88).setInteractive().setDepth(800);
+    const box = this.add.rectangle(W / 2, H / 2, W - 40, 440, 0x110c07).setStrokeStyle(2, 0xd4a74e).setDepth(801);
+    const msg  = this.add.text(W / 2, H / 2 - 185, '⚡ 환생 (還生)', this.titleStyle(22)).setOrigin(0.5).setDepth(802);
+    const desc = this.add.text(W / 2, H / 2 - 145,
+      `레벨·골드·수련 초기화  ·  영구 +${nextBonus}% 능력치`, this.textStyle(13, '#c8b89a')).setOrigin(0.5).setDepth(802);
+
+    // 경로 선택
+    const pathLabel = this.add.text(W / 2, H / 2 - 108, '특화 경로 선택 (영구 +5% 추가)', this.textStyle(13, '#8a7a60')).setOrigin(0.5).setDepth(802);
+    const PATHS: [string, string, string, number][] = [
+      ['ATK',  '공격 경로', '공격력 +5%', 0xe05555],
+      ['HP',   '체력 경로', '체력  +5%',  0x50c878],
+      ['GOLD', '재물 경로', '금화  +5%',  0xd4a74e],
+      ['EXP',  '경험 경로', '경험치 +5%', 0x5aafff],
+    ];
+    const pathBtns: Phaser.GameObjects.Rectangle[] = [];
+    const pathIndicators: Phaser.GameObjects.Text[] = [];
+    PATHS.forEach(([key, label, eff, color], i) => {
+      const x = 80 + i * 120;
+      const y = H / 2 - 60;
+      const btn = this.add.rectangle(x, y, 108, 70, 0x1a1209).setStrokeStyle(2, color, 0.5).setInteractive().setDepth(802);
+      const indicator = this.add.text(x, y - 14, label, this.textStyle(12, '#c8b89a')).setOrigin(0.5).setDepth(803);
+      const effTxt = this.add.text(x, y + 8, eff, this.textStyle(11, `#${color.toString(16).padStart(6, '0')}`)).setOrigin(0.5).setDepth(803);
+      btn.on('pointerdown', () => {
+        selectedPath = key;
+        pathBtns.forEach((b, j) => b.setStrokeStyle(2, PATHS[j][3], j === i ? 1.0 : 0.3).setFillStyle(j === i ? 0x2a1f10 : 0x1a1209));
+        pathIndicators.forEach((t, j) => t.setColor(j === i ? '#f0d493' : '#c8b89a'));
+      });
+      pathBtns.push(btn);
+      pathIndicators.push(indicator);
+      items.push(btn, indicator, effTxt);
+    });
+
+    const yes = this.add.rectangle(W / 2 - 90, H / 2 + 120, 150, 44, 0x3a2208).setStrokeStyle(2, 0xd4a74e).setInteractive().setDepth(802);
+    const yesLabel = this.add.text(W / 2 - 90, H / 2 + 120, '환생!', this.titleStyle(20)).setOrigin(0.5).setDepth(803);
+    const no = this.add.rectangle(W / 2 + 90, H / 2 + 120, 150, 44, 0x1a1209).setStrokeStyle(1, 0x5a4a38).setInteractive().setDepth(802);
+    const noLabel = this.add.text(W / 2 + 90, H / 2 + 120, '취소', this.textStyle(18, '#8a7a60')).setOrigin(0.5).setDepth(803);
+
     yes.on('pointerdown', () => {
+      if (!selectedPath) return this.showNotice('경로를 먼저 선택해주세요');
       save.rebirthCount = (save.rebirthCount ?? 0) + 1;
-      save.level = 1;
-      save.exp = 0;
-      save.expToNext = 30;
-      save.gold = 0;
+      save.rebirthPaths = [...(save.rebirthPaths ?? []), selectedPath];
+      save.level = 1; save.exp = 0; save.expToNext = 30; save.gold = 0;
       save.trainingLevels = { attack: 0, hp: 0, gold: 0, speed: 0, stamina: 0, crit: 0 };
       save.stageCleared = 0;
       saveGame(save);
       this.cachedRebirth = save.rebirthCount;
-      items.push(overlay, box, msg, desc, yes, no);
+      items.push(overlay, box, msg, desc, pathLabel, yes, yesLabel, no, noLabel);
       this.closePanel();
       soundSystem.play('level_up');
-      this.showNotice(`환생 완료! 영구 +${save.rebirthCount * 15}% 능력치 획득!`);
+      this.showNotice(`환생 완료! 영구 +${save.rebirthCount * 15}% · ${selectedPath} 경로 선택!`);
     });
-    no.on('pointerdown', () => [overlay, box, msg, desc, yes, no].forEach(o => o.destroy()));
-    items.push(overlay, box, msg, desc, yes, no);
+    no.on('pointerdown', () => [overlay, box, msg, desc, pathLabel, yes, yesLabel, no, noLabel, ...pathBtns, ...pathIndicators].forEach(o => o.destroy()));
+    items.push(overlay, box, msg, desc, pathLabel, yes, yesLabel, no, noLabel);
   }
 
   private buildCodex(items: Phaser.GameObjects.GameObject[]): void {
@@ -983,37 +1045,55 @@ export class UIScene extends Phaser.Scene {
       const bossCount = save.defeatedBosses?.length ?? 0;
       const skillCount = save.unlockedSkills.length;
       const eqCount = save.equipmentInventory?.length ?? 0;
+      const waveMax = save.stageCleared ?? 0;
+      const rebirths = save.rebirthCount ?? 0;
 
-      const achievements = [
-        { id: 'ach_kill100',  name: '첫 번째 백인도',  desc: '적 100명 처치', prog: totalKills, target: 100,  reward: 1000 },
-        { id: 'ach_kill500',  name: '오백인도',        desc: '적 500명 처치', prog: totalKills, target: 500,  reward: 2500 },
-        { id: 'ach_kill2000', name: '이천인도',        desc: '적 2000명 처치',prog: totalKills, target: 2000, reward: 5000 },
-        { id: 'ach_boss1',    name: '혈교 첫 타도',   desc: '보스 1회 격파', prog: bossCount,  target: 1,    reward: 1500 },
-        { id: 'ach_boss4',    name: '혈교 사천왕 격파',desc: '보스 4회 격파', prog: bossCount,  target: 4,    reward: 3000 },
-        { id: 'ach_lvl10',    name: '초입 경지',       desc: '레벨 10 달성',  prog: save.level, target: 10,   reward: 1000 },
-        { id: 'ach_lvl30',    name: '화경(化境) 돌입', desc: '레벨 30 달성',  prog: save.level, target: 30,   reward: 5000 },
-        { id: 'ach_skill8',   name: '팔방진인',        desc: '무공 8개 습득', prog: skillCount, target: 8,    reward: 2000 },
-        { id: 'ach_equip10',  name: '무장 강화',       desc: '장비 10개 수집',prog: eqCount,    target: 10,   reward: 1500 },
+      // 업적 목록: id, 이름, 설명, 진행, 목표, 골드 보상, 젬 보상
+      type AchDef = { id: string; name: string; desc: string; prog: number; target: number; reward: number; gems: number };
+      const achievements: AchDef[] = [
+        { id: 'ach_kill100',   name: '첫 번째 백인도',  desc: '적 100명 처치',    prog: totalKills, target: 100,   reward: 1000,  gems: 2  },
+        { id: 'ach_kill500',   name: '오백인도',        desc: '적 500명 처치',    prog: totalKills, target: 500,   reward: 2500,  gems: 5  },
+        { id: 'ach_kill2000',  name: '이천인도',        desc: '적 2000명 처치',   prog: totalKills, target: 2000,  reward: 5000,  gems: 10 },
+        { id: 'ach_kill10000', name: '만인지적(萬人之敵)',desc: '적 10000명 처치', prog: totalKills, target: 10000, reward: 20000, gems: 30 },
+        { id: 'ach_boss1',     name: '혈교 첫 타도',   desc: '보스 1회 격파',    prog: bossCount,  target: 1,     reward: 1500,  gems: 5  },
+        { id: 'ach_boss4',     name: '사악한 사천왕',  desc: '보스 4회 격파',    prog: bossCount,  target: 4,     reward: 3000,  gems: 10 },
+        { id: 'ach_boss8',     name: '혈교 완전 소탕', desc: '보스 8회 모두 격파',prog: bossCount,  target: 8,     reward: 10000, gems: 50 },
+        { id: 'ach_wave10',    name: '초보 도전자',    desc: '10웨이브 돌파',    prog: waveMax,    target: 10,    reward: 800,   gems: 2  },
+        { id: 'ach_wave30',    name: '혈교 정예',      desc: '30웨이브 돌파',    prog: waveMax,    target: 30,    reward: 3000,  gems: 8  },
+        { id: 'ach_wave50',    name: '혈교 중견',      desc: '50웨이브 돌파',    prog: waveMax,    target: 50,    reward: 8000,  gems: 20 },
+        { id: 'ach_lvl10',     name: '초입 경지',      desc: '레벨 10 달성',    prog: save.level, target: 10,    reward: 1000,  gems: 3  },
+        { id: 'ach_lvl30',     name: '화경(化境) 돌입',desc: '레벨 30 달성',    prog: save.level, target: 30,    reward: 5000,  gems: 10 },
+        { id: 'ach_lvl50',     name: '고수 입문',      desc: '레벨 50 달성',    prog: save.level, target: 50,    reward: 10000, gems: 20 },
+        { id: 'ach_lvl100',    name: '초절정 경지',    desc: '레벨 100 달성',   prog: save.level, target: 100,   reward: 30000, gems: 50 },
+        { id: 'ach_rebirth1',  name: '환생자',         desc: '환생 1회',         prog: rebirths,   target: 1,     reward: 5000,  gems: 15 },
+        { id: 'ach_rebirth3',  name: '삼생삼세',       desc: '환생 3회',         prog: rebirths,   target: 3,     reward: 15000, gems: 40 },
+        { id: 'ach_skill8',    name: '팔방진인',       desc: '무공 8개 습득',   prog: skillCount, target: 8,     reward: 2000,  gems: 5  },
+        { id: 'ach_skill16',   name: '무공 종사',      desc: '무공 16개 습득',  prog: skillCount, target: 16,    reward: 6000,  gems: 15 },
+        { id: 'ach_equip10',   name: '무장 강화',      desc: '장비 10개 수집',  prog: eqCount,    target: 10,    reward: 1500,  gems: 3  },
+        { id: 'ach_equip30',   name: '병기 수집가',    desc: '장비 30개 수집',  prog: eqCount,    target: 30,    reward: 4000,  gems: 8  },
       ];
 
-      achievements.forEach(({ id, name, desc, prog, target, reward }, i) => {
+      const claimedCount = achievements.filter(a => claims.includes(a.id)).length;
+      items.push(this.add.text(W / 2, 137, `달성: ${claimedCount} / ${achievements.length}`, this.textStyle(11, '#4a4438')).setOrigin(0.5).setDepth(702));
+
+      achievements.forEach(({ id, name, desc, prog, target, reward, gems: gemReward }, i) => {
         const y = 152 + i * 78;
         const claimed = claims.includes(id);
         const canClaim = prog >= target && !claimed;
         const ratio = Math.min(1, prog / target);
+        const rewardStr = gemReward > 0 ? `${reward}G + ${gemReward}💎` : `${reward}G`;
         items.push(
           this.add.rectangle(W / 2, y + 30, W - 52, 64, claimed ? 0x131e0e : 0x110f0c, 1)
             .setStrokeStyle(1, claimed ? 0x3a6a2a : canClaim ? GOLD : 0x3a3528, claimed ? 0.7 : canClaim ? 1 : 0.4).setDepth(702),
           this.add.text(56, y + 14, name, this.textStyle(14, claimed ? '#83d68a' : canClaim ? '#e8c36a' : '#8a7d6a')).setDepth(703),
-          this.add.text(56, y + 34, `${desc}  ·  보상 ${reward}G`, this.textStyle(11, '#7a6e58')).setDepth(703),
-          // 미니 진행 바
+          this.add.text(56, y + 34, `${desc}  ·  ${rewardStr}`, this.textStyle(11, '#7a6e58')).setDepth(703),
           this.add.rectangle(56, y + 52, 240, 5, 0x1e1a13, 1).setOrigin(0, 0.5).setDepth(703),
           this.add.rectangle(56, y + 52, Math.max(3, 240 * ratio), 5, canClaim || claimed ? 0x83d68a : GOLD, 0.8).setOrigin(0, 0.5).setDepth(704),
           this.add.text(304, y + 52, `${Math.min(prog, target)}/${target}`, this.textStyle(10, '#5a5048')).setOrigin(0, 0.5).setDepth(703),
         );
         const btn = this.add.rectangle(W - 88, y + 30, 110, 34, canClaim ? 0x4a3215 : 0x17120d)
           .setStrokeStyle(1, canClaim ? GOLD : 0x3a3528).setInteractive().setDepth(703);
-        btn.on('pointerdown', () => this.claimMission(id, canClaim));
+        btn.on('pointerdown', () => this.claimMission(id, canClaim, gemReward));
         items.push(btn, this.add.text(W - 88, y + 30, claimed ? '달성 ✓' : canClaim ? '수령' : `${Math.floor(ratio * 100)}%`,
           this.textStyle(12, claimed ? '#83d68a' : canClaim ? '#f0d493' : '#555555')).setOrigin(0.5).setDepth(704));
       });
@@ -1113,12 +1193,12 @@ export class UIScene extends Phaser.Scene {
     this.openPanel('MARTIAL');
   }
 
-  private upgradeTraining(key: string, cost: number): void {
+  private upgradeTraining(key: string, cost: number, times = 1): void {
     const save = loadGame();
     if (save.gold < cost) return this.showNotice('금화가 부족합니다');
     save.gold -= cost;
     save.trainingLevels = save.trainingLevels ?? {};
-    save.trainingLevels[key] = (save.trainingLevels[key] ?? 0) + 1;
+    save.trainingLevels[key] = (save.trainingLevels[key] ?? 0) + times;
     saveGame(save);
     this.openPanel('TRAINING');
   }
@@ -1208,23 +1288,28 @@ export class UIScene extends Phaser.Scene {
     saveGame(save);
   }
 
-  private claimMission(id: string, can: boolean): void {
+  private claimMission(id: string, can: boolean, bonusGems = 0): void {
     if (!can) return;
     const save = loadGame();
     save.missionClaims = save.missionClaims ?? [];
     save.missionClaims.push(id);
     const REWARDS: Record<string, number> = {
       daily_kill: 500, daily_waves: 400, daily_boss: 800, daily_gold: 300, daily_synthesis: 400,
-      ach_kill100: 1000, ach_kill500: 2500, ach_kill2000: 5000,
-      ach_boss1: 1500, ach_boss4: 3000,
-      ach_lvl10: 1000, ach_lvl30: 5000,
-      ach_skill8: 2000, ach_equip10: 1500,
+      ach_kill100: 1000,  ach_kill500: 2500,   ach_kill2000: 5000,  ach_kill10000: 20000,
+      ach_boss1: 1500,    ach_boss4: 3000,      ach_boss8: 10000,
+      ach_wave10: 800,    ach_wave30: 3000,     ach_wave50: 8000,
+      ach_lvl10: 1000,    ach_lvl30: 5000,      ach_lvl50: 10000,    ach_lvl100: 30000,
+      ach_rebirth1: 5000, ach_rebirth3: 15000,
+      ach_skill8: 2000,   ach_skill16: 6000,
+      ach_equip10: 1500,  ach_equip30: 4000,
       achievement: 2000, story: 900,
     };
     const reward = REWARDS[id] ?? 500;
     save.gold += reward;
+    if (bonusGems > 0) save.gems = (save.gems ?? 0) + bonusGems;
     saveGame(save);
-    this.showNotice(`임무 완료 · +${reward}G`);
+    const noticeStr = bonusGems > 0 ? `임무 완료 · +${fmtGold(reward)}G · +${bonusGems}💎` : `임무 완료 · +${fmtGold(reward)}G`;
+    this.showNotice(noticeStr);
     this.openPanel('MISSIONS');
   }
 

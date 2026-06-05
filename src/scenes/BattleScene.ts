@@ -138,6 +138,7 @@ interface CombatBonuses {
   flatHp: number;
   speedMul: number;
   critChance: number;
+  expMul: number;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -222,6 +223,9 @@ export class BattleScene extends Phaser.Scene {
   private killStreakTimer = 0;
   private killStreakBonusTimer = 0;
 
+  // 보스 재도전 모드
+  private isChallengeMode = false;
+
   constructor() {
     super({ key: 'BattleScene' });
   }
@@ -302,6 +306,10 @@ export class BattleScene extends Phaser.Scene {
     this.events.on('equip-changed', this.applySaveData, this);
     this.events.on('use-skill', this.onUseSkill, this);
     this.events.on('use-dash', this.onUseDash, this);
+    this.events.on('challenge-boss', (wave: number) => {
+      this.isChallengeMode = true;
+      this.startWave(wave);
+    }, this);
 
     // BGM 시작
     bgmSystem.play('battle');
@@ -1034,6 +1042,7 @@ export class BattleScene extends Phaser.Scene {
     const bossData = this.bossEnemy?.data_;
     this.isBossWave = false;
     this.bossEnemy = null;
+    this.isChallengeMode = false;
     bgmSystem.play('battle');
 
     this.cameras.main.flash(300, 255, 215, 0);
@@ -1407,13 +1416,15 @@ export class BattleScene extends Phaser.Scene {
     const save = loadGame();
     const bonuses = this.getCombatBonuses(save);
     const streakMul = this.killStreakBonusTimer > 0 ? 1.5 : 1.0;
-    const finalGold = Math.max(0, Math.round(gold * bonuses.goldMul * streakMul));
+    const challengeMul = this.isChallengeMode ? 2.5 : 1.0;
+    const finalGold = Math.max(0, Math.round(gold * bonuses.goldMul * streakMul * challengeMul));
+    const finalExp  = Math.max(0, Math.round(exp * bonuses.expMul));
     save.gold += finalGold;
-    save.exp += exp;
+    save.exp += finalExp;
     this.sessionGold += finalGold;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_gold = (save.missionProgress.daily_gold ?? 0) + finalGold;
-    this.sessionExp += exp;
+    this.sessionExp += finalExp;
 
     // 레벨업 체크
     let leveledUp = false;
@@ -2031,15 +2042,23 @@ export class BattleScene extends Phaser.Scene {
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
-    const rebirthMul = 1 + (save.rebirthCount ?? 0) * 0.15;
+    const rebirthCount = save.rebirthCount ?? 0;
+    const rebirthMul = 1 + rebirthCount * 0.15;
+    // 환생 경로 보너스: 각 환생 때 선택한 경로마다 +5% 추가
+    const paths = save.rebirthPaths ?? [];
+    const pathAtk  = paths.filter(p => p === 'ATK').length  * 0.05;
+    const pathHp   = paths.filter(p => p === 'HP').length   * 0.05;
+    const pathGold = paths.filter(p => p === 'GOLD').length * 0.05;
+    const pathExp  = paths.filter(p => p === 'EXP').length  * 0.05;
     return {
-      attackMul: sets.attackMul * rebirthMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
-      hpMul: sets.hpMul * rebirthMul * (1 + (training.hp ?? 0) * 0.02),
-      goldMul: sets.goldMul * rebirthMul * (1 + (training.gold ?? 0) * 0.02),
+      attackMul: sets.attackMul * rebirthMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01 + pathAtk),
+      hpMul: sets.hpMul * rebirthMul * (1 + (training.hp ?? 0) * 0.02 + pathHp),
+      goldMul: sets.goldMul * rebirthMul * (1 + (training.gold ?? 0) * 0.02 + pathGold),
       flatAttack,
       flatHp,
       speedMul: 1 + (training.speed ?? 0) * 0.015,
       critChance: Math.min(0.5, (training.crit ?? 0) * 0.02),
+      expMul: 1 + pathExp,
     };
   }
 

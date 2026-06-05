@@ -961,7 +961,10 @@ export class BattleScene extends Phaser.Scene {
     soundSystem.play('level_up');
 
     const save = loadGame();
+    this.ensureDailyMission(save);
     save.stageCleared = Math.max(save.stageCleared, this.waveNumber);
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_wave = (save.missionProgress.daily_wave ?? 0) + 1;
     saveGame(save);
 
     this.events.emit('wave-clear', this.waveNumber);
@@ -985,7 +988,11 @@ export class BattleScene extends Phaser.Scene {
 
     // 보스 처치 기록
     const save = loadGame();
+    this.ensureDailyMission(save);
     save.stageCleared = Math.max(save.stageCleared, this.waveNumber);
+    save.missionProgress = save.missionProgress ?? {};
+    save.missionProgress.daily_wave = (save.missionProgress.daily_wave ?? 0) + 1;
+    save.missionProgress.daily_boss = (save.missionProgress.daily_boss ?? 0) + 1;
     if (bossData && !save.defeatedBosses?.includes(bossData.id)) {
       if (!save.defeatedBosses) save.defeatedBosses = [];
       save.defeatedBosses.push(bossData.id);
@@ -2075,6 +2082,8 @@ export class BattleScene extends Phaser.Scene {
     save.dailyMissionDate = today;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_kill = 0;
+    save.missionProgress.daily_wave = 0;
+    save.missionProgress.daily_boss = 0;
     save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
   }
 

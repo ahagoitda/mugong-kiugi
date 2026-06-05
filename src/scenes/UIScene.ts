@@ -42,6 +42,17 @@ const UI = {
 type Panel = 'MARTIAL' | 'TRAINING' | 'EQUIPMENT' | 'SECT' | 'CODEX' | 'MISSIONS';
 type MartialTab = 'SKILLS' | 'SYNTH' | 'UPGRADE' | 'BOSS';
 type EquipmentFilter = 'ALL' | 'SET' | EquipmentGrade;
+type MissionTab = 'DAILY' | 'ACHIEVEMENT';
+
+interface MissionDef {
+  id: string;
+  type: string;
+  name: string;
+  progress: number;
+  target: number;
+  gold: number;
+  gems: number;
+}
 
 interface PlayerStatePayload {
   hp: number; maxHp: number; stamina: number; maxStamina: number;
@@ -115,6 +126,7 @@ const SKILL_NAME_KO: Record<string, string> = {
 export class UIScene extends Phaser.Scene {
   private charClass: CharacterClass = 'SWORD';
   private martialTab: MartialTab = 'SKILLS';
+  private missionTab: MissionTab = 'DAILY';
   private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
   private hpFill!: Phaser.GameObjects.Rectangle;
@@ -668,24 +680,57 @@ export class UIScene extends Phaser.Scene {
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     this.ensureDailyMission(save);
-    const missions = [
-      ['story', '스토리', `혈교 ${save.storyRegion ?? 1}장 돌파`, save.stageCleared, (save.storyRegion ?? 1) * 5],
-      ['daily_kill', '일일', '적 30명 처치', save.missionProgress?.daily_kill ?? 0, 30],
-      ['achievement', '업적', '적 500명 처치', save.totalKills ?? 0, 500],
-    ] as const;
-    missions.forEach(([id, type, name, progress, target], index) => {
-      const y = 180 + index * 130;
-      const claimed = save.missionClaims?.includes(id);
-      const can = progress >= target && !claimed;
-      const button = this.add.rectangle(W - 115, y, 150, 48, can ? 0x4a3215 : 0x1a1712).setStrokeStyle(1, can ? GOLD : 0x4b4132).setInteractive();
-      button.on('pointerdown', () => this.claimMission(id, can));
-      items.push(this.add.text(55, y - 20, `[${type}] ${name}`, this.titleStyle(19)),
-        this.add.text(55, y + 18, `${Math.min(progress, target)} / ${target}`, this.textStyle(15, '#d8c9aa')),
-        button, this.add.text(W - 115, y, claimed ? '수령 완료' : can ? '보상 수령' : '진행 중', this.textStyle(14, can ? '#f0d493' : '#8f8778')).setOrigin(0.5));
+
+    const tabs: [MissionTab, string][] = [['DAILY', '\uC77C\uC77C'], ['ACHIEVEMENT', '\uC5C5\uC801']];
+    tabs.forEach(([tab, label], index) => {
+      const x = 55 + index * 145;
+      const button = this.add.rectangle(x, 104, 125, 42, tab === this.missionTab ? 0x5a3d18 : 0x17120d)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, tab === this.missionTab ? GOLD : 0x75572b)
+        .setInteractive();
+      button.on('pointerdown', () => { this.missionTab = tab; this.openPanel('MISSIONS'); });
+      items.push(button, this.add.text(x + 62, 125, label, this.textStyle(17, '#f0d493')).setOrigin(0.5));
     });
+
+    const missions = this.missionTab === 'DAILY' ? this.dailyMissions(save) : this.achievementMissions(save);
+    missions.forEach((mission, index) => this.addMissionRow(items, mission, index));
+
     // 객잔 주인 일러스트 배치
     const npc = this.add.image(W - 120, 680, 'npc_innkeeper').setDisplaySize(220, 220).setDepth(702).setAlpha(0.85);
     items.push(npc);
+  }
+
+  private dailyMissions(save: ReturnType<typeof loadGame>): MissionDef[] {
+    return [
+      { id: 'daily_kill', type: '\uC77C\uC77C', name: '\uC801 30\uBA85 \uCC98\uCE58', progress: save.missionProgress?.daily_kill ?? 0, target: 30, gold: 500, gems: 1 },
+      { id: 'daily_wave', type: '\uC77C\uC77C', name: '\uC6E8\uC774\uBE0C 5\uD68C \uD074\uB9AC\uC5B4', progress: save.missionProgress?.daily_wave ?? 0, target: 5, gold: 650, gems: 1 },
+      { id: 'daily_boss', type: '\uC77C\uC77C', name: '\uBCF4\uC2A4 1\uD68C \uACA9\uD30C', progress: save.missionProgress?.daily_boss ?? 0, target: 1, gold: 900, gems: 2 },
+    ];
+  }
+
+  private achievementMissions(save: ReturnType<typeof loadGame>): MissionDef[] {
+    return [
+      { id: `achievement_story_${save.storyRegion ?? 1}`, type: '\uC5C5\uC801', name: `\uD608\uAD50 ${save.storyRegion ?? 1}\uC7A5 \uB3CC\uD30C`, progress: save.stageCleared, target: (save.storyRegion ?? 1) * 5, gold: 900, gems: 2 },
+      { id: 'achievement_kill_500', type: '\uC5C5\uC801', name: '\uC801 500\uBA85 \uCC98\uCE58', progress: save.totalKills ?? 0, target: 500, gold: 2000, gems: 5 },
+      { id: 'achievement_disciple_10', type: '\uC5C5\uC801', name: '\uC81C\uC790 10\uBA85 \uBAA8\uC9D1', progress: save.disciples?.length ?? 0, target: 10, gold: 2500, gems: 6 },
+      { id: 'achievement_play_1h', type: '\uC5C5\uC801', name: '\uCD1D 1\uC2DC\uAC04 \uC218\uB828', progress: Math.floor((save.totalPlayTime ?? 0) / 60), target: 60, gold: 1800, gems: 4 },
+    ];
+  }
+
+  private addMissionRow(items: Phaser.GameObjects.GameObject[], mission: MissionDef, index: number): void {
+    const y = 190 + index * 115;
+    const claimed = loadGame().missionClaims?.includes(mission.id);
+    const can = mission.progress >= mission.target && !claimed;
+    const button = this.add.rectangle(W - 115, y, 150, 48, can ? 0x4a3215 : 0x1a1712)
+      .setStrokeStyle(1, can ? GOLD : 0x4b4132)
+      .setInteractive();
+    button.on('pointerdown', () => this.claimMission(mission.id, can));
+
+    const reward = `+${mission.gold}G · +${mission.gems}${UI.gem}`;
+    items.push(this.add.text(55, y - 24, `[${mission.type}] ${mission.name}`, this.titleStyle(18)),
+      this.add.text(55, y + 7, `${Math.min(mission.progress, mission.target)} / ${mission.target}`, this.textStyle(15, '#d8c9aa')),
+      this.add.text(55, y + 32, reward, this.textStyle(13, '#d4a74e')),
+      button, this.add.text(W - 115, y, claimed ? '\uC218\uB839 \uC644\uB8CC' : can ? '\uBCF4\uC0C1 \uC218\uB839' : '\uC9C4\uD589 \uC911', this.textStyle(14, can ? '#f0d493' : '#8f8778')).setOrigin(0.5));
   }
 
   private updateHUD(state: PlayerStatePayload): void {
@@ -873,6 +918,8 @@ export class UIScene extends Phaser.Scene {
     save.dailyMissionDate = today;
     save.missionProgress = save.missionProgress ?? {};
     save.missionProgress.daily_kill = 0;
+    save.missionProgress.daily_wave = 0;
+    save.missionProgress.daily_boss = 0;
     save.missionClaims = (save.missionClaims ?? []).filter(id => !id.startsWith('daily_'));
     saveGame(save);
   }
@@ -880,10 +927,15 @@ export class UIScene extends Phaser.Scene {
   private claimMission(id: string, can: boolean): void {
     if (!can) return;
     const save = loadGame();
+    const mission = [...this.dailyMissions(save), ...this.achievementMissions(save)].find(candidate => candidate.id === id);
+    if (!mission) return;
     save.missionClaims = save.missionClaims ?? [];
+    if (save.missionClaims.includes(id)) return;
     save.missionClaims.push(id);
-    save.gold += id === 'achievement' ? 2000 : id === 'story' ? 900 : 500;
+    save.gold += mission.gold;
+    save.gems = (save.gems ?? 0) + mission.gems;
     saveGame(save);
+    this.showNotice(`${UI.mission} ${UI.acquired} · +${mission.gold}G · +${mission.gems}${UI.gem}`);
     this.openPanel('MISSIONS');
   }
 

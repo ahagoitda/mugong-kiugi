@@ -2113,9 +2113,22 @@ export class BattleScene extends Phaser.Scene {
       isBossWave: this.isBossWave,
       gold: save.gold,
       gems: save.gems ?? 0,
+      combatPower: this.getCombatPower(save),
       level: save.level,
       exp: save.exp,
       expToNext: save.expToNext,
     });
+  }
+
+  private getCombatPower(save: ReturnType<typeof loadGame>): number {
+    const bonuses = this.getCombatBonuses(save);
+    const skillPower = this.player.skills.reduce((sum, skill) => {
+      const level = save.skillLevels?.[skill.id] ?? 0;
+      return sum + Math.round(skill.damageMultiplier * 45 + level * 18);
+    }, 0);
+    const levelPower = save.level * 35;
+    const attackPower = Math.round((50 + bonuses.flatAttack + skillPower) * bonuses.attackMul);
+    const defensePower = Math.round((100 + bonuses.flatHp + levelPower) * bonuses.hpMul * 0.35);
+    return attackPower + defensePower;
   }
 }

@@ -60,7 +60,7 @@ interface PlayerStatePayload {
   skills: { id: string; nameKo: string; cooldownRemaining: number; cooldown: number }[];
   dashCooldownRemaining: number; dashCooldown: number;
   killCount: number; waveNumber: number; battleMode: string; isBossWave: boolean;
-  gold: number; gems: number; level: number; exp: number; expToNext: number;
+  gold: number; gems: number; combatPower: number; level: number; exp: number; expToNext: number;
 }
 
 const PANEL_TITLES: Record<Panel, string> = {
@@ -140,6 +140,7 @@ export class UIScene extends Phaser.Scene {
   private gemText!: Phaser.GameObjects.Text;
   private energyText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
+  private combatPowerText!: Phaser.GameObjects.Text;
   private modeText!: Phaser.GameObjects.Text;
   private modeButton!: Phaser.GameObjects.Arc;
   private modeGlow!: Phaser.GameObjects.Arc;
@@ -221,6 +222,7 @@ export class UIScene extends Phaser.Scene {
     this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(204);
     this.goldText = this.add.text(430, 32, '0 금화', this.textStyle(16, '#f2d27d')).setOrigin(0.5).setDepth(203);
     this.waveText = this.add.text(430, 60, '1 웨이브', this.textStyle(15, '#e8dfce')).setOrigin(0.5).setDepth(203);
+    this.combatPowerText = this.add.text(430, 82, '\uC804\uD22C\uB825 0', this.textStyle(12, '#d8c9aa')).setOrigin(0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
   }
 
@@ -833,6 +835,7 @@ export class UIScene extends Phaser.Scene {
     this.gemText?.setText(this.formatCompactNumber(state.gems));
     this.energyText?.setText(`${Math.floor(state.stamina)}/${state.maxStamina}`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
+    this.combatPowerText.setText(`\uC804\uD22C\uB825 ${this.formatCompactNumber(state.combatPower)}`);
     const bossWave = Math.ceil(state.waveNumber / 5) * 5;
     const region = Math.min(8, Math.max(1, Math.floor((bossWave - 1) / 5) + 1));
     const regionName = STORY_REGION_NAMES[region - 1] ?? `${region}\uC9C0\uC5ED`;

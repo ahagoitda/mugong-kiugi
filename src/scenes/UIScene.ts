@@ -623,7 +623,8 @@ export class UIScene extends Phaser.Scene {
     items.push(auto, this.add.text(W - 72, 105, '최적', this.textStyle(13, '#f0d493')).setOrigin(0.5));
 
     const setBonus = equipmentSetBonus(equippedItems(save.equipmentInventory ?? [], save.equippedItems));
-    items.push(this.add.text(55, 148, `세트 효과  공격 x${setBonus.attackMul.toFixed(2)}  체력 x${setBonus.hpMul.toFixed(2)}  금화 x${setBonus.goldMul.toFixed(2)}`, this.textStyle(13, '#d4a74e')));
+    const inventoryCount = save.equipmentInventory?.length ?? 0;
+    items.push(this.add.text(55, 148, `보유 ${inventoryCount}/140  세트  공격 x${setBonus.attackMul.toFixed(2)}  체력 x${setBonus.hpMul.toFixed(2)}  금화 x${setBonus.goldMul.toFixed(2)}`, this.textStyle(13, '#d4a74e')));
 
     EQUIPMENT_SLOTS.forEach((slot, index) => {
       const x = 55 + (index % 3) * 165;
@@ -974,12 +975,15 @@ export class UIScene extends Phaser.Scene {
   private autoEquip(): void {
     const save = loadGame();
     save.equippedItems = save.equippedItems ?? {};
+    const before = equippedItems(save.equipmentInventory ?? [], save.equippedItems).reduce((sum, item) => sum + equipmentScore(item), 0);
     for (const slot of EQUIPMENT_SLOTS) {
       const best = (save.equipmentInventory ?? []).filter(item => item.slot === slot).sort((a, b) => equipmentScore(b) - equipmentScore(a))[0];
       if (best) save.equippedItems[slot] = best.id;
     }
+    const after = equippedItems(save.equipmentInventory ?? [], save.equippedItems).reduce((sum, item) => sum + equipmentScore(item), 0);
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
+    this.showNotice(after > before ? `전투력 +${after - before}` : '이미 최적 장비입니다');
     this.openPanel('EQUIPMENT');
   }
 
@@ -990,16 +994,17 @@ export class UIScene extends Phaser.Scene {
     let refund = 0;
     for (const item of save.equipmentInventory ?? []) {
       const matched = this.equipmentFilter === 'ALL' || (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter);
-      const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY';
+      const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY' || Boolean(item.setId);
       if (matched && !protectedItem) refund += Math.max(5, Math.round(equipmentScore(item) * 0.08));
       else keep.push(item);
     }
-    if (refund <= 0) return this.showNotice('분해할 장비가 없습니다');
+    const removed = (save.equipmentInventory?.length ?? 0) - keep.length;
+    if (refund <= 0) return this.showNotice('분해할 일반 장비가 없습니다');
     save.equipmentInventory = keep;
     save.gold += refund;
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
-    this.showNotice(`분해 보상 +${refund}G`);
+    this.showNotice(`분해 ${removed}개 · +${refund}G`);
     this.openPanel('EQUIPMENT');
   }
 

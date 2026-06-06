@@ -19,7 +19,8 @@ const SPRITE_FACES_LEFT: Readonly<Record<string, boolean>> = {
 };
 
 function shouldFlipX(spriteKey: string | undefined): boolean {
-  const facesLeft = SPRITE_FACES_LEFT[spriteKey ?? ''] ?? false;
+  // 명시적으로 등록되지 않은 스프라이트(enemy_art_*, boss_art_*)는 왼쪽을 향하는 아트이므로 뒤집지 않음
+  const facesLeft = SPRITE_FACES_LEFT[spriteKey ?? ''] ?? true;
   return !facesLeft;
 }
 
@@ -211,7 +212,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);
-    this.setDepth(0); // 보스는 spawnBoss에서 더 높게 재설정됨 (오라 위에 표시)
+    this.setDepth(12); // 배경 레이어(1~3) 위에 표시; 보스는 spawnBoss에서 더 높게 재설정됨
     this.clearTint();
     this.setAlpha(1);
 

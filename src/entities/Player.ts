@@ -89,6 +89,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // 128x128 스프라이트를 0.8배로 표시 (화면에서 ~102x102 크기)
     this.setDisplaySize(210, 210);
+    this.setFlipX(true); // 아트가 왼쪽을 향하므로 항상 flip → 오른쪽(적 방향)을 바라봄
 
     // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -177,7 +178,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
     if (!this.scene.anims.exists(`${this.spritePrefix}-${action}`)) {
       if (action === 'attack') {
-        this.scene.tweens.add({ targets: this, angle: this.facingRight ? 5 : -5, duration: 90, yoyo: true });
+        this.playAttackTween();
+      } else if (action === 'idle') {
+        // 공격 트윈 도중 상태가 강제 전환된 경우 스케일/각도 초기화
+        this.scene.tweens.killTweensOf(this);
+        this.clearTint();
+        this.setAngle(0);
+        this.setScale(1);
       } else if (action === 'run' && !ignoreIfPlaying) {
         this.scene.tweens.add({ targets: this, y: this.y - 4, duration: 180, yoyo: true });
       }
@@ -192,6 +199,52 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.anims.exists(key)) {
       this.play(key, ignoreIfPlaying);
     }
+  }
+
+  private playAttackTween(): void {
+    const skill = this.currentSkill;
+    const totalMs = skill ? (skill.totalFrames / skill.frameRate) * 1000 : 320;
+    const windupMs = totalMs * 0.25;
+    const strikeMs = totalMs * 0.3;
+    const recoverMs = totalMs * 0.45;
+    // 플레이어는 항상 오른쪽(적 방향)을 향하므로 앞=오른쪽, 뒤=왼쪽
+    const forwardTilt = 20;
+
+    this.scene.tweens.killTweensOf(this);
+
+    // 1단계 - 윈드업: 살짝 뒤로 기울고 수직 압축
+    this.scene.tweens.add({
+      targets: this,
+      angle: -forwardTilt * 0.45,
+      scaleX: 0.85,
+      scaleY: 1.1,
+      duration: windupMs,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        // 2단계 - 타격: 앞으로 크게 기울며 수평 폭발 + 황금빛 섬광
+        this.setTint(0xfff0a0);
+        this.scene.tweens.add({
+          targets: this,
+          angle: forwardTilt,
+          scaleX: 1.25,
+          scaleY: 0.82,
+          duration: strikeMs,
+          ease: 'Cubic.easeOut',
+          onComplete: () => {
+            this.clearTint();
+            // 3단계 - 복귀: 원래 크기·각도로 돌아옴
+            this.scene.tweens.add({
+              targets: this,
+              angle: 0,
+              scaleX: 1,
+              scaleY: 1,
+              duration: recoverMs,
+              ease: 'Sine.easeInOut',
+            });
+          },
+        });
+      },
+    });
   }
 
   /**
@@ -253,7 +306,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     body.setVelocity(nx * this.moveSpeed, ny * this.moveSpeed);
     this.facingRight = dx >= 0;
-    this.setFlipX(!this.facingRight);
+    this.setFlipX(this.facingRight);
     if (this.currentState !== 'RUN') {
       this.playAnim('run', true);
     }
@@ -431,12 +484,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (newFrame !== this.currentFrame && newFrame < skill.totalFrames) {
       this.currentFrame = newFrame;
-
-      // 이동 오프셋 적용 (돌진기)
-      if (skill.moveOffset.x !== 0) {
-        const dir = this.facingRight ? 1 : -1;
-        this.x += dir * (skill.moveOffset.x / skill.totalFrames);
-      }
 
       // 히트 프레임 체크
       if (this.hitFrameIndex < skill.hitFrames.length &&

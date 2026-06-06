@@ -56,6 +56,27 @@
 
 추가 모션은 specs의 176개 무공명 (비연검, 혈란도법, 항룡십팔장, 용호창결 등) 기반으로 요청 시 더 제작 가능.
 
+### 구조화된 12프레임 모션 시퀀스 (2026 업데이트)
+**지금까지 제작된 / 앞으로 사용할 모션 프레임은 motions/<hero>_<skill>/ 하위 폴더에 정리됨.**
+- 각 영웅(8명) × 각 무공별 **12프레임 시퀀스** (f00.jpg ~ f11.jpg).
+- **크로마키 그린 배경 (#00FF00)**: 완전 격리된 캐릭터 (pure green screen, clean edges). 그린 키아웃으로 투명 PNG/알파 쉽게 추출 → 컴포지팅, 애니메이션 시퀀싱, 갤러리 업데이트에 최적.
+- **자연스럽고 유동적인 모션**: realistic weight shift, anticipation, follow-through, hair/robo/energy physics, cinematic wuxia action (뻣뻣하지 않음).
+- **무공 이름/초식 맞춤**: 
+  - 삼재검법: 천·지·인 원칙 (high vertical, low sweep, balanced harmony).
+  - 매화검법: 매화 흩날리듯 연속 베기 (petal scattering bursts, multi-arc flurry).
+  - 창궁무애검법: 하늘을 가르는 무애의 일검 (celestial charge → one massive sky-rending cleave + rift propagation).
+  - 기타 무공도 해당 초식/철학에 맞춰 제작 (예: 태극=음양 원형 조화, 발도=순간 뽑기 베기 등).
+- **참고 이미지 기반 일관성**: 각 영웅의 base heroic illustration (sword_male.jpg 등)을 reference로 image_edit 사용하여 얼굴/의상/헤어/오라/스타일 100% 일치.
+- **현재 상태 (sword_male 완료)**: samjae/, maehwa/, changung/ 각 12프레임 (크로마키 그린 + 자연 모션 + 초식 맞춤).
+- 다른 영웅( sword_female, dao_*, fist_*, spear_* )과 추가 무공은 배치로 생성 중. 모든 폴더는 미리 준비됨.
+- **사용 지침**: 이 구조화된 시퀀스들을 앞으로의 고화질 모션 필요 시 **우선 사용**하세요. Legacy singles (motions/ 루트의 *.jpg) 는 참고용으로 유지. 그린 배경 키아웃 후 투명 자산으로 활용 (갤러리, 스킬 프리뷰, 이벤트 CG 등).
+
+## 사용 제안
+- 캐릭터 선택 화면 대체 아트 또는 갤러리/도감 특수 일러스트로 사용 가능
+- UI 팝업이나 이벤트 CG
+- Android 앱 내 도감이나 캐릭터 아트로 사용
+- **모션 시퀀스**: 애니메이션 참조, 스킬 카드 프리뷰, 컨셉 비디오 등에 12프레임 그대로 또는 키아웃 후 사용.
+
 ## 사용 제안
 - 캐릭터 선택 화면 대체 아트 또는 갤러리/도감 특수 일러스트로 사용 가능
 - UI 팝업이나 이벤트 CG

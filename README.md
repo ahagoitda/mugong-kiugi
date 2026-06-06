@@ -85,6 +85,31 @@
 - **블랙스크린 제거**: $\max(R,G,B)$가 문턱값보다 낮은 암흑 영역을 투명 알파 처리(주로 UI 카드 테두리에 사용).
 - **포맷 최적화**: 배경 이미지 파일은 압축률이 높은 `.webp`로 변환, 캐릭터 스킨 및 UI는 투명 채널 보존을 위해 `.png`로 변환 배포.
 
+### 4.3 AI 프롬프트 기반 영웅 스프라이트 생성 (Grok Builder)
+8명의 영웅(검/도/권/창 × 남녀)의 일관된 **cell-shaded chibi** 전투 애니메이션을 대량 생산하기 위해 전용 프롬프트 시스템을 운영합니다.
+
+- **스타일 고정**: 모든 프롬프트 앞에 동일한 `[STYLE]` 블록 주입 (chibi cell-shade, thick outline, chroma-key green `#00FF00`, left-facing side view).
+- **캐릭터 정의**: 8영웅별 상세 외형(상투/쪽진머리, 로브 색상, 무기 형태 등) 엄격히 고정.
+- **포즈 시스템**: Idle/Run + Standard(12프레임)/Heavy(12프레임)/Thrust(12프레임) 상세 모션 정의. 각 프레임(F0~F11)별 정확한 자세·무기 궤적·이펙트(blue crescent, golden dust, cyan shockwave) 명시.
+- **생성 도구**: `python scripts/generate-hero-prompts.py` 로 정확한 프롬프트 + 추천 파일명 자동 출력.
+- **워크플로**:
+  1. `python scripts/generate-hero-prompts.py --hero sword_male --action standard --frame 5` 등으로 프롬프트 확보
+  2. Grok (또는 호환 이미지 생성기)에서 1프레임씩 생성 → `public/sprites/originals/` 에 저장 (예: `sword_male_standard_attack_f05.png`)
+  3. `node scripts/process-assets.js` (green 키잉) + 프레임 추출/리패킹 스크립트로 투명 스프라이트화
+- 새로 도입된 12프레임 상세 공격 사이클은 기존 4프레임 공격보다 풍부한 히트 판정과 모션 피드백을 제공합니다. (관련 데이터: `src/data/skills.ts`, `src/entities/Player.ts`, BattleScene)
+
+### 4.4 고화질 히어로 모션 일러스트 생성 (Heroic Illustrations)
+픽셀 스프라이트와 별도로 **고화질 무협 디지털 페인팅 스타일**의 모션 프레임을 제작합니다 (갤러리, 스킬 카드, 이벤트 CG, 컨셉 아트용).
+- 기존 heroic_illustrations/ base 이미지 (sword_male.jpg 등)를 reference로 일관성 유지.
+- 각 영웅 × 각 무공(초식)별 **12프레임 시퀀스** (natural fluid motion with weight shift, anticipation, follow-through; skill name에 맞춘 초식: e.g. 매화=petal scattering 연속 베기, 창궁무애=하늘 가르는 일검).
+- **크로마키 그린 배경 (#00FF00)**: 완전 격리된 캐릭터 (pure green screen). 키아웃으로 투명 자산 쉽게 제작 → 시퀀싱/컴포지팅 용이.
+- 생성: reference-based image_edit (Grok), natural cinematic wuxia poses.
+- 구조: `public/sprites/illustrations/heroic_illustrations/motions/<hero>_<skill>/f00.jpg ~ f11.jpg`
+- **사용**: `docs/grok-builder-prompt-guide.md` 및 heroic_illustrations/README.md 참고. 앞으로의 고화질 모션 필요 시 이 구조화된 프레임들을 우선 사용.
+- 현재: sword_male 주요 무공 (samjae, maehwa, changung) 12프레임 완료. 다른 영웅/무공 배치 생성 중 (모든 폴더 미리 준비).
+
+자산 정리/문서 업데이트는 heroic_illustrations/README.md 와 motions/ 하위 폴더 참조.
+
 ---
 
 ## 5. 프로젝트 디렉터리 구조
@@ -92,14 +117,19 @@
 ```
 mugong-kiugi/
 ├── docs/
-│   └── contents_plan.md      # 마스터 기획서 (세계관/스토리/무공명칭)
+│   ├── contents_plan.md             # 마스터 기획서 (세계관/스토리/무공명칭)
+│   └── grok-builder-prompt-guide.md # Grok Builder용 영웅 스프라이트 프롬프트 가이드 (8영웅 × 12프레임 상세 애니메이션)
 ├── scripts/
-│   ├── fallback-assets.js    # 미생성 그래픽 자산 템플릿 복제/생성 헬퍼
-│   └── process-assets.js     # sharp 기반 크로마키 투명화 & WebP 변환기
+│   ├── generate-hero-prompts.py     # Grok Builder 공식 프롬프트 생성기 (정확한 STYLE+CHARACTER+POSE 템플릿)
+│   ├── process-assets.js            # Sharp 크로마키(그린/블랙) 제거 + WebP/PNG 최적화
+│   ├── extract-frames.py            # 스프라이트 시트 → 개별 프레임 추출 (128x128)
+│   ├── repack-sprites.py            # 프레임 재조합 및 시트 생성 헬퍼
+│   └── ... (기타 asset / fallback 스크립트)
 ├── public/
 │   └── sprites/
-│       ├── originals/        # 크로마키 배경을 가진 원본 그래픽 (70장)
-│       └── generated/runtime/ # 가공 배포된 인게임 최종 자산 경로 (70장)
+│       ├── originals/               # AI 생성물(크로마키 green) 또는 원본 시트 보관
+│       ├── frames/                  # 추출된 개별 프레임 (sword_male_standard_attack_f05.png 등)
+│       └── generated/runtime/       # 인게임 최종 투명 자산 (런타임 로드 경로)
 ├── src/
 │   ├── main.ts               # Phaser 3 구성 및 게임 기동 엔트리
 │   ├── data/
@@ -130,6 +160,23 @@ npm run dev
 
 ### 6.2 자산 처리 (Chroma keying 가동)
 실제 원본 자산 또는 Fallback 템플릿 이미지를 가공하여 런타임 디렉터리에 배포하려면 아래 순서로 스크립트를 작동하십시오.
+
+**새 영웅 애니메이션 제작 시 (권장)**:
+```bash
+# 1) Grok Builder 프롬프트 생성 (정확한 12프레임 규칙 적용)
+python scripts/generate-hero-prompts.py --hero all --action standard,heavy,thrust --output-dir prompts/new_heroes
+
+# 2) 생성된 프롬프트로 AI 이미지 생성 → public/sprites/originals/ 에 저장
+#    (파일명은 스크립트가 제안하는 sword_male_standard_attack_f05.png 등 사용)
+
+# 3) 크로마키 투명화 & WebP 변환 실행
+node scripts/process-assets.js
+
+# 4) (필요 시) 개별 프레임 추출 또는 시트 리패킹
+python scripts/extract-frames.py
+```
+
+**기존/일반 자산 처리**:
 ```bash
 # 1) 원본/fallback 이미지 빌드 준비 (originals 디렉터리 자동 채우기)
 node scripts/fallback-assets.js

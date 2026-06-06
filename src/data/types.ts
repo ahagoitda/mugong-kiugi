@@ -189,7 +189,6 @@ export interface SaveData {
   tutorialCompleted?: boolean;
   shopLastReset?: string;
   shopDailyPurchased?: string[];
-  gems?: number;
 }
 
 /**

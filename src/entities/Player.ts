@@ -30,6 +30,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly charClass: CharacterClass;
   private readonly characterId: string;
   private readonly baseTextureKey: string;
+  private currentSetId: string | null = null;
+  private readonly baseScaleX: number;
+  private readonly baseScaleY: number;
 
   // ─── 상태 ───
   private currentState: CharacterState = 'IDLE';
@@ -53,8 +56,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   // ─── 전투 ───
   private currentSkill: SkillData | null = null;
-  private currentFrame = 0;
-  private hitFrameIndex = 0;
   private invincible = false;
   // 회피 시작 위치 — 회피 완료 시 정확히 이 좌표로 복귀
   private dashOriginX = 0;
@@ -89,6 +90,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // 128x128 스프라이트를 0.8배로 표시 (화면에서 ~102x102 크기)
     this.setDisplaySize(210, 210);
+    this.baseScaleX = this.scaleX;
+    this.baseScaleY = this.scaleY;
+    this.setFlipX(true); // 아트가 왼쪽을 향하므로 항상 flip → 오른쪽(적 방향)을 바라봄
 
     // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -136,6 +140,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   setEquipmentSetSkin(setId: string | null): void {
+    this.currentSetId = setId;
     if (!setId) {
       this.setTexture(this.baseTextureKey);
       return;
@@ -175,15 +180,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
   private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
-    if (!this.scene.anims.exists(`${this.spritePrefix}-${action}`)) {
+    let key = `${this.spritePrefix}-${action}`;
+    if (this.currentSetId) {
+      const skinKey = `${this.spritePrefix}-${action}-${this.currentSetId}`;
+      if (this.scene.anims.exists(skinKey)) {
+        key = skinKey;
+      }
+    }
+
+    if (!this.scene.anims.exists(key)) {
       if (action === 'attack') {
-        this.scene.tweens.add({ targets: this, angle: this.facingRight ? 5 : -5, duration: 90, yoyo: true });
+        this.playFallbackAttackTween();
+      } else if (action === 'idle') {
+        // 공격 트윈 도중 상태가 강제 전환된 경우 스케일/각도 초기화
+        this.scene.tweens.killTweensOf(this);
+        this.clearTint();
+        this.setAngle(0);
+        this.setScale(this.baseScaleX, this.baseScaleY);
       } else if (action === 'run' && !ignoreIfPlaying) {
         this.scene.tweens.add({ targets: this, y: this.y - 4, duration: 180, yoyo: true });
       }
       return;
     }
-    let key = `${this.spritePrefix}-${action}`;
     // 공격 모션이면 스킬의 attackMotion 으로 변형 키를 선택
     if (action === 'attack' && this.currentSkill?.attackMotion && this.currentSkill.attackMotion !== 'standard') {
       const variantKey = `${this.spritePrefix}-attack-${this.currentSkill.attackMotion}`;
@@ -192,6 +210,152 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.anims.exists(key)) {
       this.play(key, ignoreIfPlaying);
     }
+  }
+
+  private startAttackSequence(skill: SkillData): void {
+    const dir = this.facingRight ? 1 : -1;
+    const startX = this.x;
+    const startY = this.y;
+    const motion = skill.attackMotion ?? 'standard';
+
+    let windupDur = 120;
+    let pullBack = 25;
+    let tiltAngle = -12;
+    let tintColor = 0xffe57f;
+
+    if (motion === 'heavy') {
+      windupDur = 220;
+      pullBack = 35;
+      tiltAngle = -20;
+      tintColor = 0xff8a80;
+    } else if (motion === 'quick') {
+      windupDur = 80;
+      pullBack = 15;
+      tiltAngle = -8;
+      tintColor = 0xb3e5fc;
+    } else if (motion === 'thrust') {
+      windupDur = 140;
+      pullBack = 30;
+      tiltAngle = -5;
+      tintColor = 0xb2dfdb;
+    }
+
+    this.scene.tweens.killTweensOf(this);
+    this.setTint(tintColor);
+
+    this.scene.tweens.add({
+      targets: this,
+      x: startX - dir * pullBack,
+      angle: tiltAngle,
+      scaleX: this.baseScaleX * 0.9,
+      scaleY: this.baseScaleY * 1.1,
+      duration: windupDur,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        let dashDist = skill.range * 0.45;
+        if (motion === 'thrust') dashDist = skill.range * 0.6;
+
+        let strikeDur = 160;
+        if (motion === 'heavy') strikeDur = 250;
+        if (motion === 'quick') strikeDur = 110;
+
+        const targetX = startX + dir * dashDist;
+
+        this.playAnim('attack');
+        this.clearTint();
+
+        const totalHits = skill.hitFrames.length;
+        if (totalHits > 1) {
+          for (let i = 0; i < totalHits - 1; i++) {
+            const hitDelay = (strikeDur / totalHits) * (i + 1);
+            this.scene.time.delayedCall(hitDelay, () => {
+              if (this.currentState === 'ATTACK' && this.hp > 0) {
+                this.emitHit(skill);
+                this.scene.events.emit('player-slash-fx', this.x + dir * 30, this.y, skill);
+              }
+            });
+          }
+        }
+
+        this.scene.tweens.add({
+          targets: this,
+          x: targetX,
+          angle: -tiltAngle * 0.8,
+          scaleX: this.baseScaleX * 1.2,
+          scaleY: this.baseScaleY * 0.85,
+          duration: strikeDur,
+          ease: 'Cubic.easeOut',
+          onComplete: () => {
+            this.emitHit(skill);
+
+            let impactDur = 120;
+            let shakeForce = 0.003;
+            let hitStopMs = 40;
+
+            if (motion === 'heavy') {
+              impactDur = 200;
+              shakeForce = 0.008;
+              hitStopMs = 90;
+            } else if (motion === 'thrust') {
+              impactDur = 100;
+              shakeForce = 0.004;
+              hitStopMs = 50;
+            } else if (motion === 'quick') {
+              impactDur = 80;
+              shakeForce = 0.002;
+              hitStopMs = 20;
+            }
+
+            if (hitStopMs > 0) {
+              const prevScale = this.scene.physics.world.timeScale;
+              this.scene.physics.world.timeScale = 2.5;
+              this.scene.time.delayedCall(hitStopMs, () => {
+                this.scene.physics.world.timeScale = prevScale;
+              });
+            }
+
+            this.scene.cameras.main.shake(impactDur, shakeForce);
+
+            this.scene.tweens.add({
+              targets: this,
+              angle: dir * (motion === 'heavy' ? 25 : motion === 'thrust' ? 12 : 15),
+              scaleX: this.baseScaleX * 1.25,
+              scaleY: this.baseScaleY * 0.8,
+              duration: impactDur,
+              onComplete: () => {
+                this.setAlpha(0.65);
+                this.scene.tweens.add({
+                  targets: this,
+                  x: startX,
+                  y: startY,
+                  angle: 0,
+                  scaleX: this.baseScaleX,
+                  scaleY: this.baseScaleY,
+                  duration: 180,
+                  ease: 'Quad.easeInOut',
+                  onComplete: () => {
+                    this.setAlpha(1.0);
+                    this.currentSkill = null;
+                    this.playAnim('idle');
+                    this.changeState('IDLE');
+                  }
+                });
+              }
+            });
+          }
+        });
+      }
+    });
+  }
+
+  private playFallbackAttackTween(): void {
+    this.scene.tweens.add({
+      targets: this,
+      angle: 15,
+      scaleX: 1.1,
+      duration: 150,
+      yoyo: true,
+    });
   }
 
   /**
@@ -253,7 +417,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     body.setVelocity(nx * this.moveSpeed, ny * this.moveSpeed);
     this.facingRight = dx >= 0;
-    this.setFlipX(!this.facingRight);
+    this.setFlipX(this.facingRight);
     if (this.currentState !== 'RUN') {
       this.playAnim('run', true);
     }
@@ -281,14 +445,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this._stamina -= skill.staminaCost;
     this.skillCooldowns.set(skill.id, now);
     this.currentSkill = skill;
-    this.currentFrame = 0;
-    this.hitFrameIndex = 0;
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
 
     this.changeState('ATTACK');
-    this.playAnim('attack');
+    this.startAttackSequence(skill);
 
     return true;
   }
@@ -310,7 +472,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.skillCooldowns.set(dash.id, now);
     this.currentSkill = dash;
     this.stateTimer = 0;
-    this.currentFrame = 0;
 
     // 회피 = facing 반대 방향으로 옆구르기 + 원위치 복귀
     const dir = this.facingRight ? 1 : -1;
@@ -366,6 +527,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   takeDamage(amount: number): void {
     if (this.invincible || this.currentState === 'DEAD') return;
 
+    this.scene.tweens.killTweensOf(this);
+    this.setAlpha(1.0);
+    this.setScale(this.baseScaleX, this.baseScaleY);
+    this.setAngle(0);
+    this.clearTint();
+
     this._hp = Math.max(1, this._hp - amount);
 
     this.changeState('HIT');
@@ -416,45 +583,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   // ─── Private 상태 업데이트 ───
 
-  private updateAttack(delta: number): void {
-    if (!this.currentSkill) {
-      this.changeState('IDLE');
-      this.playAnim('idle');
-      return;
-    }
-
-    const skill = this.currentSkill;
-    const frameDuration = 1000 / skill.frameRate;
-    this.stateTimer += delta;
-
-    const newFrame = Math.floor(this.stateTimer / frameDuration);
-
-    if (newFrame !== this.currentFrame && newFrame < skill.totalFrames) {
-      this.currentFrame = newFrame;
-
-      // 이동 오프셋 적용 (돌진기)
-      if (skill.moveOffset.x !== 0) {
-        const dir = this.facingRight ? 1 : -1;
-        this.x += dir * (skill.moveOffset.x / skill.totalFrames);
-      }
-
-      // 히트 프레임 체크
-      if (this.hitFrameIndex < skill.hitFrames.length &&
-          this.currentFrame >= skill.hitFrames[this.hitFrameIndex]) {
-        this.emitHit(skill);
-        this.hitFrameIndex++;
-      }
-    }
-
-    // 애니메이션 완료
-    if (newFrame >= skill.totalFrames) {
-      this.currentSkill = null;
-      this.stateTimer = 0;
-      this.currentFrame = 0;
-      this.hitFrameIndex = 0;
-      this.playAnim('idle');
-      this.changeState('IDLE');
-    }
+  private updateAttack(_delta: number): void {
+    // 공격 시퀀스가 트윈에 의해 관리되므로 빈 채로 둡니다.
   }
 
   private updateDash(delta: number): void {

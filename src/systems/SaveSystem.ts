@@ -27,7 +27,7 @@ export function createDefaultSave(): SaveData {
     exp: 0,
     expToNext: getExpToNextLevel(1),
     gold: 0,
-    gems: 0,
+    gems: 30,
     hp: 100,
     maxHp: 100,
     stamina: 50,
@@ -55,7 +55,6 @@ export function createDefaultSave(): SaveData {
     dailyMissionDate: new Date().toLocaleDateString('en-CA'),
     storyRegion: 1,
     tutorialCompleted: false,
-    gems: 30,
     shopLastReset: '',
     shopDailyPurchased: [],
   };
@@ -167,7 +166,7 @@ function migrateSave(oldData: SaveData): SaveData {
     ...oldData,
     version: CURRENT_VERSION,
     gold: oldData.gold ?? 0,
-    gems: oldData.gems ?? 0,
+    gems: oldData.gems ?? 30,
     expToNext: oldData.expToNext ?? getExpToNextLevel(oldData.level),
     defeatedBosses: oldData.defeatedBosses ?? [],
     totalKills: oldData.totalKills ?? 0,
@@ -186,7 +185,6 @@ function migrateSave(oldData: SaveData): SaveData {
     dailyMissionDate: oldData.dailyMissionDate ?? new Date().toLocaleDateString('en-CA'),
     storyRegion: oldData.storyRegion ?? 1,
     tutorialCompleted: oldData.tutorialCompleted ?? false,
-    gems: oldData.gems ?? 30,
     shopLastReset: oldData.shopLastReset ?? '',
     shopDailyPurchased: oldData.shopDailyPurchased ?? [],
   };

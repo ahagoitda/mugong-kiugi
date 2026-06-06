@@ -194,8 +194,8 @@ export class UIScene extends Phaser.Scene {
     this.add.rectangle(198, 54, 190, 2, 0x8ce8ff, 0.38).setOrigin(0, 0.5).setDepth(203);
     this.add.circle(62, 87, 18, 0x120b04, 1).setStrokeStyle(2, GOLD).setDepth(203);
     this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(204);
-    this.goldText = this.add.text(430, 32, '0 금화', this.textStyle(16, '#f2d27d')).setOrigin(0.5).setDepth(203);
-    this.waveText = this.add.text(430, 60, '1 웨이브', this.textStyle(15, '#e8dfce')).setOrigin(0.5).setDepth(203);
+    this.goldText = this.add.text(430, 36, '0 금화', this.textStyle(14, '#f2d27d')).setOrigin(0.5).setDepth(203);
+    this.waveText = this.add.text(430, 62, '1 웨이브', this.textStyle(13, '#e8dfce')).setOrigin(0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
   }
 
@@ -428,9 +428,9 @@ export class UIScene extends Phaser.Scene {
       ['TRAINING', UI.training, '\u4FEE'],
       ['EQUIPMENT', UI.equipment, '\u88DD'],
       ['SHOP', '\uC0C1\uC810', '\u5546'],
-      ['MARTIAL', UI.sect, '\u9580'],
-      ['SECT', UI.codex, '\u66F8'],
-      ['CODEX', UI.secret, '\u5178'],
+      ['MARTIAL', UI.martial, '\u6B66'],
+      ['SECT', UI.sect, '\u9580'],
+      ['CODEX', UI.codex, '\u66F8'],
       ['MISSIONS', UI.mission, '\u4EE4'],
     ];
     nav.forEach(([panel, label, glyph], index) => {
@@ -536,15 +536,20 @@ export class UIScene extends Phaser.Scene {
 
   private buildBossList(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
+    const stageCleared = save.stageCleared ?? 0;
     const ranks = ['DAEJU', 'DANJU', 'GAKJU', 'MAGUN', 'HOBUP', 'SAJA', 'BUGYOJU', 'HYEOLMA'];
     ranks.forEach((rank, index) => {
       const y = 165 + index * 72;
       const id = `boss_${['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'][index]}`;
-      const done = save.defeatedBosses?.includes(id);
+      const done = save.defeatedBosses?.includes(id) ?? false;
+      const bossWave = (index + 1) * 5;
+      const reachable = stageCleared >= bossWave - 4;
+      const statusText = done ? '격파' : reachable ? '도전 중' : '미도전';
+      const statusColor = done ? '#83d68a' : reachable ? '#b6a98d' : '#6b6052';
       const row = this.add.rectangle(W / 2, y, W - 76, 58, done ? 0x162416 : 0x17120d).setStrokeStyle(1, BOSS_RANK_COLORS[rank]);
       items.push(row,
         this.add.text(55, y, `${index + 1}장 · ${BOSS_RANK_NAMES[rank] ?? rank}`, this.textStyle(17, '#f0d493')).setOrigin(0, 0.5),
-        this.add.text(W - 60, y, done ? '격파' : '도전 중', this.textStyle(15, done ? '#83d68a' : '#b6a98d')).setOrigin(1, 0.5));
+        this.add.text(W - 60, y, statusText, this.textStyle(15, statusColor)).setOrigin(1, 0.5));
     });
   }
 
@@ -677,8 +682,8 @@ export class UIScene extends Phaser.Scene {
         this.add.text(x + 10, y + 10, item.name, { ...this.textStyle(13, '#eee0c1'), wordWrap: { width: 200 } }),
         this.add.text(x + 10, y + 33, `${equipped ? '장착 · ' : ''}전투력 ${equipmentScore(item)}`, this.textStyle(12, '#d4a74e')));
     });
-    // 대장장이 일러스트 배치
-    const npc = this.add.image(W - 90, 440, 'npc_blacksmith').setDisplaySize(160, 160).setDepth(702).setAlpha(0.85);
+    // 대장장이 일러스트 배치 (인벤토리 목록 아래 빈 공간에 배치)
+    const npc = this.add.image(W - 80, 720, 'npc_blacksmith').setDisplaySize(130, 130).setDepth(702).setAlpha(0.7);
     items.push(npc);
   }
 
@@ -812,7 +817,7 @@ export class UIScene extends Phaser.Scene {
           this.add.rectangle(x, y, 234, 78, 0x110f0c, 1)
             .setOrigin(0, 0).setStrokeStyle(1, isOwned ? gradeColor : 0x2a2218, isOwned ? 0.8 : 0.5).setDepth(702),
           this.add.image(x + 36, y + 39, skillCardKey(skill.id)).setDisplaySize(58, 58).setOrigin(0.5).setAlpha(isOwned ? 0.9 : 0.25).setDepth(703),
-          this.add.text(x + 70, y + 16, this.skillLabel(skill), this.textStyle(13, isOwned ? '#e8c36a' : '#4a4035')).setDepth(703),
+          this.add.text(x + 70, y + 16, this.skillLabel(skill), { ...this.textStyle(13, isOwned ? '#e8c36a' : '#4a4035'), wordWrap: { width: 148 } }).setDepth(703),
           this.add.text(x + 70, y + 36, `${GRADE_KO[skill.grade]} · 쿨타임 ${(skill.cooldown / 1000).toFixed(1)}s`, this.textStyle(11, isOwned ? '#a8987a' : '#3a3530')).setDepth(703),
           this.add.text(x + 70, y + 54, skill.description ? skill.description.slice(0, 20) + (skill.description.length > 20 ? '…' : '') : '', this.textStyle(10, '#6a5e4a')).setDepth(703),
           this.add.text(x + 222, y + 14, GRADE_KO[skill.grade], this.textStyle(10, isOwned ? '#f0d493' : '#3a3530')).setOrigin(1, 0).setDepth(703),
@@ -1238,8 +1243,9 @@ export class UIScene extends Phaser.Scene {
       .setInteractive().setDepth(802);
     yes.on('pointerdown', () => {
       deleteSave();
-      items.push(overlay, box, msg, yes, no);
-      this.scene.restart();
+      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+      this.scene.stop('BattleScene');
+      this.scene.start('CharacterSelectScene');
     });
     no.on('pointerdown', () => {
       [overlay, box, msg, yes, no].forEach(o => o.destroy());

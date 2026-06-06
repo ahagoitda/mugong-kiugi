@@ -265,6 +265,9 @@ export class BattleScene extends Phaser.Scene {
     this.events.on('equip-changed', this.applySaveData, this);
     this.events.on('use-skill', this.onUseSkill, this);
     this.events.on('use-dash', this.onUseDash, this);
+    this.events.on('player-slash-fx', (x: number, y: number, skill: SkillData) => {
+      this.showSlashEffect(x, y, skill);
+    }, this);
 
     // BGM 시작
     bgmSystem.play('battle');
@@ -1605,18 +1608,24 @@ export class BattleScene extends Phaser.Scene {
     fx.setActive(true);
     fx.setVisible(true);
     fx.setAlpha(1);
-    fx.setScale(skill.hitboxSize.w / 32);
+    const baseScale = skill.hitboxSize.w / 100;
+    fx.setScale(baseScale);
     fx.setFlipX(this.player.isFacingRight);
+    const dir = this.player.isFacingRight ? 1 : -1;
+    fx.setAngle(dir * Phaser.Math.Between(-25, 25));
+
     this.tweens.add({
       targets: fx,
       alpha: 0,
-      scaleX: fx.scaleX * 1.5,
-      scaleY: fx.scaleY * 1.5,
-      duration: 200,
+      scaleX: baseScale * 1.4,
+      scaleY: baseScale * 1.4,
+      duration: 220,
+      ease: 'Quad.easeOut',
       onComplete: () => {
         fx.setActive(false);
         fx.setVisible(false);
         fx.setScale(1);
+        fx.setAngle(0);
         this.slashPool.push(fx);
       },
     });

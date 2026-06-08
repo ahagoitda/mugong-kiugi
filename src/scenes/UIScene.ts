@@ -13,7 +13,7 @@ import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
 
 const W = 540;
-const H = 960;
+let H = 960;
 const GOLD = 0xd4a74e;
 const UI = {
   martial: '\uBB34\uACF5',
@@ -110,11 +110,15 @@ export class UIScene extends Phaser.Scene {
   private martialTab: MartialTab = 'SKILLS';
   private equipmentFilter: EquipmentFilter = 'ALL';
   private overlay: Phaser.GameObjects.Container | null = null;
+  private activePopupDismissers: (() => void)[] = [];
+  private selectedRealm = 0;
   private codexTab: 'SKILLS' | 'ENEMIES' | 'BOSSES' = 'SKILLS';
   private missionsTab: 'DAILY' | 'ACHIEVEMENT' = 'DAILY';
   private hpFill!: Phaser.GameObjects.Rectangle;
   private spFill!: Phaser.GameObjects.Rectangle;
   private expFill!: Phaser.GameObjects.Rectangle;
+  private hpText!: Phaser.GameObjects.Text;
+  private spText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
@@ -133,6 +137,13 @@ export class UIScene extends Phaser.Scene {
   private portraitImage!: Phaser.GameObjects.Image;
   private shopTab: 'DAILY' | 'SKILLS' | 'GEMS' = 'DAILY';
   private tutorialOverlay: Phaser.GameObjects.Container | null = null;
+  private retreatBtn!: Phaser.GameObjects.Rectangle;
+  private retreatTxt!: Phaser.GameObjects.Text;
+  private stageInfoText!: Phaser.GameObjects.Text;
+  private equipmentPage = 0;
+  private codexPage = 0;
+  private trainingMultiplier: 1 | 10 | 100 | 'MAX' = 1;
+  private shopTimerEvent: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -143,6 +154,8 @@ export class UIScene extends Phaser.Scene {
   }
 
   create(): void {
+    H = this.scale.height;
+
     const battle = this.scene.get('BattleScene');
     battle.events.on('player-state', this.updateHUD, this);
     battle.events.on('wave-clear', (wave: number) => this.showNotice(`${wave} ${UI.wave} ${UI.clear}`), this);
@@ -156,11 +169,15 @@ export class UIScene extends Phaser.Scene {
     this.createCombatSkillDockV2();
     this.createQuickMartialBoard();
     this.createBottomNavV2();
-    this.notif = this.add.text(W / 2, 560, '', this.textStyle(19, '#ffe29a'))
+    this.notif = this.add.text(W / 2, H - 400, '', this.textStyle(19, '#ffe29a'))
       .setOrigin(0.5).setDepth(500).setStroke('#000000', 5).setAlpha(0);
 
     const reward = claimOfflineReward();
-    if (reward.minutes > 0) this.showNotice(`${UI.offline} · ${reward.gold}G · EXP ${reward.exp}`);
+    if (reward.minutes >= 3) {
+      this.time.delayedCall(500, () => {
+        this.showOfflineRewardPopup(reward);
+      });
+    }
 
     const saveData = loadGame();
     if (!saveData.tutorialCompleted) {
@@ -192,11 +209,34 @@ export class UIScene extends Phaser.Scene {
     this.spFill = this.add.rectangle(198, 58, 190, 8, 0x218ac4).setOrigin(0, 0.5).setDepth(202);
     this.add.rectangle(198, 27, 220, 3, 0xff7258, 0.38).setOrigin(0, 0.5).setDepth(203);
     this.add.rectangle(198, 54, 190, 2, 0x8ce8ff, 0.38).setOrigin(0, 0.5).setDepth(203);
+    this.hpText = this.add.text(308, 33, '100 / 100', this.textStyle(9, '#ffffff')).setOrigin(0.5).setDepth(204).setStroke('#000000', 2);
+    this.spText = this.add.text(293, 58, '50 / 50', this.textStyle(8, '#ffffff')).setOrigin(0.5).setDepth(204).setStroke('#000000', 2);
     this.add.circle(62, 87, 18, 0x120b04, 1).setStrokeStyle(2, GOLD).setDepth(203);
     this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(204);
     this.goldText = this.add.text(430, 36, '0 금화', this.textStyle(14, '#f2d27d')).setOrigin(0.5).setDepth(203);
     this.waveText = this.add.text(430, 62, '1 웨이브', this.textStyle(13, '#e8dfce')).setOrigin(0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
+
+    this.retreatBtn = this.add.rectangle(W - 70, 75, 80, 28, 0x5b150c)
+      .setStrokeStyle(1, 0xb92512)
+      .setInteractive()
+      .setDepth(204)
+      .setVisible(false);
+    this.retreatTxt = this.add.text(W - 70, 75, '퇴각 (退却)', this.textStyle(12, '#ff8888'))
+      .setOrigin(0.5)
+      .setDepth(205)
+      .setVisible(false);
+
+    this.retreatBtn.on('pointerdown', () => {
+      this.scene.get('BattleScene').events.emit('request-retreat');
+    });
+
+    this.add.rectangle(W / 2, 122, 280, 24, 0x000000, 0.6)
+      .setStrokeStyle(1, GOLD, 0.35)
+      .setDepth(200);
+    this.stageInfoText = this.add.text(W / 2, 122, '', this.textStyle(11, '#ffd740'))
+      .setOrigin(0.5)
+      .setDepth(201);
   }
 
   private createTopResourceStrip(): void {
@@ -283,7 +323,11 @@ export class UIScene extends Phaser.Scene {
   }
 
   private createCombatSkillDockV2(): void {
-    this.add.rectangle(W / 2, 642, W, 116, 0x080706, 0.9).setDepth(200).setStrokeStyle(1, 0x60451f);
+    const H = this.scale.height;
+    const DOCK_Y = H - 318;
+    const SLOT_Y = H - 280;
+
+    this.add.rectangle(W / 2, DOCK_Y, W, 116, 0x080706, 0.9).setDepth(200).setStrokeStyle(1, 0x60451f);
     const slots = [
       { x: 56, radius: 35, label: UI.dash, action: 'dash' as const, color: 0x2f2a16 },
       { x: 145, radius: 38, label: UI.martial, action: 0 as const, color: 0x163b64 },
@@ -293,67 +337,72 @@ export class UIScene extends Phaser.Scene {
     ];
 
     slots.forEach((slot) => {
-      const ring = this.add.circle(slot.x, 680, slot.radius, 0x11100e, 1)
+      const ring = this.add.circle(slot.x, SLOT_Y, slot.radius, 0x11100e, 1)
         .setStrokeStyle(slot.radius > 40 ? 4 : 2, slot.radius > 40 ? 0xe2b655 : 0x8d6b32)
         .setDepth(202)
         .setInteractive();
-      this.add.circle(slot.x, 680, slot.radius - 7, slot.color, 0.95).setDepth(201);
-      const glow = this.add.circle(slot.x, 680, slot.radius - 14, 0xffffff, slot.radius > 40 ? 0.12 : 0.07).setDepth(202);
+      this.add.circle(slot.x, SLOT_Y, slot.radius - 7, slot.color, 0.95).setDepth(201);
+      const glow = this.add.circle(slot.x, SLOT_Y, slot.radius - 14, 0xffffff, slot.radius > 40 ? 0.12 : 0.07).setDepth(202);
       this.tweens.add({ targets: glow, alpha: 0.02, duration: 900, yoyo: true, repeat: -1 });
 
       if (slot.action === 'dash') {
         ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-dash'));
-        this.add.text(slot.x, 680, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 62 } }).setOrigin(0.5).setDepth(204);
-        this.dashCooldown = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
-        this.dashCooldownText = this.add.text(slot.x, 680, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
+        this.add.text(slot.x, SLOT_Y, slot.label, { ...this.textStyle(12, '#f6e3b2'), align: 'center', wordWrap: { width: 62 } }).setOrigin(0.5).setDepth(204);
+        this.dashCooldown = this.add.arc(slot.x, SLOT_Y, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
+        this.dashCooldownText = this.add.text(slot.x, SLOT_Y, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
         return;
       }
 
       if (slot.action === 'locked') {
-        this.add.text(slot.x, 680, slot.label, this.textStyle(12, '#7d766a')).setOrigin(0.5).setDepth(204);
+        this.add.text(slot.x, SLOT_Y, slot.label, this.textStyle(12, '#7d766a')).setOrigin(0.5).setDepth(204);
         return;
       }
 
       ring.on('pointerdown', () => this.scene.get('BattleScene').events.emit('use-skill', slot.action));
-      this.skillIcons[slot.action] = this.add.image(slot.x, 676, skillCardKey(getStarterSkill(this.charClass)))
+      this.skillIcons[slot.action] = this.add.image(slot.x, SLOT_Y - 4, skillCardKey(getStarterSkill(this.charClass)))
         .setDisplaySize(slot.radius * 1.24, slot.radius * 1.24)
         .setDepth(202)
         .setAlpha(0.9);
-      this.add.circle(slot.x, 680, slot.radius - 9, 0x000000, 0.18).setDepth(203);
-      this.skillLabels[slot.action] = this.add.text(slot.x, 704, slot.label, { ...this.textStyle(9, '#f6e3b2'), align: 'center', wordWrap: { width: 74 } }).setOrigin(0.5).setDepth(204);
-      this.cooldowns[slot.action] = this.add.arc(slot.x, 680, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
-      this.cooldownTexts[slot.action] = this.add.text(slot.x, 680, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
+      this.add.circle(slot.x, SLOT_Y, slot.radius - 9, 0x000000, 0.18).setDepth(203);
+      this.skillLabels[slot.action] = this.add.text(slot.x, SLOT_Y + 24, slot.label, { ...this.textStyle(9, '#f6e3b2'), align: 'center', wordWrap: { width: 74 } }).setOrigin(0.5).setDepth(204);
+      this.cooldowns[slot.action] = this.add.arc(slot.x, SLOT_Y, slot.radius - 6, 0, 360, false, 0x000000, 0.62).setDepth(205).setVisible(false);
+      this.cooldownTexts[slot.action] = this.add.text(slot.x, SLOT_Y, '', this.textStyle(13, '#ffe29a')).setOrigin(0.5).setDepth(206).setVisible(false);
     });
 
-    this.modeGlow = this.add.circle(488, 680, 40, 0xffc45a, 0.12)
+    this.modeGlow = this.add.circle(488, SLOT_Y, 40, 0xffc45a, 0.12)
       .setDepth(201)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: this.modeGlow, alpha: 0.04, scaleX: 1.1, scaleY: 1.1, duration: 900, yoyo: true, repeat: -1 });
-    const auto = this.add.circle(488, 680, 34, 0x21170b, 1).setStrokeStyle(2, GOLD).setDepth(202).setInteractive();
+    const auto = this.add.circle(488, SLOT_Y, 34, 0x21170b, 1).setStrokeStyle(2, GOLD).setDepth(202).setInteractive();
     this.modeButton = auto;
-    this.modeText = this.add.text(488, 680, 'AUTO', this.textStyle(13, '#f2d27d')).setOrigin(0.5).setDepth(203);
+    this.modeText = this.add.text(488, SLOT_Y, 'AUTO', this.textStyle(13, '#f2d27d')).setOrigin(0.5).setDepth(203);
     auto.on('pointerdown', () => this.scene.get('BattleScene').events.emit('toggle-battle-mode'));
   }
 
   private createQuickMartialBoard(): void {
-    this.add.rectangle(W / 2, 806, W, 214, 0x0a0806, 0.97).setDepth(190).setStrokeStyle(1, 0x60451f);
+    const H = this.scale.height;
+    const BOARD_Y = H - 154;
+    const TAB_Y = H - 242;
+    const ROW_BASE_Y = H - 180;
+
+    this.add.rectangle(W / 2, BOARD_Y, W, 214, 0x0a0806, 0.97).setDepth(190).setStrokeStyle(1, 0x60451f);
     const tabs: [MartialTab, string][] = [['SKILLS', UI.martial], ['SYNTH', UI.synth], ['UPGRADE', UI.upgrade], ['BOSS', UI.boss]];
     tabs.forEach(([tab, label], index) => {
       const x = 28 + index * 121;
       const active = tab === 'SKILLS';
-      const button = this.add.rectangle(x, 718, 112, 36, active ? 0x6a481a : 0x17120d)
+      const button = this.add.rectangle(x, TAB_Y, 112, 36, active ? 0x6a481a : 0x17120d)
         .setOrigin(0, 0)
         .setStrokeStyle(active ? 2 : 1, active ? GOLD : 0x60451f)
         .setDepth(202)
         .setInteractive();
-      this.add.rectangle(x + 56, 724, 98, 3, active ? 0xffdf84 : 0x2a2115, active ? 0.55 : 0.35).setDepth(203);
-      this.add.rectangle(x + 56, 753, 100, 2, active ? 0x8d5a20 : 0x050403, active ? 0.6 : 0.45).setDepth(203);
+      this.add.rectangle(x + 56, TAB_Y + 6, 98, 3, active ? 0xffdf84 : 0x2a2115, active ? 0.55 : 0.35).setDepth(203);
+      this.add.rectangle(x + 56, TAB_Y + 35, 100, 2, active ? 0x8d5a20 : 0x050403, active ? 0.6 : 0.45).setDepth(203);
       if (active) {
-        this.add.circle(x + 56, 718, 7, 0x080604, 1).setStrokeStyle(1, GOLD).setDepth(204);
-        this.add.text(x + 56, 718, '\u25C6', this.textStyle(8, '#ffe29a')).setOrigin(0.5).setDepth(205);
+        this.add.circle(x + 56, TAB_Y, 7, 0x080604, 1).setStrokeStyle(1, GOLD).setDepth(204);
+        this.add.text(x + 56, TAB_Y, '\u25C6', this.textStyle(8, '#ffe29a')).setOrigin(0.5).setDepth(205);
       }
       button.on('pointerdown', () => { this.martialTab = tab; this.openPanel('MARTIAL'); });
-      this.add.text(x + 56, 736, label, this.textStyle(16, active ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(204);
+      this.add.text(x + 56, TAB_Y + 18, label, this.textStyle(16, active ? '#f3d992' : '#b7aa92')).setOrigin(0.5).setDepth(204);
     });
 
     const save = loadGame();
@@ -373,7 +422,7 @@ export class UIScene extends Phaser.Scene {
       const col = index % 5;
       const row = Math.floor(index / 5);
       const cx = 54 + col * 108;
-      const cy = 780 + row * 78;
+      const cy = ROW_BASE_Y + row * 78;
       const gradeTint = this.skillGradeColor(skill.grade);
       const isEquipped = equipped.has(skill.id);
 
@@ -423,7 +472,13 @@ export class UIScene extends Phaser.Scene {
   }
 
   private createBottomNavV2(): void {
-    this.add.rectangle(W / 2, 925, W, 70, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
+    const H = this.scale.height;
+    const NAV_BG_Y = H - 35;
+    const NAV_BTN_Y = H - 50;
+    const NAV_GLYPH_Y = H - 53;
+    const NAV_LABEL_Y = H - 20;
+
+    this.add.rectangle(W / 2, NAV_BG_Y, W, 70, 0x080706, 0.98).setDepth(200).setStrokeStyle(1, 0x60451f);
     const nav: [Panel, string, string][] = [
       ['TRAINING', UI.training, '\u4FEE'],
       ['EQUIPMENT', UI.equipment, '\u88DD'],
@@ -436,10 +491,10 @@ export class UIScene extends Phaser.Scene {
     nav.forEach(([panel, label, glyph], index) => {
       const x = 38 + index * 77;
       const isMain = panel === 'MARTIAL';
-      const button = this.add.circle(x, 910, isMain ? 28 : 23, 0x17120d, 1)
+      const button = this.add.circle(x, NAV_BTN_Y, isMain ? 28 : 23, 0x17120d, 1)
         .setStrokeStyle(isMain ? 3 : 1, isMain ? GOLD : 0x75572b).setDepth(202).setInteractive();
-      this.add.text(x, 907, glyph, this.titleStyle(isMain ? 20 : 17)).setOrigin(0.5).setDepth(203);
-      this.add.text(x, 940, label, this.textStyle(10, '#d5c6a7')).setOrigin(0.5).setDepth(203);
+      this.add.text(x, NAV_GLYPH_Y, glyph, this.titleStyle(isMain ? 20 : 17)).setOrigin(0.5).setDepth(203);
+      this.add.text(x, NAV_LABEL_Y, label, this.textStyle(10, '#d5c6a7')).setOrigin(0.5).setDepth(203);
       button.on('pointerdown', () => this.openPanel(panel));
     });
   }
@@ -485,7 +540,7 @@ export class UIScene extends Phaser.Scene {
       const x = 38 + (index % 4) * 124;
       const y = 165 + Math.floor(index / 4) * 260;
       const art = this.add.image(x + 55, y + 78, skillCardKey(skill.id)).setDisplaySize(110, 156).setInteractive().setDepth(702);
-      art.on('pointerdown', () => this.equipSkill(skill.id, index % 3));
+      art.on('pointerdown', () => this.showEquipSlotSelect(skill.id));
 
       const grade = skill.grade.toLowerCase();
       const frameKey = `ui_card_${grade === 'low' ? 'common' : grade === 'mid' ? 'rare' : grade === 'high' ? 'epic' : 'legend'}`;
@@ -537,20 +592,77 @@ export class UIScene extends Phaser.Scene {
   private buildBossList(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     const stageCleared = save.stageCleared ?? 0;
+    
+    // ─── 경지(Realm) 선택 탭 렌더링 ───
+    const realms = ['초입', '일류', '절정', '초절정', '화경', '현경', '생사경'];
+    
+    // Row 1: 초입, 일류, 절정, 초절정 (Y = 160)
+    // Row 2: 화경, 현경, 생사경 (Y = 200)
+    realms.forEach((realm, index) => {
+      const isRow2 = index >= 4;
+      const col = isRow2 ? index - 4 : index;
+      const x = isRow2 ? (115 + col * 110) : (60 + col * 110);
+      const y = isRow2 ? 200 : 160;
+      
+      const active = this.selectedRealm === index;
+      const tabBtn = this.add.rectangle(x, y, 100, 32, active ? 0x6a481a : 0x17120d)
+        .setStrokeStyle(1, active ? GOLD : 0x60451f)
+        .setInteractive()
+        .setDepth(702);
+      
+      tabBtn.on('pointerdown', () => {
+        this.selectedRealm = index;
+        this.openPanel('MARTIAL');
+      });
+      
+      const txt = this.add.text(x, y, realm, this.textStyle(13, active ? '#ffe29a' : '#a8987a'))
+        .setOrigin(0.5)
+        .setDepth(703);
+      
+      items.push(tabBtn, txt);
+    });
+
+    // ─── 선택된 경지의 보스 리스트 렌더링 ───
+    let startStage = 1;
+    let endStage = 8;
+    if (this.selectedRealm === 0) { startStage = 1; endStage = 8; }
+    else if (this.selectedRealm === 1) { startStage = 9; endStage = 16; }
+    else if (this.selectedRealm === 2) { startStage = 17; endStage = 24; }
+    else if (this.selectedRealm === 3) { startStage = 25; endStage = 32; }
+    else if (this.selectedRealm === 4) { startStage = 33; endStage = 40; }
+    else if (this.selectedRealm === 5) { startStage = 41; endStage = 48; }
+    else if (this.selectedRealm === 6) { startStage = 49; endStage = 50; }
+
     const ranks = ['DAEJU', 'DANJU', 'GAKJU', 'MAGUN', 'HOBUP', 'SAJA', 'BUGYOJU', 'HYEOLMA'];
-    ranks.forEach((rank, index) => {
-      const y = 165 + index * 72;
-      const id = `boss_${['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'][index]}`;
+
+    let count = 0;
+    for (let stage = startStage; stage <= endStage; stage++) {
+      const idx = (stage - 1) % 8;
+      const rank = ranks[idx];
+      const y = 250 + count * 64;
+      count++;
+
+      const id = `boss_stage_${stage}`;
       const done = save.defeatedBosses?.includes(id) ?? false;
-      const bossWave = (index + 1) * 5;
+      const bossWave = stage * 5;
       const reachable = stageCleared >= bossWave - 4;
       const statusText = done ? '격파' : reachable ? '도전 중' : '미도전';
       const statusColor = done ? '#83d68a' : reachable ? '#b6a98d' : '#6b6052';
-      const row = this.add.rectangle(W / 2, y, W - 76, 58, done ? 0x162416 : 0x17120d).setStrokeStyle(1, BOSS_RANK_COLORS[rank]);
-      items.push(row,
-        this.add.text(55, y, `${index + 1}장 · ${BOSS_RANK_NAMES[rank] ?? rank}`, this.textStyle(17, '#f0d493')).setOrigin(0, 0.5),
-        this.add.text(W - 60, y, statusText, this.textStyle(15, statusColor)).setOrigin(1, 0.5));
-    });
+      
+      const row = this.add.rectangle(W / 2, y, W - 76, 52, done ? 0x162416 : 0x17120d)
+        .setStrokeStyle(1, BOSS_RANK_COLORS[rank])
+        .setDepth(702);
+      
+      const titleText = this.add.text(55, y, `${stage}장 · ${BOSS_RANK_NAMES[rank] ?? rank}`, this.textStyle(14, '#f0d493'))
+        .setOrigin(0, 0.5)
+        .setDepth(703);
+      
+      const statusDisp = this.add.text(W - 60, y, statusText, this.textStyle(13, statusColor))
+        .setOrigin(1, 0.5)
+        .setDepth(703);
+      
+      items.push(row, titleText, statusDisp);
+    }
   }
 
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
@@ -564,19 +676,67 @@ export class UIScene extends Phaser.Scene {
       { key: 'crit',    name: '격파 수련', sub: '파공술(破功術)',     icon: '破', eff: '치명타 확률', pct: 2,   maxLv: 10, base: 250, color: 0xc878ff },
     ] as const;
 
+    // 배수 버튼 UI 추가
+    const MULTIPLIERS: (1 | 10 | 100 | 'MAX')[] = [1, 10, 100, 'MAX'];
+    MULTIPLIERS.forEach((mul, index) => {
+      const x = 144 + index * 84;
+      const y = 112;
+      const active = this.trainingMultiplier === mul;
+      const btn = this.add.rectangle(x, y, 76, 26, active ? 0x5a3d18 : 0x17120d)
+        .setStrokeStyle(1, active ? GOLD : 0x75572b).setInteractive().setDepth(703);
+      const txt = this.add.text(x, y, `x${mul}`, this.textStyle(12, active ? '#f0d493' : '#b7aa92')).setOrigin(0.5).setDepth(704);
+      btn.on('pointerdown', () => {
+        this.trainingMultiplier = mul;
+        this.openPanel('TRAINING');
+      });
+      items.push(btn, txt);
+    });
+
     // 2×3 그리드
     const COL = [150, 392];
-    const ROW = [180, 360, 540];
-    const CW = 224, CH = 158;
+    const ROW = [200, 370, 540];
+    const CW = 224, CH = 152;
 
     TRAIN.forEach((t, i) => {
       const cx = COL[i % 2];
       const cy = ROW[Math.floor(i / 2)];
       const lv = save.trainingLevels?.[t.key] ?? 0;
       const isMax = lv >= t.maxLv;
-      const cost = t.base * (lv + 1);
       const ratio = lv / t.maxLv;
       const effPct = (t.pct * lv).toFixed(1);
+
+      // 다중 강화 연산
+      let count = 1;
+      let totalCost = 0;
+      let tempLv = lv;
+
+      if (this.trainingMultiplier === 'MAX') {
+        let currentGold = save.gold;
+        while (tempLv < t.maxLv) {
+          const stepCost = t.base * (tempLv + 1);
+          if (currentGold >= stepCost) {
+            currentGold -= stepCost;
+            totalCost += stepCost;
+            tempLv++;
+          } else {
+            break;
+          }
+        }
+        count = tempLv - lv;
+        if (count <= 0) {
+          count = 1;
+          totalCost = t.base * (lv + 1);
+        }
+      } else {
+        count = Number(this.trainingMultiplier);
+        if (lv + count > t.maxLv) {
+          count = t.maxLv - lv;
+        }
+        count = Math.max(1, count);
+        for (let k = 0; k < count; k++) {
+          totalCost += t.base * (lv + 1 + k);
+        }
+      }
 
       // 카드 배경
       items.push(
@@ -587,14 +747,14 @@ export class UIScene extends Phaser.Scene {
       );
       // 아이콘
       items.push(
-        this.add.circle(cx - 90, cy - 40, 21, 0x0a0806).setStrokeStyle(2, t.color, 0.9).setDepth(703),
-        this.add.text(cx - 90, cy - 40, t.icon, this.titleStyle(19)).setOrigin(0.5).setDepth(704),
+        this.add.circle(cx - 90, cy - 38, 21, 0x0a0806).setStrokeStyle(2, t.color, 0.9).setDepth(703),
+        this.add.text(cx - 90, cy - 38, t.icon, this.titleStyle(19)).setOrigin(0.5).setDepth(704),
       );
       // 이름 / 서브 / 레벨
       items.push(
-        this.add.text(cx - 62, cy - 52, t.name, this.textStyle(14, '#e8c36a')).setDepth(703),
-        this.add.text(cx - 62, cy - 34, t.sub, this.textStyle(9, '#6e6254')).setDepth(703),
-        this.add.text(cx + 100, cy - 52, `${lv}/${t.maxLv}`, this.textStyle(12, '#f0d493'))
+        this.add.text(cx - 62, cy - 50, t.name, this.textStyle(14, '#e8c36a')).setDepth(703),
+        this.add.text(cx - 62, cy - 32, t.sub, this.textStyle(9, '#6e6254')).setDepth(703),
+        this.add.text(cx + 100, cy - 50, `${lv}/${t.maxLv}`, this.textStyle(12, '#f0d493'))
           .setOrigin(1, 0).setDepth(703),
       );
       // 효과 텍스트
@@ -604,23 +764,23 @@ export class UIScene extends Phaser.Scene {
       // 진행 바
       const bw = 200;
       items.push(
-        this.add.rectangle(cx, cy + 22, bw, 7, 0x1e1a13, 1).setDepth(703),
-        this.add.rectangle(cx - bw / 2, cy + 22, Math.max(3, bw * ratio), 7, t.color, 0.85)
+        this.add.rectangle(cx, cy + 20, bw, 7, 0x1e1a13, 1).setDepth(703),
+        this.add.rectangle(cx - bw / 2, cy + 20, Math.max(3, bw * ratio), 7, t.color, 0.85)
           .setOrigin(0, 0.5).setDepth(704),
       );
       // 업그레이드 버튼
       if (!isMax) {
-        const btn = this.add.rectangle(cx, cy + 52, 200, 28, 0x4a3215)
+        const btn = this.add.rectangle(cx, cy + 48, 200, 28, 0x4a3215)
           .setStrokeStyle(1, GOLD).setInteractive().setDepth(703);
-        btn.on('pointerdown', () => this.upgradeTraining(t.key, cost));
+        btn.on('pointerdown', () => this.upgradeTraining(t.key, totalCost, count));
         items.push(
           btn,
-          this.add.text(cx, cy + 52, `수련  ·  ${cost}G`, this.textStyle(13, '#f0d493')).setOrigin(0.5).setDepth(704),
+          this.add.text(cx, cy + 48, `수련 x${count}  ·  ${totalCost}G`, this.textStyle(11, '#f0d493')).setOrigin(0.5).setDepth(704),
         );
       } else {
         items.push(
-          this.add.rectangle(cx, cy + 52, 200, 28, 0x1c1c1c).setStrokeStyle(1, 0x444444).setDepth(703),
-          this.add.text(cx, cy + 52, '수련 완성 (MAX)', this.textStyle(12, '#555555')).setOrigin(0.5).setDepth(704),
+          this.add.rectangle(cx, cy + 48, 200, 28, 0x1c1c1c).setStrokeStyle(1, 0x444444).setDepth(703),
+          this.add.text(cx, cy + 48, '수련 완성 (MAX)', this.textStyle(12, '#555555')).setOrigin(0.5).setDepth(704),
         );
       }
     });
@@ -646,7 +806,7 @@ export class UIScene extends Phaser.Scene {
       const x = 48 + index * 62;
       const button = this.add.rectangle(x, 105, 56, 38, this.equipmentFilter === filter ? 0x5a3d18 : 0x17120d)
         .setStrokeStyle(1, this.equipmentFilter === filter ? GOLD : 0x75572b).setInteractive();
-      button.on('pointerdown', () => { this.equipmentFilter = filter; this.openPanel('EQUIPMENT'); });
+      button.on('pointerdown', () => { this.equipmentFilter = filter; this.equipmentPage = 0; this.openPanel('EQUIPMENT'); });
       items.push(button, this.add.text(x, 105, label, this.textStyle(12, '#f0d493')).setOrigin(0.5));
     });
     const salvage = this.add.rectangle(305, 105, 86, 38, 0x3b2514).setStrokeStyle(1, GOLD).setInteractive();
@@ -669,19 +829,58 @@ export class UIScene extends Phaser.Scene {
     });
 
     const equippedIds = new Set(Object.values(save.equippedItems ?? {}));
-    const inventory = [...(save.equipmentInventory ?? [])]
+    const filteredInventory = [...(save.equipmentInventory ?? [])]
       .filter(item => this.equipmentFilter === 'ALL' || (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter))
-      .sort((a, b) => equipmentScore(b) - equipmentScore(a)).slice(0, 8);
-    inventory.forEach((item, index) => {
+      .sort((a, b) => equipmentScore(b) - equipmentScore(a));
+
+    const itemsPerPage = 8;
+    const totalPages = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
+    this.equipmentPage = Math.min(this.equipmentPage, totalPages - 1);
+    this.equipmentPage = Math.max(0, this.equipmentPage);
+
+    const inventoryPageItems = filteredInventory.slice(this.equipmentPage * itemsPerPage, (this.equipmentPage + 1) * itemsPerPage);
+
+    inventoryPageItems.forEach((item, index) => {
       const x = 55 + (index % 2) * 245;
       const y = 540 + Math.floor(index / 2) * 70;
       const equipped = equippedIds.has(item.id);
-      const button = this.add.rectangle(x, y, 220, 56, equipped ? 0x26301a : 0x17120d).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
+
+      let cardBgColor = equipped ? 0x1e2815 : 0x14100c;
+      if (item.grade === 'EPIC') cardBgColor = equipped ? 0x2b1e35 : 0x1e1526;
+      if (item.grade === 'LEGENDARY') cardBgColor = equipped ? 0x3d2b10 : 0x2c1f0d;
+
+      const button = this.add.rectangle(x, y, 220, 56, cardBgColor).setOrigin(0, 0).setStrokeStyle(1, this.gradeColor(item));
       button.setInteractive().on('pointerdown', () => this.equipItem(item));
       items.push(button,
         this.add.text(x + 10, y + 10, item.name, { ...this.textStyle(13, '#eee0c1'), wordWrap: { width: 200 } }),
         this.add.text(x + 10, y + 33, `${equipped ? '장착 · ' : ''}전투력 ${equipmentScore(item)}`, this.textStyle(12, '#d4a74e')));
     });
+
+    // 페이징 컨트롤러 UI
+    const pgY = 822;
+    const prevBtn = this.add.rectangle(100, pgY, 60, 26, this.equipmentPage > 0 ? 0x4a3215 : 0x1a1a1a)
+      .setStrokeStyle(1, this.equipmentPage > 0 ? GOLD : 0x444444).setInteractive();
+    const prevTxt = this.add.text(100, pgY, '◀', this.textStyle(12, this.equipmentPage > 0 ? '#f3d992' : '#555555')).setOrigin(0.5);
+    const pageText = this.add.text(W / 2, pgY, `${this.equipmentPage + 1} / ${totalPages}`, this.textStyle(13, '#eee0c1')).setOrigin(0.5);
+    const nextBtn = this.add.rectangle(W - 100, pgY, 60, 26, this.equipmentPage < totalPages - 1 ? 0x4a3215 : 0x1a1a1a)
+      .setStrokeStyle(1, this.equipmentPage < totalPages - 1 ? GOLD : 0x444444).setInteractive();
+    const nextTxt = this.add.text(W - 100, pgY, '▶', this.textStyle(12, this.equipmentPage < totalPages - 1 ? '#f3d992' : '#555555')).setOrigin(0.5);
+
+    prevBtn.on('pointerdown', () => {
+      if (this.equipmentPage > 0) {
+        this.equipmentPage--;
+        this.openPanel('EQUIPMENT');
+      }
+    });
+    nextBtn.on('pointerdown', () => {
+      if (this.equipmentPage < totalPages - 1) {
+        this.equipmentPage++;
+        this.openPanel('EQUIPMENT');
+      }
+    });
+
+    items.push(prevBtn, prevTxt, pageText, nextBtn, nextTxt);
+
     // 대장장이 일러스트 배치 (인벤토리 목록 아래 빈 공간에 배치)
     const npc = this.add.image(W - 80, 720, 'npc_blacksmith').setDisplaySize(130, 130).setDepth(702).setAlpha(0.7);
     items.push(npc);
@@ -794,7 +993,7 @@ export class UIScene extends Phaser.Scene {
       const isActive = this.codexTab === tab;
       const btn = this.add.rectangle(x, 103, 112, 38, isActive ? 0x5a3d18 : 0x17120d)
         .setStrokeStyle(isActive ? 2 : 1, isActive ? GOLD : 0x60451f).setInteractive().setDepth(702);
-      btn.on('pointerdown', () => { this.codexTab = tab; this.openPanel('CODEX'); });
+      btn.on('pointerdown', () => { this.codexTab = tab; this.codexPage = 0; this.openPanel('CODEX'); });
       items.push(btn,
         this.add.text(x - 20, 103, glyph, this.titleStyle(18)).setOrigin(0.5).setDepth(703),
         this.add.text(x + 16, 103, label, this.textStyle(14, isActive ? '#f3d992' : '#b7aa92')).setOrigin(0, 0.5).setDepth(703),
@@ -802,19 +1001,32 @@ export class UIScene extends Phaser.Scene {
     });
 
     if (this.codexTab === 'SKILLS') {
-      // 무공 탭 - 2열 스킬 목록
+      // 무공 탭 - 2열 스킬 목록 (한 페이지당 12개)
       const allSkills = [...SKILL_DATABASE.values()].filter(s => s.type === 'ACTIVE' && s.category === this.charClass);
       const owned = new Set(save.unlockedSkills);
       items.push(this.add.text(38, 140, `${this.charClass === 'SWORD' ? '검법' : this.charClass === 'BLADE' ? '도법' : this.charClass === 'FIST' ? '권법' : '창법'} 계열 무공  ·  ${owned.size}개 습득`, this.textStyle(12, '#7a6e58')).setDepth(702));
-      allSkills.slice(0, 14).forEach((skill, i) => {
+      
+      const itemsPerPage = 12;
+      const totalPages = Math.max(1, Math.ceil(allSkills.length / itemsPerPage));
+      this.codexPage = Math.min(this.codexPage, totalPages - 1);
+      this.codexPage = Math.max(0, this.codexPage);
+      const pageSkills = allSkills.slice(this.codexPage * itemsPerPage, (this.codexPage + 1) * itemsPerPage);
+
+      pageSkills.forEach((skill, i) => {
         const col = i % 2;
         const row = Math.floor(i / 2);
         const x = 38 + col * 248;
         const y = 160 + row * 90;
         const isOwned = owned.has(skill.id);
         const gradeColor = this.skillGradeColor(skill.grade);
+        let skillBgColor = isOwned ? 0x120f0d : 0x0a0908;
+        if (isOwned) {
+          if (skill.grade === 'MID') skillBgColor = 0x0f1a10;      // Rare - 녹색 계열
+          if (skill.grade === 'HIGH') skillBgColor = 0x1c152a;     // Epic - 보라색 계열
+          if (skill.grade === 'ULTIMATE') skillBgColor = 0x2a1d0d; // Legendary - 주황/황금 계열
+        }
         items.push(
-          this.add.rectangle(x, y, 234, 78, 0x110f0c, 1)
+          this.add.rectangle(x, y, 234, 78, skillBgColor, 1)
             .setOrigin(0, 0).setStrokeStyle(1, isOwned ? gradeColor : 0x2a2218, isOwned ? 0.8 : 0.5).setDepth(702),
           this.add.image(x + 36, y + 39, skillCardKey(skill.id)).setDisplaySize(58, 58).setOrigin(0.5).setAlpha(isOwned ? 0.9 : 0.25).setDepth(703),
           this.add.text(x + 70, y + 16, this.skillLabel(skill), { ...this.textStyle(13, isOwned ? '#e8c36a' : '#4a4035'), wordWrap: { width: 148 } }).setDepth(703),
@@ -824,12 +1036,20 @@ export class UIScene extends Phaser.Scene {
           this.add.text(x + 222, y + 58, isOwned ? '습득' : '미습득', this.textStyle(10, isOwned ? '#83d68a' : '#554e45')).setOrigin(1, 1).setDepth(703),
         );
       });
+      this.renderCodexPaging(items, totalPages);
     } else if (this.codexTab === 'ENEMIES') {
-      // 일반 적 탭
+      // 일반 적 탭 (한 페이지당 10개)
       const enemies = [...ENEMY_DATABASE.values()].filter(e => e.rank !== 'BOSS');
       const unlockedRegion = save.storyRegion ?? 1;
       items.push(this.add.text(38, 140, `일반 적 도감  ·  총 ${Math.min(enemies.length, unlockedRegion * 3)}마리 발견`, this.textStyle(12, '#7a6e58')).setDepth(702));
-      enemies.slice(0, 12).forEach((enemy, i) => {
+      
+      const itemsPerPage = 10;
+      const totalPages = Math.max(1, Math.ceil(enemies.length / itemsPerPage));
+      this.codexPage = Math.min(this.codexPage, totalPages - 1);
+      this.codexPage = Math.max(0, this.codexPage);
+      const pageEnemies = enemies.slice(this.codexPage * itemsPerPage, (this.codexPage + 1) * itemsPerPage);
+
+      pageEnemies.forEach((enemy, i) => {
         const y = 158 + i * 58;
         const isUnlocked = (enemy.region ?? 1) <= unlockedRegion;
         const regionColor = [0x5aafff, 0x60d060, 0xffd060, 0xe07030, 0xe05555, 0xc04040, 0x9050e0, 0xcc2030][Math.min(7, (enemy.region ?? 1) - 1)];
@@ -841,25 +1061,60 @@ export class UIScene extends Phaser.Scene {
           this.add.text(W - 56, y + 26, isUnlocked ? (enemy.rank === 'ELITE' ? '정예' : '일반') : '', this.textStyle(12, isUnlocked ? '#f0d493' : '#3a3530')).setOrigin(1, 0.5).setDepth(703),
         );
       });
+      this.renderCodexPaging(items, totalPages);
     } else {
-      // 보스 탭
+      // 보스 탭 (한 페이지당 7개 - Y 범위 준수)
       const bosses = [...ENEMY_DATABASE.values()].filter(e => e.rank === 'BOSS');
       const defeatedSet = new Set(save.defeatedBosses ?? []);
       items.push(this.add.text(38, 140, `혈교 보스 도감  ·  ${defeatedSet.size} / ${bosses.length} 격파`, this.textStyle(12, '#7a6e58')).setDepth(702));
-      bosses.forEach((boss, i) => {
+      
+      const itemsPerPage = 7;
+      const totalPages = Math.max(1, Math.ceil(bosses.length / itemsPerPage));
+      this.codexPage = Math.min(this.codexPage, totalPages - 1);
+      this.codexPage = Math.max(0, this.codexPage);
+      const pageBosses = bosses.slice(this.codexPage * itemsPerPage, (this.codexPage + 1) * itemsPerPage);
+
+      pageBosses.forEach((boss, i) => {
         const y = 160 + i * 84;
         const isDefeated = defeatedSet.has(boss.id);
         const rankColor = BOSS_RANK_COLORS[boss.bossRank ?? 'DAEJU'] ?? 0x75572b;
         items.push(
           this.add.rectangle(W / 2, y + 34, W - 52, 72, isDefeated ? 0x131c0e : 0x110f0c, 1)
             .setStrokeStyle(2, rankColor, isDefeated ? 0.9 : 0.35).setDepth(702),
-          this.add.text(56, y + 16, `${i + 1}장  ${BOSS_RANK_NAMES[boss.bossRank ?? 'DAEJU'] ?? ''}`, this.textStyle(11, '#7a6e58')).setDepth(703),
+          this.add.text(56, y + 16, `${(this.codexPage * itemsPerPage) + i + 1}장  ${BOSS_RANK_NAMES[boss.bossRank ?? 'DAEJU'] ?? ''}`, this.textStyle(11, '#7a6e58')).setDepth(703),
           this.add.text(56, y + 34, isDefeated ? boss.name : '???', this.titleStyle(18)).setDepth(703),
           this.add.text(56, y + 56, isDefeated ? `HP ${boss.hp}  ·  공격 ${boss.damage}  ·  ${boss.region ?? 1}지역 수호자` : '격파 필요', this.textStyle(11, '#7a6e58')).setDepth(703),
           this.add.text(W - 56, y + 34, isDefeated ? '격파 ✓' : '미격파', this.textStyle(14, isDefeated ? '#83d68a' : '#554e45')).setOrigin(1, 0.5).setDepth(703),
         );
       });
+      this.renderCodexPaging(items, totalPages);
     }
+  }
+
+  private renderCodexPaging(items: Phaser.GameObjects.GameObject[], totalPages: number): void {
+    const pgY = 822;
+    const prevBtn = this.add.rectangle(100, pgY, 60, 26, this.codexPage > 0 ? 0x4a3215 : 0x1a1a1a)
+      .setStrokeStyle(1, this.codexPage > 0 ? GOLD : 0x444444).setInteractive();
+    const prevTxt = this.add.text(100, pgY, '◀', this.textStyle(12, this.codexPage > 0 ? '#f3d992' : '#555555')).setOrigin(0.5);
+    const pageText = this.add.text(W / 2, pgY, `${this.codexPage + 1} / ${totalPages}`, this.textStyle(13, '#eee0c1')).setOrigin(0.5);
+    const nextBtn = this.add.rectangle(W - 100, pgY, 60, 26, this.codexPage < totalPages - 1 ? 0x4a3215 : 0x1a1a1a)
+      .setStrokeStyle(1, this.codexPage < totalPages - 1 ? GOLD : 0x444444).setInteractive();
+    const nextTxt = this.add.text(W - 100, pgY, '▶', this.textStyle(12, this.codexPage < totalPages - 1 ? '#f3d992' : '#555555')).setOrigin(0.5);
+
+    prevBtn.on('pointerdown', () => {
+      if (this.codexPage > 0) {
+        this.codexPage--;
+        this.openPanel('CODEX');
+      }
+    });
+    nextBtn.on('pointerdown', () => {
+      if (this.codexPage < totalPages - 1) {
+        this.codexPage++;
+        this.openPanel('CODEX');
+      }
+    });
+
+    items.push(prevBtn, prevTxt, pageText, nextBtn, nextTxt);
   }
 
   private buildMissions(items: Phaser.GameObjects.GameObject[]): void {
@@ -963,10 +1218,18 @@ export class UIScene extends Phaser.Scene {
   private updateHUD(state: PlayerStatePayload): void {
     this.hpFill.width = 220 * Phaser.Math.Clamp(state.hp / state.maxHp, 0, 1);
     this.spFill.width = 190 * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
+
+    if (this.hpText) this.hpText.setText(`${Math.round(state.hp)} / ${state.maxHp}`);
+    if (this.spText) this.spText.setText(`${Math.round(state.stamina)} / ${state.maxStamina}`);
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
     this.levelText.setText(`Lv.${state.level}`);
     this.goldText.setText(`${state.gold} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
+
+    const stage = Math.floor((state.waveNumber - 1) / 5) + 1;
+    const realm = this.getRealmName(stage);
+    const isBoss = state.isBossWave ? ' [보스급 관문]' : '';
+    this.stageInfoText.setText(`[경지: ${realm} ${stage}장]  웨이브 ${state.waveNumber} / 250${isBoss}`);
     const isAuto = state.battleMode === 'AUTO';
     this.modeText.setText(isAuto ? 'AUTO' : '수동');
     if (this.modeButton) {
@@ -979,13 +1242,25 @@ export class UIScene extends Phaser.Scene {
     if (this.dashCooldown) {
       this.updateCooldown(this.dashCooldown, this.dashCooldownText, state.dashCooldownRemaining, state.dashCooldown);
     }
-    state.skills.forEach((skill, index) => {
-      if (!this.skillLabels[index]) return;
-      const data = SKILL_DATABASE.get(skill.id);
-      this.skillLabels[index].setText(this.skillLabel(data));
-      this.skillIcons[index]?.setTexture(skillCardKey(skill.id));
-      this.updateCooldown(this.cooldowns[index], this.cooldownTexts[index], skill.cooldownRemaining, skill.cooldown);
-    });
+    for (let index = 0; index < 3; index++) {
+      if (!this.skillLabels[index]) continue;
+      const skill = state.skills[index];
+      if (skill) {
+        const data = SKILL_DATABASE.get(skill.id);
+        this.skillLabels[index].setText(this.skillLabel(data));
+        if (this.skillIcons[index]) {
+          this.skillIcons[index].setTexture(skillCardKey(skill.id)).setVisible(true);
+        }
+        this.updateCooldown(this.cooldowns[index], this.cooldownTexts[index], skill.cooldownRemaining, skill.cooldown);
+      } else {
+        this.skillLabels[index].setText(UI.martial);
+        if (this.skillIcons[index]) {
+          this.skillIcons[index].setVisible(false);
+        }
+        if (this.cooldowns[index]) this.cooldowns[index].setVisible(false);
+        if (this.cooldownTexts[index]) this.cooldownTexts[index].setVisible(false);
+      }
+    }
     const activeProgress = state.isBossWave ? this.progressNodes.length : (state.waveNumber - 1) % this.progressNodes.length;
     this.progressNodes.forEach((node, index) => {
       const active = activeProgress > index;
@@ -996,6 +1271,11 @@ export class UIScene extends Phaser.Scene {
     if (this.bossNode) {
       this.bossNode.setFillStyle(state.isBossWave ? 0xb92512 : 0x5b150c, 1);
       this.bossNode.setScale(state.isBossWave ? 1.12 : 1);
+    }
+
+    if (this.retreatBtn && this.retreatTxt) {
+      this.retreatBtn.setVisible(state.isBossWave);
+      this.retreatTxt.setVisible(state.isBossWave);
     }
 
     // 초상화 일러스트 실시간 갱신
@@ -1009,6 +1289,16 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
+  private getRealmName(stage: number): string {
+    if (stage <= 8) return '초입 (初入)';
+    if (stage <= 16) return '일류 (一流)';
+    if (stage <= 24) return '절정 (絶頂)';
+    if (stage <= 32) return '초절정 (超絶頂)';
+    if (stage <= 40) return '화경 (化境)';
+    if (stage <= 48) return '현경 (玄境)';
+    return '생사경 (生死境)';
+  }
+
   private ownedSkills(save: ReturnType<typeof loadGame>): SkillData[] {
     return [...SKILL_DATABASE.values()].filter(skill => skill.type === 'ACTIVE' && skill.category === this.charClass)
       .filter(skill => (save.inventory[skill.id] ?? 0) > 0 || save.unlockedSkills.includes(skill.id));
@@ -1016,11 +1306,107 @@ export class UIScene extends Phaser.Scene {
 
   private equipSkill(id: string, slot: number): void {
     const save = loadGame();
+    // 중복 장착 제거 (다른 슬롯에 동일 스킬이 있으면 미장착 처리하여 하나만 존재하게 함)
+    const existingIdx = save.equippedSkills.indexOf(id);
+    if (existingIdx !== -1) {
+      if (existingIdx === 0) {
+        // 0번 슬롯(기본 슬롯)은 비우면 안되므로 패스하거나 맞교환
+        if (slot !== 0) {
+          this.showNotice('1번 무공은 해제하거나 다른 슬롯으로 옮길 수 없습니다.');
+          return;
+        }
+      } else {
+        save.equippedSkills.splice(existingIdx, 1);
+      }
+    }
     while (save.equippedSkills.length <= slot) save.equippedSkills.push(id);
     save.equippedSkills[slot] = id;
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
     this.showNotice(`무공 장착 · ${this.skillLabel(SKILL_DATABASE.get(id))}`);
+    this.openPanel('MARTIAL'); // UI 갱신
+  }
+
+  private showEquipSlotSelect(skillId: string): void {
+    const save = loadGame();
+    const skill = SKILL_DATABASE.get(skillId);
+    if (!skill) return;
+
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75).setInteractive().setDepth(800);
+    const box = this.add.rectangle(W / 2, H / 2, 300, 350, 0x110c07).setStrokeStyle(2, GOLD).setDepth(801);
+    const title = this.add.text(W / 2, H / 2 - 145, `[ ${skill.nameKo} ] 장착 설정`, this.titleStyle(18)).setOrigin(0.5).setDepth(802);
+
+    const dmgPct = (skill.damageMultiplier * 100).toFixed(0);
+    const cdSec = (skill.cooldown / 1000).toFixed(1);
+    const descText = `${skill.description ?? '상세 설명 없음'}\n피해량: ${dmgPct}%  ·  쿨타임: ${cdSec}초\n기력 소모: ${skill.staminaCost}`;
+    const desc = this.add.text(W / 2, H / 2 - 92, descText, {
+      ...this.textStyle(12, '#a8987a'), align: 'center', lineSpacing: 4
+    }).setOrigin(0.5).setDepth(802);
+
+    const buttons: Phaser.GameObjects.GameObject[] = [overlay, box, title, desc];
+
+    const closePopup = () => {
+      buttons.forEach(b => b.destroy());
+      this.activePopupDismissers = this.activePopupDismissers.filter(fn => fn !== closePopup);
+    };
+    this.activePopupDismissers.push(closePopup);
+
+    // 현재 장착된 슬롯 인덱스 찾기 (-1 이면 미장착)
+    const currentSlot = save.equippedSkills.indexOf(skillId);
+
+    for (let slot = 0; slot < 3; slot++) {
+      const y = H / 2 - 20 + slot * 42;
+      const isEquipped = currentSlot === slot;
+      const btn = this.add.rectangle(W / 2, y, 220, 32, isEquipped ? 0x2d4d1e : 0x221810)
+        .setStrokeStyle(1, isEquipped ? 0x5a9d2f : 0x6e5230).setInteractive().setDepth(802);
+      
+      const txt = this.add.text(W / 2, y, `${slot + 1}번 퀵슬롯에 장착${isEquipped ? ' (장착 중)' : ''}`, this.textStyle(13, isEquipped ? '#a0e080' : '#d5c6a7'))
+        .setOrigin(0.5).setDepth(803);
+
+      btn.on('pointerdown', () => {
+        closePopup();
+        this.equipSkill(skillId, slot);
+      });
+      buttons.push(btn, txt);
+    }
+
+    // 해제 버튼 (현재 장착 중일 때만 활성화)
+    const unequipY = H / 2 + 115;
+    const hasEquipped = currentSlot !== -1;
+    const unequipBtn = this.add.rectangle(W / 2, unequipY, 220, 32, hasEquipped ? 0x4a1815 : 0x1a1a1a)
+      .setStrokeStyle(1, hasEquipped ? 0x9c2c28 : 0x444444).setInteractive().setDepth(802);
+    
+    const unequipTxt = this.add.text(W / 2, unequipY, '장착 해제', this.textStyle(13, hasEquipped ? '#ff8888' : '#555555'))
+      .setOrigin(0.5).setDepth(803);
+
+    if (hasEquipped) {
+      unequipBtn.on('pointerdown', () => {
+        closePopup();
+        this.unequipSkillById(skillId);
+      });
+    }
+    buttons.push(unequipBtn, unequipTxt);
+
+    // 닫기 터치 시 해제
+    overlay.on('pointerdown', () => {
+      closePopup();
+    });
+  }
+
+  private unequipSkillById(id: string): void {
+    const save = loadGame();
+    const idx = save.equippedSkills.indexOf(id);
+    if (idx !== -1) {
+      if (idx === 0) {
+        this.showNotice('1번 무공은 해제할 수 없습니다.');
+        return;
+      }
+      save.equippedSkills.splice(idx, 1);
+      saveGame(save);
+      this.scene.get('BattleScene').events.emit('equip-changed');
+      this.showNotice('무공 장착을 해제했습니다.');
+      this.openPanel('MARTIAL');
+    }
   }
 
   private synth(a: string, b: string, result: string, cost: number): void {
@@ -1053,12 +1439,12 @@ export class UIScene extends Phaser.Scene {
     this.openPanel('MARTIAL');
   }
 
-  private upgradeTraining(key: string, cost: number): void {
+  private upgradeTraining(key: string, cost: number, count: number): void {
     const save = loadGame();
     if (save.gold < cost) return this.showNotice('금화가 부족합니다');
     save.gold -= cost;
     save.trainingLevels = save.trainingLevels ?? {};
-    save.trainingLevels[key] = (save.trainingLevels[key] ?? 0) + 1;
+    save.trainingLevels[key] = (save.trainingLevels[key] ?? 0) + count;
     saveGame(save);
     this.openPanel('TRAINING');
   }
@@ -1086,23 +1472,90 @@ export class UIScene extends Phaser.Scene {
   }
 
   private salvageFilteredEquipment(): void {
+    const filter = this.equipmentFilter;
+    
+    // 영웅(EPIC)이나 전설(LEGENDARY) 필터가 켜진 상태에서 분해 시도 시 경고 컨펌 모달 팝업
+    if (filter === 'EPIC' || filter === 'LEGENDARY') {
+      this.showSalvageConfirm(filter);
+      return;
+    }
+    
+    this.executeSalvage(filter);
+  }
+
+  private executeSalvage(filter: EquipmentFilter): void {
     const save = loadGame();
     const equippedIds = new Set(Object.values(save.equippedItems ?? {}));
     const keep: EquipmentItem[] = [];
     let refund = 0;
+    
     for (const item of save.equipmentInventory ?? []) {
-      const matched = this.equipmentFilter === 'ALL' || (this.equipmentFilter === 'SET' ? Boolean(item.setId) : item.grade === this.equipmentFilter);
-      const protectedItem = equippedIds.has(item.id) || item.grade === 'LEGENDARY';
-      if (matched && !protectedItem) refund += Math.max(5, Math.round(equipmentScore(item) * 0.08));
-      else keep.push(item);
+      const isEquipped = equippedIds.has(item.id);
+      
+      let matched = false;
+      if (filter === 'ALL') {
+        // 전체 필터에서는 일반(COMMON)과 희귀(RARE)만 분해 대상으로 설정 (영웅/전설 보호)
+        matched = item.grade === 'COMMON' || item.grade === 'RARE';
+      } else if (filter === 'SET') {
+        matched = Boolean(item.setId);
+      } else {
+        matched = item.grade === filter;
+      }
+      
+      // 장착 중이거나 전설(LEGENDARY) 등급은 보호
+      const protectedItem = isEquipped || item.grade === 'LEGENDARY';
+      
+      if (matched && !protectedItem) {
+        refund += Math.max(5, Math.round(equipmentScore(item) * 0.08));
+      } else {
+        keep.push(item);
+      }
     }
-    if (refund <= 0) return this.showNotice('분해할 장비가 없습니다');
+    
+    if (refund <= 0) {
+      this.showNotice('분해할 장비가 없습니다');
+      return;
+    }
+    
     save.equipmentInventory = keep;
     save.gold += refund;
     saveGame(save);
     this.scene.get('BattleScene').events.emit('equip-changed');
-    this.showNotice(`분해 보상 +${refund}G`);
+    
+    const label = filter === 'ALL' ? '일반/희귀' : filter === 'EPIC' ? '영웅' : '세트';
+    this.showNotice(`${label} 장비 일괄 분해! +${refund}G`);
+    this.equipmentPage = 0; // 페이지 리셋
     this.openPanel('EQUIPMENT');
+  }
+
+  private showSalvageConfirm(grade: string): void {
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(800);
+    const box = this.add.rectangle(W / 2, H / 2, 380, 220, 0x110c07).setStrokeStyle(2, 0x9c3b28).setDepth(801);
+    
+    const gradeName = grade === 'EPIC' ? '영웅' : '전설';
+    const msg = this.add.text(W / 2, H / 2 - 42, `경고: 장착 중이지 않은 모든\n[${gradeName}] 등급 장비를\n일괄 분해하시겠습니까?`, {
+      ...this.textStyle(15, '#ff8888'), align: 'center', lineSpacing: 6
+    }).setOrigin(0.5).setDepth(802);
+    
+    const yes = this.add.text(W / 2 - 70, H / 2 + 50, '분해', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(802);
+    const no = this.add.text(W / 2 + 70, H / 2 + 50, '취소', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(802);
+
+    const closePopup = () => {
+      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+      this.activePopupDismissers = this.activePopupDismissers.filter(fn => fn !== closePopup);
+    };
+    this.activePopupDismissers.push(closePopup);
+      
+    yes.on('pointerdown', () => {
+      closePopup();
+      this.executeSalvage(grade as EquipmentFilter);
+    });
+    
+    no.on('pointerdown', () => {
+      closePopup();
+    });
   }
 
   private equipItem(item: EquipmentItem): void {
@@ -1169,8 +1622,126 @@ export class UIScene extends Phaser.Scene {
   }
 
   private closePanel(): void {
+    if (this.shopTimerEvent) {
+      this.shopTimerEvent.destroy();
+      this.shopTimerEvent = null;
+    }
+    while (this.activePopupDismissers.length > 0) {
+      const dismisser = this.activePopupDismissers.pop();
+      if (dismisser) dismisser();
+    }
     this.overlay?.destroy(true);
     this.overlay = null;
+  }
+
+  public handleBackButton(): boolean {
+    if (this.activePopupDismissers.length > 0) {
+      const dismisser = this.activePopupDismissers.pop();
+      if (dismisser) {
+        dismisser();
+        return true;
+      }
+    }
+    if (this.overlay) {
+      this.closePanel();
+      return true;
+    }
+    return false;
+  }
+
+  public showExitConfirm(): void {
+    if (this.activePopupDismissers.some(fn => (fn as any).isExitConfirm)) return;
+
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive().setDepth(900);
+    const box = this.add.rectangle(W / 2, H / 2, 380, 220, 0x110c07).setStrokeStyle(2, 0x9c3b28).setDepth(901);
+    const msg = this.add.text(W / 2, H / 2 - 40, '무공키우기를 종료하시겠습니까?', this.textStyle(16, '#e8c36a')).setOrigin(0.5).setDepth(902);
+    
+    const yes = this.add.text(W / 2 - 70, H / 2 + 45, '종료', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(902);
+    const no = this.add.text(W / 2 + 70, H / 2 + 45, '취소', this.titleStyle(20)).setOrigin(0.5)
+      .setInteractive().setDepth(902);
+
+    const closePopup = () => {
+      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+      this.activePopupDismissers = this.activePopupDismissers.filter(fn => fn !== closePopup);
+    };
+    (closePopup as any).isExitConfirm = true;
+
+    yes.on('pointerdown', () => {
+      closePopup();
+      if (typeof (window as any).Capacitor !== 'undefined') {
+        import('@capacitor/app').then(({ App }) => {
+          App.exitApp();
+        });
+      }
+    });
+
+    no.on('pointerdown', () => {
+      closePopup();
+    });
+
+    this.activePopupDismissers.push(closePopup);
+  }
+
+  private getMidnightCooldownString(): string {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    const diffMs = midnight.getTime() - now.getTime();
+    const hours = Math.floor(diffMs / 3600000);
+    const mins = Math.floor((diffMs % 3600000) / 60000);
+    const secs = Math.floor((diffMs % 60000) / 1000);
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  private showOfflineRewardPopup(r: ReturnType<typeof claimOfflineReward>): void {
+    if (r.minutes < 3) return;
+
+    const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.82).setInteractive().setDepth(850);
+    const box = this.add.rectangle(W / 2, H / 2, 340, 280, 0x110c07).setStrokeStyle(2, GOLD).setDepth(851);
+    
+    // 제목
+    const title = this.add.text(W / 2, H / 2 - 100, '✦ 폐관수련 보상 ✦', this.titleStyle(22)).setOrigin(0.5).setDepth(852);
+    
+    // 설명
+    const timeText = `비활동 시간: ${r.minutes}분 동안\n성실하게 폐관수련을 진행하였습니다.`;
+    const sub = this.add.text(W / 2, H / 2 - 50, timeText, {
+      ...this.textStyle(13, '#c8b98a'), align: 'center', lineSpacing: 5
+    }).setOrigin(0.5).setDepth(852);
+
+    const items: Phaser.GameObjects.GameObject[] = [overlay, box, title, sub];
+
+    // 보상 항목 배치
+    const rewards = [
+      { label: '획득 금화', val: `${r.gold} G`, color: '#ffd740' },
+      { label: '획득 경험', val: `${r.exp} EXP`, color: '#d580ff' },
+      { label: '획득 원보', val: r.gems > 0 ? `💎 ${r.gems}개` : null, color: '#a0c8ff' }
+    ].filter(x => x.val !== null);
+
+    rewards.forEach((item, index) => {
+      const y = H / 2 + 15 + index * 32;
+      const lbl = this.add.text(W / 2 - 80, y, item.label, this.textStyle(13, '#a8987a')).setOrigin(0, 0.5).setDepth(852);
+      const val = this.add.text(W / 2 + 80, y, item.val!, { ...this.textStyle(14, item.color), fontStyle: 'bold' }).setOrigin(1, 0.5).setDepth(852);
+      items.push(lbl, val);
+    });
+
+    // 확인 버튼
+    const btnY = H / 2 + 95;
+    const btn = this.add.rectangle(W / 2, btnY, 140, 36, 0x4a3215).setStrokeStyle(1, GOLD).setInteractive().setDepth(852);
+    const btnTxt = this.add.text(W / 2, btnY, '수령 (收領)', this.titleStyle(16)).setOrigin(0.5).setDepth(853);
+    
+    const closePopup = () => {
+      items.forEach(o => o.destroy());
+      this.activePopupDismissers = this.activePopupDismissers.filter(fn => fn !== closePopup);
+      if (r.levels > 0) {
+        this.showNotice(`폐관수련 효과로 Lv.${r.levels} 상승!`);
+      }
+    };
+    this.activePopupDismissers.push(closePopup);
+
+    btn.on('pointerdown', closePopup);
+    overlay.on('pointerdown', closePopup);
+
+    items.push(btn, btnTxt);
   }
 
   // ─── Settings Panel ───────────────────────────────────────────────────────
@@ -1198,12 +1769,36 @@ export class UIScene extends Phaser.Scene {
     };
 
     const bgmText = row(160, '배경음악', bgmVol,
-      () => { bgmVol = Math.max(0, bgmVol - 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
-      () => { bgmVol = Math.min(1, bgmVol + 0.1); bgmSystem.setVolume(bgmVol); bgmText.setText(`${Math.round(bgmVol * 100)}%`); },
+      () => { 
+        bgmVol = Math.max(0, bgmVol - 0.1); 
+        bgmSystem.setVolume(bgmVol); 
+        bgmText.setText(`${Math.round(bgmVol * 100)}%`); 
+        save.bgmVolume = bgmVol; 
+        saveGame(save); 
+      },
+      () => { 
+        bgmVol = Math.min(1, bgmVol + 0.1); 
+        bgmSystem.setVolume(bgmVol); 
+        bgmText.setText(`${Math.round(bgmVol * 100)}%`); 
+        save.bgmVolume = bgmVol; 
+        saveGame(save); 
+      },
     );
     const sfxText = row(230, '효과음', sfxVol,
-      () => { sfxVol = Math.max(0, sfxVol - 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
-      () => { sfxVol = Math.min(1, sfxVol + 0.1); soundSystem.setVolume(sfxVol); sfxText.setText(`${Math.round(sfxVol * 100)}%`); },
+      () => { 
+        sfxVol = Math.max(0, sfxVol - 0.1); 
+        soundSystem.setVolume(sfxVol); 
+        sfxText.setText(`${Math.round(sfxVol * 100)}%`); 
+        save.sfxVolume = sfxVol; 
+        saveGame(save); 
+      },
+      () => { 
+        sfxVol = Math.min(1, sfxVol + 0.1); 
+        soundSystem.setVolume(sfxVol); 
+        sfxText.setText(`${Math.round(sfxVol * 100)}%`); 
+        save.sfxVolume = sfxVol; 
+        saveGame(save); 
+      },
     );
 
     // Divider
@@ -1226,9 +1821,6 @@ export class UIScene extends Phaser.Scene {
 
     // Version
     items.push(this.add.text(W / 2, 520, '무공키우기 v1.0.0', this.textStyle(13, '#7a6a50')).setOrigin(0.5).setDepth(703));
-
-    // Unused save reference to suppress lint warning
-    void save;
   }
 
   private confirmReset(items: Phaser.GameObjects.GameObject[]): void {
@@ -1241,14 +1833,21 @@ export class UIScene extends Phaser.Scene {
       .setInteractive().setDepth(802);
     const no = this.add.text(W / 2 + 70, H / 2 + 50, '취소', this.titleStyle(20)).setOrigin(0.5)
       .setInteractive().setDepth(802);
+
+    const closePopup = () => {
+      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+      this.activePopupDismissers = this.activePopupDismissers.filter(fn => fn !== closePopup);
+    };
+    this.activePopupDismissers.push(closePopup);
+
     yes.on('pointerdown', () => {
       deleteSave();
-      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+      closePopup();
       this.scene.stop('BattleScene');
       this.scene.start('CharacterSelectScene');
     });
     no.on('pointerdown', () => {
-      [overlay, box, msg, yes, no].forEach(o => o.destroy());
+      closePopup();
     });
     items.push(overlay, box, msg, yes, no);
   }
@@ -1373,9 +1972,22 @@ export class UIScene extends Phaser.Scene {
       const gotFree = (save.shopDailyPurchased ?? []).includes(freeKey);
       const freeBtn = this.add.rectangle(W / 2, contentY + 100, 260, 52, gotFree ? 0x111111 : 0x1a2d0e)
         .setStrokeStyle(1, gotFree ? 0x333333 : GOLD).setInteractive().setDepth(703);
-      const freeTxt = this.add.text(W / 2, contentY + 100, gotFree ? '오늘 이미 수령함' : '💎 무료 원보 10개 받기', this.textStyle(15, gotFree ? '#555' : '#a0c8ff'))
+      
+      const btnLabel = gotFree ? `다음 수령 가능: ${this.getMidnightCooldownString()}` : '💎 무료 원보 10개 받기';
+      const freeTxt = this.add.text(W / 2, contentY + 100, btnLabel, this.textStyle(13, gotFree ? '#666666' : '#a0c8ff'))
         .setOrigin(0.5).setDepth(704);
-      if (!gotFree) {
+      
+      if (gotFree) {
+        this.shopTimerEvent = this.time.addEvent({
+          delay: 1000,
+          callback: () => {
+            if (freeTxt && freeTxt.active) {
+              freeTxt.setText(`다음 수령 가능: ${this.getMidnightCooldownString()}`);
+            }
+          },
+          loop: true
+        });
+      } else {
         freeBtn.on('pointerdown', () => {
           save.gems = (save.gems ?? 0) + 10;
           save.shopLastReset = today;

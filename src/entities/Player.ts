@@ -384,6 +384,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return true;
   }
 
+  resetEquippedSkills(skillIds: string[]): void {
+    this.equippedSkills = [];
+    skillIds.forEach((id, idx) => {
+      this.equipSkill(id, idx);
+    });
+  }
+
   equipDash(skillId: string): boolean {
     const skill = SKILL_DATABASE.get(skillId);
     if (!skill || skill.type !== 'DASH') return false;
@@ -533,14 +540,29 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setAngle(0);
     this.clearTint();
 
-    this._hp = Math.max(1, this._hp - amount);
+    this._hp = Math.max(0, this._hp - amount);
+
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+
+    if (this._hp <= 0) {
+      this.changeState('DEAD');
+      // 사망 연출: 캐릭터가 쓰러지는 모션 (각도 트위닝)
+      this.setTint(0xff5555);
+      this.scene.tweens.add({
+        targets: this,
+        angle: this.facingRight ? -90 : 90,
+        alpha: 0.6,
+        y: this.y + 15,
+        duration: 600,
+        ease: 'Cubic.easeOut',
+      });
+      return;
+    }
 
     this.changeState('HIT');
     this.stateTimer = 300; // 300ms 경직
     this.setTint(0xff8888);
-
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setVelocity(0, 0);
   }
 
   heal(hpAmount: number, staminaAmount: number): void {

@@ -19,6 +19,7 @@
   "description": "무공키우기 - 2D 도트 액션 무협 RPG",
   "dependencies": {
     "@capacitor/android": "^8.3.4",
+    "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.3.3",
     "phaser": "^3.90.0"
   },

@@ -189,6 +189,8 @@ export interface SaveData {
   tutorialCompleted?: boolean;
   shopLastReset?: string;
   shopDailyPurchased?: string[];
+  bgmVolume?: number;
+  sfxVolume?: number;
 }
 
 /**

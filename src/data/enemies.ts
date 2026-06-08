@@ -38,25 +38,40 @@ const entries: [string, EnemyData][] = ENEMY_NAMES.map((name, index) => {
   }];
 });
 
-for (let index = 0; index < BOSS_IDS.length; index++) {
+for (let stage = 1; stage <= 50; stage++) {
+  const index = (stage - 1) % 8;
   const shortId = BOSS_IDS[index];
-  const id = `boss_${shortId}`;
+  const id = `boss_stage_${stage}`;
+  
+  // 경지(Realm) 이름 구하기
+  let realm = '초입';
+  if (stage >= 9 && stage <= 16) realm = '일류';
+  else if (stage >= 17 && stage <= 24) realm = '절정';
+  else if (stage >= 25 && stage <= 32) realm = '초절정';
+  else if (stage >= 33 && stage <= 40) realm = '화경';
+  else if (stage >= 41 && stage <= 48) realm = '현경';
+  else if (stage >= 49) realm = '생사경';
+
+  const baseName = BOSS_NAMES[index];
+  const name = `[${realm}] ${baseName}`;
+
   entries.push([id, {
     id,
-    name: BOSS_NAMES[index],
-    title: BOSS_NAMES[index],
-    hp: 260 + index * 340,
-    damage: 18 + index * 9,
+    name,
+    title: name,
+    // 점진적으로 기하급수/2차곡선 형태의 능력치 성장 적용
+    hp: 260 + (stage - 1) * 450 + Math.pow(stage - 1, 2) * 20,
+    damage: 18 + (stage - 1) * 8 + Math.round(Math.pow(stage - 1, 1.2) * 2),
     speed: 40 + index * 3,
     attackRange: 52 + index * 3,
     attackCooldown: 1700 - index * 80,
     spriteKey: `boss_art_${shortId}`,
     rank: 'BOSS',
     bossRank: BOSS_RANKS[index],
-    region: index + 1,
-    setId: `blood_set_${index + 1}`,
-    goldReward: 120 + index * 260,
-    expReward: 180 + index * 360,
+    region: ((stage - 1) % 8) + 1,
+    setId: `blood_set_${((stage - 1) % 8) + 1}`,
+    goldReward: 120 + stage * 200,
+    expReward: 180 + stage * 250,
     dropTable: [{ skillId: SKILLS[Math.min(SKILLS.length - 1, index)], chance: 0.55 }],
   }]);
 }
@@ -74,15 +89,16 @@ export const BOSS_RANK_NAMES: Readonly<Record<string, string>> = {
 };
 
 export function getEnemyPoolForWave(wave: number): readonly string[] {
-  const region = Math.min(8, Math.max(1, Math.floor((wave - 1) / 5) + 1));
-  const start = (region - 1) * 3 + 1;
+  const region = Math.min(50, Math.max(1, Math.floor((wave - 1) / 5) + 1));
+  const baseRegion = ((region - 1) % 8) + 1;
+  const start = (baseRegion - 1) * 3 + 1;
   return [0, 0, 1, 1, 2].map(offset => `enemy_${String(start + offset).padStart(2, '0')}`);
 }
 
 export function getBossForWave(wave: number): string | null {
   if (wave % 5 !== 0) return null;
-  const index = Math.min(7, Math.max(0, Math.floor(wave / 5) - 1));
-  return `boss_${BOSS_IDS[index]}`;
+  const stage = Math.min(50, Math.max(1, Math.floor(wave / 5)));
+  return `boss_stage_${stage}`;
 }
 
 export const BOSS_RANK_ORDER = BOSS_RANKS;

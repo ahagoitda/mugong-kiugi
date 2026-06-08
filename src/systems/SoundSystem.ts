@@ -37,6 +37,7 @@ class SoundSystem {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private _muted = false;
+  private lastPlayed: Map<SoundId, number> = new Map();
 
   /** AudioContext를 지연 초기화합니다 (브라우저 정책: 사용자 인터랙션 후) */
   private getCtx(): AudioContext | null {
@@ -78,6 +79,14 @@ class SoundSystem {
   }
 
   play(id: SoundId): void {
+    const now = Date.now();
+    const last = this.lastPlayed.get(id) ?? 0;
+    // 잦은 타격음 귀 테러 방지용 50ms 스로틀링
+    if (id.startsWith('hit_') || id === 'player_hurt' || id === 'skill_cast') {
+      if (now - last < 50) return;
+    }
+    this.lastPlayed.set(id, now);
+
     const ctx = this.getCtx();
     if (!ctx || !this.masterGain) return;
 

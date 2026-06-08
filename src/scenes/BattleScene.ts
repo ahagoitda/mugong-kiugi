@@ -47,8 +47,6 @@ const BOSS_DIALOGUES: Record<string, string[]> = {
  */
 
 const GAME_W = 540;
-const BATTLE_H = 620;
-const GROUND_Y = BATTLE_H - 130;
 const SCROLL_SPEED = 40;
 const MAX_ENEMIES = 8;
 
@@ -134,6 +132,9 @@ interface CombatBonuses {
 }
 
 export class BattleScene extends Phaser.Scene {
+  private isGameOverTriggered = false;
+  private battleH = 620;
+  private groundY = 490;
   private player!: Player;
   private characterId: string = 'sword_male';
   private enemies: Enemy[] = [];
@@ -208,20 +209,24 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.isGameOverTriggered = false;
+    this.battleH = this.scale.height - 340;
+    this.groundY = this.battleH - 130;
+
     // 카메라를 상단 영역으로 제한
-    this.cameras.main.setViewport(0, 0, GAME_W, BATTLE_H);
+    this.cameras.main.setViewport(0, 0, GAME_W, this.battleH);
     this.cameras.main.setBackgroundColor('#1a0a2e');
 
     // 배경 생성 (패럴랙스 스크롤)
     this.createBackground();
 
     // 플레이어 생성 (선택한 캐릭터 ID 전달)
-    this.player = new Player(this, 125, GROUND_Y, this.characterId);
+    this.player = new Player(this, 125, this.groundY, this.characterId);
     this.player.setDepth(10);
     this.player.setOnHitCallback(this.onPlayerHit.bind(this));
 
     // 플레이어 아우라 생성
-    this.playerAuraFeet = this.add.ellipse(125, GROUND_Y + 100, 80, 24, 0xffffff, 0.35)
+    this.playerAuraFeet = this.add.ellipse(125, this.groundY + 100, 80, 24, 0xffffff, 0.35)
       .setVisible(false)
       .setDepth(8);
     
@@ -265,6 +270,7 @@ export class BattleScene extends Phaser.Scene {
     this.events.on('equip-changed', this.applySaveData, this);
     this.events.on('use-skill', this.onUseSkill, this);
     this.events.on('use-dash', this.onUseDash, this);
+    this.events.on('request-retreat', this.retreatBoss, this);
     this.events.on('player-slash-fx', (x: number, y: number, skill: SkillData) => {
       this.showSlashEffect(x, y, skill);
     }, this);
@@ -282,7 +288,7 @@ export class BattleScene extends Phaser.Scene {
         soundSystem.play('revive');
         this.player.heal(this.player.maxHp * 0.5, this.player.maxStamina);
         this.cameras.main.flash(400, 100, 200, 255);
-        const reviveText = this.add.text(GAME_W / 2, BATTLE_H / 2, '✦ 부활 ✦', {
+        const reviveText = this.add.text(GAME_W / 2, this.battleH / 2, '✦ 부활 ✦', {
           fontSize: '20px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
           stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
@@ -296,7 +302,18 @@ export class BattleScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.player.currentCharState === 'DEAD') {
-      this.player.heal(this.player.maxHp, this.player.maxStamina);
+      if (!this.isGameOverTriggered) {
+        this.isGameOverTriggered = true;
+        soundSystem.play('game_over');
+        this.time.delayedCall(1200, () => {
+          this.scene.start('GameOverScene', {
+            waveNumber: this.waveNumber,
+            killCount: this.killCount,
+            characterId: this.characterId
+          });
+        });
+      }
+      return;
     }
     this.player.update(time, delta);
     this.updateScroll(delta);
@@ -498,7 +515,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** 지면 충격파: 보스 발밑에서 플레이어 쪽으로 밀려오는 파동 (회피 가능) */
   private spawnGroundWave(fromX: number, color: number, dmg: number): void {
-    const wave = this.add.ellipse(fromX, GROUND_Y + 18, 26, 16, color, 0.7).setDepth(139);
+    const wave = this.add.ellipse(fromX, this.groundY + 18, 26, 16, color, 0.7).setDepth(139);
     wave.setStrokeStyle(2, 0xffffff, 0.5);
     const dir = this.player.x < fromX ? -1 : 1;
     this.tweens.add({
@@ -519,14 +536,14 @@ export class BattleScene extends Phaser.Scene {
     const shard = this.add.circle(targetX, 0, 6, color, 0.95).setDepth(140);
     shard.setStrokeStyle(2, 0xffffff, 0.6);
     // 착탄 지점 텔레그래프
-    const marker = this.add.ellipse(targetX, GROUND_Y + 16, 28, 10, color, 0.3).setDepth(138);
+    const marker = this.add.ellipse(targetX, this.groundY + 16, 28, 10, color, 0.3).setDepth(138);
     this.tweens.add({
       targets: shard,
-      y: GROUND_Y,
+      y: this.groundY,
       duration: 520,
       ease: 'Quad.easeIn',
       onComplete: () => {
-        this.bossSkillImpact(targetX, GROUND_Y, color, dmg, 30);
+        this.bossSkillImpact(targetX, this.groundY, color, dmg, 30);
         shard.destroy();
         marker.destroy();
       },
@@ -603,8 +620,11 @@ export class BattleScene extends Phaser.Scene {
     let closestDist = Infinity;
 
     for (const enemy of this.enemies) {
-      if (!enemy.active) continue;
-      const dist = Math.abs(enemy.x - this.player.x);
+      if (!enemy.active || enemy.hp <= 0) continue;
+      // 플레이어 우측에 있는 적만 스킬 대상으로 설정 (등 뒤의 적에게 스킬 낭비 방지)
+      if (enemy.x <= this.player.x) continue;
+      
+      const dist = enemy.x - this.player.x;
       if (dist < closestDist) {
         closestDist = dist;
         closest = enemy;
@@ -748,7 +768,7 @@ export class BattleScene extends Phaser.Scene {
     };
 
     const spawnX = GAME_W + 60 + Math.random() * 80;
-    const spawnY = GROUND_Y + (Math.random() - 0.5) * 16;
+    const spawnY = this.groundY + (Math.random() - 0.5) * 16;
 
     enemy.activate(scaledData, spawnX, spawnY);
     if (data.tint !== undefined) {
@@ -784,7 +804,7 @@ export class BattleScene extends Phaser.Scene {
     };
 
     const spawnX = GAME_W + 80;
-    const spawnY = GROUND_Y;
+    const spawnY = this.groundY;
 
     enemy.activate(scaledBossData, spawnX, spawnY);
 
@@ -827,7 +847,7 @@ export class BattleScene extends Phaser.Scene {
     const rankColor = BOSS_RANK_COLORS[bossData.bossRank ?? ''] ?? 0xff0000;
     const colorStr = `#${rankColor.toString(16).padStart(6, '0')}`;
 
-    this.bossWarningText = this.add.text(GAME_W / 2, BATTLE_H / 2 - 30,
+    this.bossWarningText = this.add.text(GAME_W / 2, this.battleH / 2 - 30,
       `⚠ 혈교 ${rankName} ⚠`, {
       fontSize: '20px',
       color: colorStr,
@@ -838,7 +858,7 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
 
     // 보스 이름 표시
-    const bossNameDisplay = this.add.text(GAME_W / 2, BATTLE_H / 2,
+    const bossNameDisplay = this.add.text(GAME_W / 2, this.battleH / 2,
       scaledBossData.title ?? scaledBossData.name, {
       fontSize: '14px',
       color: '#ffffff',
@@ -849,8 +869,8 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
 
     // 보스 경고 프레임(ui_boss_warn_border) 연출 추가
-    const warnBorder = this.add.image(GAME_W / 2, BATTLE_H / 2, 'ui_boss_warn_border')
-      .setDisplaySize(GAME_W, BATTLE_H)
+    const warnBorder = this.add.image(GAME_W / 2, this.battleH / 2, 'ui_boss_warn_border')
+      .setDisplaySize(GAME_W, this.battleH)
       .setScrollFactor(0)
       .setDepth(190)
       .setAlpha(0);
@@ -912,6 +932,46 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  private retreatBoss(): void {
+    if (!this.isBossWave) return;
+
+    // 보스 제거
+    if (this.bossEnemy) {
+      this.bossEnemy.destroy();
+      this.bossEnemy = null;
+    }
+    // 일반 적들도 모두 제거
+    this.enemies.forEach(e => {
+      if (e && e.active) e.destroy();
+    });
+    this.enemies = [];
+
+    // 보스 HP 바 등 숨김
+    if (this.bossHpBg) this.bossHpBg.setVisible(false);
+    if (this.bossHpBar) this.bossHpBar.setVisible(false);
+    if (this.bossNameText) this.bossNameText.setVisible(false);
+    if (this.bossRankText) this.bossRankText.setVisible(false);
+
+    // 보스 공격 타이머 등 초기화
+    this.bossSkillTimer = 0;
+
+    // 플레이어의 사망 방지 처리 (퇴각 시 무조건 생명력과 기력 100% 보정)
+    this.player.heal(this.player.maxHp, this.player.maxStamina);
+
+    // 이전 일반 웨이브로 회귀 (최소 1웨이브)
+    const prevWave = Math.max(1, this.waveNumber - 1);
+    this.isBossWave = false;
+    
+    // BGM 변경
+    bgmSystem.play('battle');
+    
+    // 웨이브 재시작
+    this.startWave(prevWave);
+    
+    // 알림 띄우기
+    this.events.emit('show-notice', '보스 도전을 포기하고 퇴각했습니다.');
+  }
+
   private checkBackgroundChange(): void {
     const theme = getBackgroundForWave(this.waveNumber);
     if (this.currentBgTheme && this.currentBgTheme.id === theme.id) return;
@@ -926,7 +986,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.waveNumber > 1) {
       this.cameras.main.flash(200, 255, 255, 255, true);
 
-      const regionText = this.add.text(GAME_W / 2, BATTLE_H / 2, `~ ${theme.nameKo} ~`, {
+      const regionText = this.add.text(GAME_W / 2, this.battleH / 2, `~ ${theme.nameKo} ~`, {
         fontSize: '16px',
         color: '#ffd740',
         fontFamily: 'monospace',
@@ -1014,7 +1074,7 @@ export class BattleScene extends Phaser.Scene {
     const rankName = bossData?.bossRank ? BOSS_RANK_NAMES[bossData.bossRank] : '';
     const bossTitle = bossData?.title ?? bossData?.name ?? 'BOSS';
 
-    const victoryText = this.add.text(GAME_W / 2, BATTLE_H / 2 - 20,
+    const victoryText = this.add.text(GAME_W / 2, this.battleH / 2 - 20,
       `✦ ${rankName} 격파 ✦\n${bossTitle}`, {
       fontSize: '16px',
       color: '#ffd740',
@@ -1340,6 +1400,13 @@ export class BattleScene extends Phaser.Scene {
     save.missionProgress.daily_gold = (save.missionProgress.daily_gold ?? 0) + finalGold;
     this.sessionExp += exp;
 
+    if (finalGold > 0) {
+      this.showRewardText(x - 20, y - 50, `+${finalGold}G`, '#ffd740');
+    }
+    if (exp > 0) {
+      this.showRewardText(x + 20, y - 50, `+${exp} EXP`, '#d580ff');
+    }
+
     // 레벨업 체크
     let leveledUp = false;
     while (save.exp >= save.expToNext) {
@@ -1398,28 +1465,28 @@ export class BattleScene extends Phaser.Scene {
     this.currentBgTheme = theme;
     const id = theme.mountainsKey;
 
-    this.bgLayerBg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_bg`)
+    this.bgLayerBg = this.add.tileSprite(0, 0, GAME_W, this.battleH, `${id}_bg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(1);
     this.bgLayerBg.tileScaleX = 1.5;
-    this.bgLayerBg.tileScaleY = BATTLE_H / 1024;
+    this.bgLayerBg.tileScaleY = this.battleH / 1024;
 
-    this.bgLayerMg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_mg`)
+    this.bgLayerMg = this.add.tileSprite(0, 0, GAME_W, this.battleH, `${id}_mg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(2);
     this.bgLayerMg.tileScaleX = 1.5;
-    this.bgLayerMg.tileScaleY = BATTLE_H / 1024;
+    this.bgLayerMg.tileScaleY = this.battleH / 1024;
 
-    this.bgLayerFg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_fg`)
+    this.bgLayerFg = this.add.tileSprite(0, 0, GAME_W, this.battleH, `${id}_fg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(3);
     this.bgLayerFg.tileScaleX = 1.5;
-    this.bgLayerFg.tileScaleY = BATTLE_H / 1024;
+    this.bgLayerFg.tileScaleY = this.battleH / 1024;
 
-    this.groundShadowLayer = this.add.tileSprite(0, GROUND_Y + 34, GAME_W, 106, `${id}_fg`)
+    this.groundShadowLayer = this.add.tileSprite(0, this.groundY + 34, GAME_W, 106, `${id}_fg`)
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(6)
@@ -1428,7 +1495,7 @@ export class BattleScene extends Phaser.Scene {
     this.groundShadowLayer.tileScaleX = 1.5;
     this.groundShadowLayer.tileScaleY = 0.22;
 
-    this.foregroundMistLayer = this.add.tileSprite(0, GROUND_Y + 2, GAME_W, 72, `${id}_mg`)
+    this.foregroundMistLayer = this.add.tileSprite(0, this.groundY + 2, GAME_W, 72, `${id}_mg`)
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(7)
@@ -1441,13 +1508,13 @@ export class BattleScene extends Phaser.Scene {
     this.add.rectangle(GAME_W / 2, 20, GAME_W, 120, 0x000000, 0.28)
       .setDepth(120)
       .setScrollFactor(0);
-    this.add.rectangle(GAME_W / 2, BATTLE_H - 38, GAME_W, 120, 0x000000, 0.46)
+    this.add.rectangle(GAME_W / 2, this.battleH - 38, GAME_W, 120, 0x000000, 0.46)
       .setDepth(120)
       .setScrollFactor(0);
-    this.add.rectangle(10, BATTLE_H / 2, 28, BATTLE_H, 0x000000, 0.28)
+    this.add.rectangle(10, this.battleH / 2, 28, this.battleH, 0x000000, 0.28)
       .setDepth(120)
       .setScrollFactor(0);
-    this.add.rectangle(GAME_W - 10, BATTLE_H / 2, 28, BATTLE_H, 0x000000, 0.28)
+    this.add.rectangle(GAME_W - 10, this.battleH / 2, 28, this.battleH, 0x000000, 0.28)
       .setDepth(120)
       .setScrollFactor(0);
   }
@@ -1795,7 +1862,7 @@ export class BattleScene extends Phaser.Scene {
       });
     }
 
-    const stain = this.add.ellipse(x + 6, GROUND_Y + 30, isBoss ? 28 : 18, isBoss ? 9 : 6, 0x4a0705, 0.46)
+    const stain = this.add.ellipse(x + 6, this.groundY + 30, isBoss ? 28 : 18, isBoss ? 9 : 6, 0x4a0705, 0.46)
       .setDepth(4);
     this.tweens.add({
       targets: stain,
@@ -1807,7 +1874,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showScreenPulse(tint: number, alpha: number, duration: number): void {
-    const pulse = this.add.rectangle(GAME_W / 2, BATTLE_H / 2, GAME_W, BATTLE_H, tint, alpha)
+    const pulse = this.add.rectangle(GAME_W / 2, this.battleH / 2, GAME_W, this.battleH, tint, alpha)
       .setScrollFactor(0)
       .setDepth(180)
       .setBlendMode(Phaser.BlendModes.ADD);
@@ -1858,6 +1925,29 @@ export class BattleScene extends Phaser.Scene {
       scaleX: isCritical ? 1.12 : 1,
       scaleY: isCritical ? 1.12 : 1,
       duration: isCritical ? 760 : 600,
+      ease: 'Cubic.easeOut',
+      onComplete: () => { text.destroy(); },
+    });
+  }
+
+  private showRewardText(x: number, y: number, textStr: string, color: string): void {
+    const text = this.add.text(x, y, textStr, {
+      fontSize: '13px',
+      color,
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(191);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 42,
+      x: x + (Math.random() - 0.5) * 12,
+      alpha: 0,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 850,
       ease: 'Cubic.easeOut',
       onComplete: () => { text.destroy(); },
     });
@@ -1988,9 +2078,7 @@ export class BattleScene extends Phaser.Scene {
     });
     if (valid.length === 0) valid.push(getStarterSkill(cls));
 
-    valid.forEach((skillId, index) => {
-      this.player.equipSkill(skillId, index);
-    });
+    this.player.resetEquippedSkills(valid);
     if (save.equippedDash) {
       this.player.equipDash(save.equippedDash);
     }
@@ -2087,7 +2175,13 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showBossCutscene(bossId: string, bossName: string): void {
-    const lines = BOSS_DIALOGUES[bossId] ?? [`${bossName}이(가) 나타났다!`];
+    let mappedId = bossId;
+    if (bossId.startsWith('boss_stage_')) {
+      const stage = parseInt(bossId.replace('boss_stage_', ''), 10);
+      const index = (stage - 1) % 8;
+      mappedId = 'boss_' + ['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'][index];
+    }
+    const lines = BOSS_DIALOGUES[mappedId] ?? [`${bossName}이(가) 나타났다!`];
     const GAME_W = this.scale.width;
     const GAME_H = this.scale.height;
 

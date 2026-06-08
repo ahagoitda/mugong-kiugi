@@ -5,9 +5,10 @@ import { BattleScene } from './scenes/BattleScene';
 import { UIScene } from './scenes/UIScene';
 import { GameOverScene } from './scenes/GameOverScene';
 
-// ✅ 기본 디자인 해상도 (변경 최소화)
+// ✅ 기본 디자인 해상도 (기기 비율에 맞춰 세로 해상도 동적 설정)
 const BASE_W = 540;
-const BASE_H = 960;
+const dprRatio = window.innerHeight / window.innerWidth;
+const BASE_H = Math.max(960, Math.round(BASE_W * (dprRatio > 0 ? dprRatio : 1.7778)));
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

@@ -3,7 +3,7 @@ import { CHARACTER_LIST } from '../data/characters';
 import { loadGame, saveGame } from '../systems/SaveSystem';
 
 const W = 540;
-const H = 960;
+let H = 960;
 const GOLD = 0xd4a74e;
 
 const HERO_TEXT: Record<string, { name: string; desc: string }> = {
@@ -29,6 +29,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   create(): void {
+    H = this.scale.height;
     this.cameras.main.setBackgroundColor('#080706');
     this.add.image(W / 2, H / 2, 'background_main').setDisplaySize(W, H).setAlpha(0.42);
     this.add.rectangle(W / 2, H / 2, W - 28, H - 28, 0x080706, 0.35).setStrokeStyle(2, 0x9b7438);

@@ -122,6 +122,8 @@ export interface EquipmentItem {
   attack: number;
   hp: number;
   bonus: number;
+  /** 강화 등급 (0~10), 강화할수록 스탯 +12%씩 증가 */
+  enhance?: number;
 }
 
 /**
@@ -191,6 +193,15 @@ export interface SaveData {
   shopDailyPurchased?: string[];
   bgmVolume?: number;
   sfxVolume?: number;
+  rebirthCount?: number;
+  /** 환생 시 선택한 특화 경로 (각 환생마다 하나씩 누적) */
+  rebirthPaths?: string[];
+  /** 시간 제한 버프 목록 */
+  activeBuffs?: { type: string; expiresAt: number }[];
+  /** 장비 분해로 획득하는 강화 재료 */
+  enhanceStones?: number;
+  /** 제자 집단 파견 임무 완료 시각 (Unix ms) */
+  discipleMissionEnd?: number;
 }
 
 /**

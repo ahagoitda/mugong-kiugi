@@ -61,6 +61,10 @@ export function createDefaultSave(): SaveData {
     shopDailyPurchased: [],
     bgmVolume: 0.5,
     sfxVolume: 0.8,
+    rebirthCount: 0,
+    rebirthPaths: [],
+    activeBuffs: [],
+    enhanceStones: 0,
   };
 }
 
@@ -188,6 +192,10 @@ function migrateSave(oldData: any): SaveData {
     shopDailyPurchased: oldData.shopDailyPurchased ?? [],
     bgmVolume: oldData.bgmVolume ?? 0.5,
     sfxVolume: oldData.sfxVolume ?? 0.8,
+    rebirthCount: oldData.rebirthCount ?? 0,
+    rebirthPaths: oldData.rebirthPaths ?? [],
+    activeBuffs: oldData.activeBuffs ?? [],
+    enhanceStones: oldData.enhanceStones ?? 0,
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);
@@ -207,14 +215,15 @@ export function claimOfflineReward(): { gold: number; exp: number; gems: number;
   }
 
   const waveFactor = Math.max(1, save.stageCleared + 1);
-  // 문파 시설 전체가 오프라인 성장 루프(패시브)에 영향 (작은 기능 단위 마무리)
+  // 문파 시설 + 환생 배율이 오프라인 보상에 복합 적용
   const fac = save.sectFacilities ?? { hall: 1, forge: 1, library: 1 };
   const hall = fac.hall ?? 1;
   const forge = fac.forge ?? 1;
   const library = fac.library ?? 1;
   const facMul = 1 + (hall - 1) * 0.01 + (forge - 1) * 0.008 + (library - 1) * 0.006;
-  const gold = Math.floor(minutes * (2 + waveFactor * 0.35) * facMul);
-  const exp = Math.floor(minutes * (3 + waveFactor * 0.45) * facMul);
+  const rebirthMul = 1 + (save.rebirthCount ?? 0) * 0.15;
+  const gold = Math.floor(minutes * (2 + waveFactor * 0.35) * facMul * rebirthMul);
+  const exp = Math.floor(minutes * (3 + waveFactor * 0.45) * facMul * rebirthMul);
   const gems = Math.min(6, Math.floor(minutes / 60));
 
   save.gold += gold;

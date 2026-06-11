@@ -9,11 +9,9 @@ import { RUNTIME_ASSET_PATH } from './assets';
  * runtime 폴더에 게임용 에셋으로 변환한다.
  *
  * - 시퀀스(HEROIC_MOTION_SEQUENCES): 전투 중 해당 무공 시전 시
- *   픽셀 캐릭터 대신 재생되는 고품질 풀모션 (현재 sword_male 3종 완성).
- *   다른 영웅들의 *_12frame_grid.jpg 는 아직 0바이트 스텁이라 변환 불가 —
- *   실제 프레임이 채워지면 빌드 스크립트와 이 매니페스트에 추가할 것.
+ *   픽셀 캐릭터 대신 재생되는 고품질 풀모션.
  * - 컷인(HEROIC_CUTIN_STILLS): 시퀀스가 없는 영웅의 무공 시전 시
- *   화면에 잠깐 등장하는 일러스트 컷인.
+ *   화면에 잠깐 등장하는 일러스트 컷인 (시퀀스 완성 시 미사용).
  */
 
 export interface HeroicSequenceDef {
@@ -36,22 +34,22 @@ export const HEROIC_MOTION_SEQUENCES: readonly HeroicSequenceDef[] = [
   { characterId: 'sword_male', skillId: 'samjae', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
   { characterId: 'sword_male', skillId: 'maehwa', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
   { characterId: 'sword_male', skillId: 'changung', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'sword_female', skillId: 'samjae', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'sword_female', skillId: 'maehwa', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'sword_female', skillId: 'changung', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'dao_male', skillId: 'baldo', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'dao_female', skillId: 'gwangpung', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'dao_female', skillId: 'paewang', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'fist_male', skillId: 'taejo', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'fist_male', skillId: 'yeorae', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'fist_female', skillId: 'yeonhwante', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'spear_male', skillId: 'yongchang', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'spear_male', skillId: 'cheonha', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
+  { characterId: 'spear_female', skillId: 'hoeseon', frameCount: 12, frameWidth: HEROIC_FRAME_W, frameHeight: HEROIC_FRAME_H },
 ];
 
-export const HEROIC_CUTIN_STILLS: readonly HeroicCutinDef[] = [
-  { characterId: 'sword_female', skillId: 'samjae' },
-  { characterId: 'sword_female', skillId: 'maehwa' },
-  { characterId: 'sword_female', skillId: 'changung' },
-  { characterId: 'dao_male', skillId: 'baldo' },
-  { characterId: 'dao_female', skillId: 'gwangpung' },
-  { characterId: 'dao_female', skillId: 'paewang' },
-  { characterId: 'fist_male', skillId: 'taejo' },
-  { characterId: 'fist_male', skillId: 'yeorae' },
-  { characterId: 'fist_female', skillId: 'yeonhwante' },
-  { characterId: 'spear_male', skillId: 'yongchang' },
-  { characterId: 'spear_male', skillId: 'cheonha' },
-  { characterId: 'spear_female', skillId: 'hoeseon' },
-];
+/** 시퀀스가 없는 조합만 컷인으로 폴백 (현재 전 캐릭터 시퀀스 완성) */
+export const HEROIC_CUTIN_STILLS: readonly HeroicCutinDef[] = [];
 
 export function heroicSheetKey(characterId: string, skillId: string): string {
   return `heroic_${characterId}_${skillId}`;

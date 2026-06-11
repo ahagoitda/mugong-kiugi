@@ -38,6 +38,18 @@ const SEQUENCES = [
   { char: 'sword_male', skill: 'samjae', dir: 'sword_male_samjae' },
   { char: 'sword_male', skill: 'maehwa', dir: 'sword_male_maehwa' },
   { char: 'sword_male', skill: 'changung', dir: 'sword_male_changung' },
+  { char: 'sword_female', skill: 'samjae', dir: 'sword_female_samjae' },
+  { char: 'sword_female', skill: 'maehwa', dir: 'sword_female_maehwa' },
+  { char: 'sword_female', skill: 'changung', dir: 'sword_female_changung' },
+  { char: 'dao_male', skill: 'baldo', dir: 'dao_male_baldo' },
+  { char: 'dao_female', skill: 'gwangpung', dir: 'dao_female_gwangpung' },
+  { char: 'dao_female', skill: 'paewang', dir: 'dao_female_paewang' },
+  { char: 'fist_male', skill: 'taejo', dir: 'fist_male_taejo' },
+  { char: 'fist_male', skill: 'yeorae', dir: 'fist_male_yeorae' },
+  { char: 'fist_female', skill: 'yeonhwante', dir: 'fist_female_yeonhwante' },
+  { char: 'spear_male', skill: 'yongchang', dir: 'spear_male_yongchang' },
+  { char: 'spear_male', skill: 'cheonha', dir: 'spear_male_cheonha' },
+  { char: 'spear_female', skill: 'hoeseon', dir: 'spear_female_hoeseon' },
 ];
 
 /** 단일 컷인 일러스트 (어두운 배경, 키잉 불필요) */

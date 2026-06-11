@@ -8,6 +8,13 @@ export interface CharacterDef {
   readonly charClass: CharacterClass;
   readonly gender: CharacterGender;
   readonly spritePrefix: string;
+  /**
+   * 정적 일러스트(hero_<id>.png)가 왼쪽을 보고 그려졌는지 여부.
+   * 캐릭터 선택/초상화/전투에서 모두 오른쪽(적 방향)을 보도록
+   * 이 값이 true면 flipX 로 뒤집는다. (애니메이션 스프라이트시트는
+   * 전 캐릭터가 왼쪽을 보므로 항상 뒤집는다 — Player.playAnim 참고)
+   */
+  readonly staticFacesLeft: boolean;
   readonly description: string;
   readonly stats: {
     readonly hpMul: number;
@@ -25,6 +32,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'SWORD',
     gender: 'MALE',
     spritePrefix: 'sword_male',
+    staticFacesLeft: true,
     description: '균형 잡힌 검법으로 강호를 걷는 무인',
     stats: { hpMul: 1.0, staminaMul: 1.0, speedMul: 1.0, damageMul: 1.0 },
   },
@@ -35,6 +43,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'SWORD',
     gender: 'FEMALE',
     spritePrefix: 'sword_female',
+    staticFacesLeft: true,
     description: '빠른 기세와 안정적인 검초를 다루는 무인',
     stats: { hpMul: 0.9, staminaMul: 1.2, speedMul: 1.1, damageMul: 1.0 },
   },
@@ -45,6 +54,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'BLADE',
     gender: 'MALE',
     spritePrefix: 'dao_male',
+    staticFacesLeft: true,
     description: '묵직한 도법으로 적을 베어내는 무인',
     stats: { hpMul: 1.2, staminaMul: 0.9, speedMul: 0.85, damageMul: 1.3 },
   },
@@ -55,6 +65,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'BLADE',
     gender: 'FEMALE',
     spritePrefix: 'dao_female',
+    staticFacesLeft: true,
     description: '예리한 도세로 빈틈을 파고드는 무인',
     stats: { hpMul: 1.0, staminaMul: 1.0, speedMul: 0.95, damageMul: 1.2 },
   },
@@ -65,6 +76,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'FIST',
     gender: 'MALE',
     spritePrefix: 'fist_male',
+    staticFacesLeft: true,
     description: '근접 연타와 빠른 몸놀림에 능한 무인',
     stats: { hpMul: 1.1, staminaMul: 1.1, speedMul: 1.2, damageMul: 0.85 },
   },
@@ -75,6 +87,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'FIST',
     gender: 'FEMALE',
     spritePrefix: 'fist_female',
+    staticFacesLeft: true,
     description: '가벼운 보법과 연속 타격에 특화된 무인',
     stats: { hpMul: 0.85, staminaMul: 1.3, speedMul: 1.3, damageMul: 0.8 },
   },
@@ -85,6 +98,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'SPEAR',
     gender: 'MALE',
     spritePrefix: 'spear_male',
+    staticFacesLeft: true,
     description: '긴 사거리로 전장을 제압하는 무인',
     stats: { hpMul: 1.0, staminaMul: 1.0, speedMul: 0.95, damageMul: 1.1 },
   },
@@ -95,6 +109,7 @@ export const CHARACTER_LIST: readonly CharacterDef[] = [
     charClass: 'SPEAR',
     gender: 'FEMALE',
     spritePrefix: 'spear_female',
+    staticFacesLeft: false,
     description: '날카로운 창술로 적의 진입을 막는 무인',
     stats: { hpMul: 0.9, staminaMul: 1.1, speedMul: 1.0, damageMul: 1.05 },
   },

@@ -198,6 +198,8 @@ export class UIScene extends Phaser.Scene {
     const portraitKey = dominantSet ? `hero_set_${charId}_${dominantSet}` : `hero_${charId}`;
 
     this.portraitImage = this.add.image(62, 50, portraitKey).setDisplaySize(82, 82).setDepth(202);
+    // 일러스트 원본 방향 보정: 모두 오른쪽(전투 방향)을 보도록 통일
+    this.portraitImage.setFlipX(CHARACTER_MAP.get(charId)?.staticFacesLeft ?? true);
     
     // 무협 느낌의 용/호랑이 테두리 프레임 적용 (여성이면 호랑이, 남성이면 용)
     const frameKey = charId.includes('female') ? 'ui_frame_tiger' : 'ui_frame_dragon';
@@ -1286,6 +1288,7 @@ export class UIScene extends Phaser.Scene {
     const portraitKey = dominantSet ? `hero_set_${charId}_${dominantSet}` : `hero_${charId}`;
     if (this.portraitImage) {
       this.portraitImage.setTexture(portraitKey);
+      this.portraitImage.setFlipX(CHARACTER_MAP.get(charId)?.staticFacesLeft ?? true);
     }
   }
 

@@ -17,6 +17,7 @@ import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
+import { heroicAnimKey, cutinKey, HEROIC_FRAME_W, HEROIC_FRAME_H } from '../data/heroicMotions';
 
 const BOSS_DIALOGUES: Record<string, string[]> = {
   boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
@@ -174,6 +175,12 @@ export class BattleScene extends Phaser.Scene {
   // 이펙트 풀
   private slashPool: Phaser.GameObjects.Sprite[] = [];
 
+  // 고품질 heroic 모션 오버레이 (무공 시전 시 픽셀 캐릭터 대신 표시)
+  private heroicSprite: Phaser.GameObjects.Sprite | null = null;
+  // 무공 컷인 일러스트 상태 (중복 표시 방지 + 스킬별 쿨다운)
+  private cutinActive = false;
+  private cutinLastShown: Map<string, number> = new Map();
+
   // 배경 레이어 (패럴랙스)
   private bgLayerBg: Phaser.GameObjects.TileSprite | null = null;
   private bgLayerMg: Phaser.GameObjects.TileSprite | null = null;
@@ -212,6 +219,20 @@ export class BattleScene extends Phaser.Scene {
     this.isGameOverTriggered = false;
     this.battleH = this.scale.height - 340;
     this.groundY = this.battleH - 130;
+
+    // 같은 Scene 인스턴스가 재시작(게임오버 후 재도전 등)될 때
+    // 이전 세션의 파괴된 오브젝트가 배열에 남아 있으면
+    // 즉시 킬 처리되거나 파괴된 적을 풀에서 꺼내 크래시가 난다 — 반드시 초기화
+    this.enemies = [];
+    this.enemyPool = [];
+    this.slashPool = [];
+    this.bossEnemy = null;
+    this.bossAura = null;
+    this.isBossWave = false;
+    this.killCount = 0;
+    this.scrollX = 0;
+    this.worldOffsetX = 0;
+    this.isMoving = true;
 
     // 카메라를 상단 영역으로 제한
     this.cameras.main.setViewport(0, 0, GAME_W, this.battleH);
@@ -253,6 +274,14 @@ export class BattleScene extends Phaser.Scene {
       fx.setVisible(false);
       this.slashPool.push(fx);
     }
+
+    // heroic 모션 오버레이 스프라이트 (시퀀스가 있는 캐릭터의 무공 시전 시 사용)
+    this.heroicSprite = this.add.sprite(-200, -200, '__DEFAULT')
+      .setOrigin(0.5, 0.92)
+      .setDepth(11)
+      .setVisible(false);
+    this.cutinActive = false;
+    this.cutinLastShown.clear();
 
     // 보스 HP바 UI 생성 (초기에는 숨김)
     this.createBossHpUI();
@@ -301,6 +330,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    // heroic 모션 복귀는 사망 분기보다 먼저 (사망 연출이 가려지지 않도록)
+    this.updateHeroicMotion();
     if (this.player.currentCharState === 'DEAD') {
       if (!this.isGameOverTriggered) {
         this.isGameOverTriggered = true;
@@ -664,8 +695,112 @@ export class BattleScene extends Phaser.Scene {
     const skill = this.player.skills[slotIndex];
     if (!skill) return false;
     const used = this.player.handleAttack(slotIndex);
-    if (used) this.showSkillCastTell(skill);
+    if (used) {
+      this.showSkillCastTell(skill);
+      this.playHeroicVisual(skill);
+    }
     return used;
+  }
+
+  // ─── 고품질 heroic 모션 / 컷인 ───
+
+  /**
+   * 무공 시전 시 고품질 일러스트 연출 적용.
+   * 1) 12프레임 heroic 시퀀스가 있으면 → 픽셀 캐릭터를 잠시 숨기고 풀모션 재생
+   * 2) 시퀀스가 없고 컷인 일러스트가 있으면 → 화면에 컷인 표시
+   * 둘 다 없으면 기존 픽셀 모션 그대로.
+   */
+  private playHeroicVisual(skill: SkillData): void {
+    const animKey = heroicAnimKey(this.characterId, skill.id);
+    if (this.heroicSprite && this.anims.exists(animKey)) {
+      this.playHeroicMotion(animKey);
+      return;
+    }
+    const stillKey = cutinKey(this.characterId, skill.id);
+    if (this.textures.exists(stillKey)) {
+      this.showSkillCutin(stillKey, skill);
+    }
+  }
+
+  private playHeroicMotion(animKey: string): void {
+    if (!this.heroicSprite) return;
+    // 먼저 애니메이션을 재생해 프레임(256x384)이 적용된 뒤 크기를 잡는다
+    // (이전 텍스처 기준으로 setDisplaySize 하면 스케일이 틀어짐)
+    this.heroicSprite.play(animKey, false);
+    const displayH = 330;
+    const displayW = displayH * (HEROIC_FRAME_W / HEROIC_FRAME_H);
+    this.heroicSprite
+      .setDisplaySize(displayW, displayH)
+      .setPosition(this.player.x + 12, this.groundY + 90)
+      .setVisible(true)
+      .setAlpha(1);
+    this.player.setVisible(false);
+  }
+
+  /** heroic 모션 종료 처리 — 공격 상태가 끝나면 픽셀 캐릭터로 복귀 */
+  private updateHeroicMotion(): void {
+    if (!this.heroicSprite || !this.heroicSprite.visible) return;
+    if (this.player.currentCharState !== 'ATTACK') {
+      this.heroicSprite.setVisible(false);
+      this.player.setVisible(true); // 사망 시에도 쓰러지는 연출이 보여야 한다
+    }
+  }
+
+  /** 무공 컷인 일러스트: 시전 순간 화면 왼쪽에 짧게 등장 */
+  private showSkillCutin(texKey: string, skill: SkillData): void {
+    const now = this.time.now;
+    const last = this.cutinLastShown.get(texKey) ?? -999999;
+    // 저등급 무공은 자주 시전되므로 컷인 반복 주기를 길게 둔다
+    const minGap = (skill.grade === 'ULTIMATE' || skill.grade === 'HIGH') ? 4500 : 10000;
+    if (this.cutinActive || now - last < minGap) return;
+    this.cutinActive = true;
+    this.cutinLastShown.set(texKey, now);
+
+    const h = Math.min(310, this.battleH * 0.56);
+    const w = h * (2 / 3);
+    const targetX = 26 + w / 2;
+    const y = this.battleH * 0.44;
+
+    const img = this.add.image(targetX - 46, y, texKey)
+      .setDisplaySize(w, h)
+      .setAlpha(0)
+      .setAngle(-3)
+      .setScrollFactor(0)
+      .setDepth(205);
+    const border = this.add.rectangle(targetX - 46, y, w + 6, h + 6)
+      .setStrokeStyle(2, 0xd6a84b, 0.95)
+      .setFillStyle(0, 0)
+      .setAlpha(0)
+      .setAngle(-3)
+      .setScrollFactor(0)
+      .setDepth(206);
+
+    const slide = (target: Phaser.GameObjects.Components.Transform & Phaser.GameObjects.Components.AlphaSingle) => {
+      this.tweens.add({
+        targets: target,
+        x: targetX,
+        alpha: 0.97,
+        duration: 130,
+        ease: 'Cubic.easeOut',
+      });
+    };
+    slide(img);
+    slide(border);
+
+    this.time.delayedCall(620, () => {
+      this.tweens.add({
+        targets: [img, border],
+        x: targetX + 34,
+        alpha: 0,
+        duration: 190,
+        ease: 'Quad.easeIn',
+        onComplete: () => {
+          img.destroy();
+          border.destroy();
+          this.cutinActive = false;
+        },
+      });
+    });
   }
 
   private onUseDash(): void {
@@ -768,9 +903,10 @@ export class BattleScene extends Phaser.Scene {
     };
 
     const spawnX = GAME_W + 60 + Math.random() * 80;
-    const spawnY = this.groundY + (Math.random() - 0.5) * 16;
 
-    enemy.activate(scaledData, spawnX, spawnY);
+    enemy.activate(scaledData, spawnX, this.groundY);
+    // 트리밍된 프레임 크기에 맞춰 발끝을 플레이어 발 위치(groundY+88)에 정렬
+    enemy.y = this.groundY + 88 - enemy.displayHeight / 2 + (Math.random() - 0.5) * 14;
     if (data.tint !== undefined) {
       enemy.setTint(data.tint);
     } else {
@@ -814,7 +950,10 @@ export class BattleScene extends Phaser.Scene {
       HOBUP: 1.1, SAJA: 1.15, BUGYOJU: 1.2, HYEOLMA: 1.3,
     };
     const bossScale = rankScales[bossData.bossRank ?? 'DAEJU'] ?? 1.0;
-    enemy.setScale(bossScale);
+    // 표시 크기에 대한 상대 배율 (절대 스케일을 덮어쓰면 원본 512px 기준으로 거대해짐)
+    enemy.setScale(enemy.scaleX * bossScale, enemy.scaleY * bossScale);
+    // 발끝을 지면에 정렬
+    enemy.y = this.groundY + 88 - enemy.displayHeight / 2;
     enemy.setDepth(20); // 오라 위에 보스가 표시되도록
 
     if (bossData.tint !== undefined) {
@@ -825,7 +964,7 @@ export class BattleScene extends Phaser.Scene {
 
     // 보스 오라(등급 색상): 발밑에서 맥동하는 글로우로 시각 차별화
     const auraColor = BOSS_RANK_COLORS[bossData.bossRank ?? ''] ?? 0xff2222;
-    this.bossAura = this.add.ellipse(spawnX, spawnY + 26, 90, 28, auraColor, 0.4)
+    this.bossAura = this.add.ellipse(spawnX, this.groundY + 80, 90, 28, auraColor, 0.4)
       .setDepth(19);
     this.tweens.add({
       targets: this.bossAura,
@@ -1134,8 +1273,9 @@ export class BattleScene extends Phaser.Scene {
       if (!enemy.active) continue;
 
       const isBoss = (enemy === this.bossEnemy);
-      const halfW = isBoss ? 24 : 16;
-      const halfH = isBoss ? 36 : 24;
+      // 확대된 표시 크기에 맞춘 피격 판정 (트리밍 프레임 기준 몸통 영역)
+      const halfW = isBoss ? 40 : 26;
+      const halfH = isBoss ? 80 : 55;
 
       const enemyRect = new Phaser.Geom.Rectangle(
         enemy.x - halfW, enemy.y - halfH, halfW * 2, halfH * 2,

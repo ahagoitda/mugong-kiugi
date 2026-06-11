@@ -1,7 +1,12 @@
 import Phaser from 'phaser';
-import { ALL_RUNTIME_ASSETS, heroSetSkinKey, RUNTIME_ASSET_PATH } from '../data/assets';
+import { ALL_RUNTIME_ASSETS, ENEMY_ASSETS, BOSS_ASSETS, heroSetSkinKey, RUNTIME_ASSET_PATH } from '../data/assets';
 import { CHARACTER_LIST } from '../data/characters';
 import { SET_IDS, SET_TINTS } from '../data/equipment';
+import {
+  HEROIC_MOTION_SEQUENCES, HEROIC_CUTIN_STILLS,
+  heroicSheetKey, heroicSheetPath, heroicAnimKey, cutinKey, cutinPath,
+} from '../data/heroicMotions';
+import { addTrimFrame } from '../utils/textureTrim';
 import { bgmSystem } from '../systems/BgmSystem';
 import { soundSystem } from '../systems/SoundSystem';
 import { loadGame } from '../systems/SaveSystem';
@@ -52,6 +57,19 @@ export class BootScene extends Phaser.Scene {
       this.load.spritesheet(`hero_${id}_attack_thrust`,
         `${RUNTIME_ASSET_PATH}/hero_${id}_attack_thrust.png`,
         { frameWidth: 128, frameHeight: 128 });
+    }
+
+    // 고품질 heroic 크로마키 모션 스프라이트시트 (scripts/build-heroic-motions.mjs 산출물)
+    for (const seq of HEROIC_MOTION_SEQUENCES) {
+      this.load.spritesheet(
+        heroicSheetKey(seq.characterId, seq.skillId),
+        heroicSheetPath(seq.characterId, seq.skillId),
+        { frameWidth: seq.frameWidth, frameHeight: seq.frameHeight },
+      );
+    }
+    // 무공 컷인 일러스트 (시퀀스가 없는 영웅용)
+    for (const cut of HEROIC_CUTIN_STILLS) {
+      this.load.image(cutinKey(cut.characterId, cut.skillId), cutinPath(cut.characterId, cut.skillId));
     }
   }
 
@@ -131,6 +149,24 @@ export class BootScene extends Phaser.Scene {
           repeat: 0
         });
       }
+    }
+
+    // heroic 모션 애니메이션 등록 (전투에서 픽셀 캐릭터 대신 재생)
+    for (const seq of HEROIC_MOTION_SEQUENCES) {
+      const sheetKey = heroicSheetKey(seq.characterId, seq.skillId);
+      if (!this.textures.exists(sheetKey)) continue;
+      this.anims.create({
+        key: heroicAnimKey(seq.characterId, seq.skillId),
+        frames: this.anims.generateFrameNumbers(sheetKey, { start: 0, end: seq.frameCount - 1 }),
+        frameRate: 16,
+        repeat: 0,
+      });
+    }
+
+    // 적/보스 일러스트의 투명 여백을 트리밍한 프레임 등록
+    // (Enemy.activate 가 'trim' 프레임으로 캐릭터 실측 크기를 잡는다)
+    for (const asset of [...ENEMY_ASSETS, ...BOSS_ASSETS]) {
+      addTrimFrame(this, asset.key);
     }
 
     this.createHeroSetSkinTextures();

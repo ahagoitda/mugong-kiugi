@@ -38,6 +38,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private currentState: CharacterState = 'IDLE';
   private stateTimer = 0;
   private facingRight = true;
+  /**
+   * 고정 횡스크롤 기준 X 좌표.
+   * 공격 돌진/피격 등으로 트윈이 중간에 끊겨도 항상 이 위치로 복귀한다.
+   * (트윈이 killTweensOf 로 취소되면 복귀 트윈도 사라져 캐릭터가
+   *  조금씩 오른쪽으로 밀려나던 버그 방지)
+   */
+  private homeX = 0;
 
   // ─── 스탯 ───
   private _hp: number;
@@ -84,6 +91,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.charClass = charDef?.charClass ?? 'SWORD';
     this.characterId = charDef?.id ?? 'sword_male';
     this.baseTextureKey = idleTexture;
+    this.homeX = x;
 
     scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
     scene.physics.add.existing(this as unknown as Phaser.GameObjects.GameObject);
@@ -92,7 +100,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setDisplaySize(210, 210);
     this.baseScaleX = this.scaleX;
     this.baseScaleY = this.scaleY;
-    this.setFlipX(true); // 아트가 왼쪽을 향하므로 항상 flip → 오른쪽(적 방향)을 바라봄
+    // 초기(정적 일러스트) 텍스처는 캐릭터마다 방향이 다르다 —
+    // 왼쪽을 보는 아트만 뒤집어 항상 오른쪽(적 방향)을 바라보게 한다.
+    // 애니메이션 시트는 전 캐릭터 왼쪽 기준이므로 playAnim 에서 별도 보정.
+    this.setFlipX(charDef?.staticFacesLeft ?? true);
 
     // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -203,11 +214,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return;
     }
     // 공격 모션이면 스킬의 attackMotion 으로 변형 키를 선택
+    // (스프라이트시트가 없는 신규 모션은 가장 비슷한 시트로 대체)
     if (action === 'attack' && this.currentSkill?.attackMotion && this.currentSkill.attackMotion !== 'standard') {
-      const variantKey = `${this.spritePrefix}-attack-${this.currentSkill.attackMotion}`;
+      const sheetVariant: Record<string, string> = {
+        heavy: 'heavy', quick: 'quick', thrust: 'thrust',
+        spin: 'heavy', slam: 'heavy', flurry: 'quick',
+      };
+      const variant = sheetVariant[this.currentSkill.attackMotion] ?? this.currentSkill.attackMotion;
+      const variantKey = `${this.spritePrefix}-attack-${variant}`;
       if (this.anims.exists(variantKey)) key = variantKey;
     }
     if (this.anims.exists(key)) {
+      // 애니메이션 시트는 전 캐릭터가 왼쪽을 보고 그려졌으므로
+      // 오른쪽을 볼 때 flip (정적 일러스트와 방향 기준이 다름)
+      this.setFlipX(this.facingRight);
       this.play(key, ignoreIfPlaying);
     }
   }
@@ -238,6 +258,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       pullBack = 30;
       tiltAngle = -5;
       tintColor = 0xb2dfdb;
+    } else if (motion === 'spin') {
+      // 회전 베기: 예비동작 후 한 바퀴 돌며 휩쓸기
+      windupDur = 150;
+      pullBack = 22;
+      tiltAngle = -16;
+      tintColor = 0xce93d8;
+    } else if (motion === 'slam') {
+      // 도약 내려찍기: 웅크렸다 떠올라 내리꽂기
+      windupDur = 200;
+      pullBack = 20;
+      tiltAngle = -22;
+      tintColor = 0xffab91;
+    } else if (motion === 'flurry') {
+      // 연속 타격: 짧은 예비동작 후 잔진동 연타
+      windupDur = 70;
+      pullBack = 12;
+      tiltAngle = -6;
+      tintColor = 0xc5e1a5;
     }
 
     this.scene.tweens.killTweensOf(this);
@@ -246,18 +284,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.scene.tweens.add({
       targets: this,
       x: startX - dir * pullBack,
+      // slam 은 윈드업에서 웅크림 (착지 임팩트 대비)
+      y: motion === 'slam' ? startY + 8 : startY,
       angle: tiltAngle,
-      scaleX: this.baseScaleX * 0.9,
-      scaleY: this.baseScaleY * 1.1,
+      scaleX: this.baseScaleX * (motion === 'slam' ? 0.85 : 0.9),
+      scaleY: this.baseScaleY * (motion === 'slam' ? 1.0 : 1.1),
       duration: windupDur,
       ease: 'Quad.easeOut',
       onComplete: () => {
         let dashDist = skill.range * 0.45;
         if (motion === 'thrust') dashDist = skill.range * 0.6;
+        if (motion === 'spin') dashDist = skill.range * 0.5;
+        if (motion === 'flurry') dashDist = skill.range * 0.3;
 
         let strikeDur = 160;
         if (motion === 'heavy') strikeDur = 250;
         if (motion === 'quick') strikeDur = 110;
+        if (motion === 'spin') strikeDur = 240;
+        if (motion === 'slam') strikeDur = 230;
+        if (motion === 'flurry') strikeDur = 100;
 
         const targetX = startX + dir * dashDist;
 
@@ -280,11 +325,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.scene.tweens.add({
           targets: this,
           x: targetX,
-          angle: -tiltAngle * 0.8,
+          // spin: 한 바퀴 회전 / slam: 도약 후 내리꽂기 / 그 외: 살짝 기울기
+          angle: motion === 'spin' ? dir * 360 : -tiltAngle * 0.8,
+          y: motion === 'slam' ? startY - 34 : startY,
           scaleX: this.baseScaleX * 1.2,
           scaleY: this.baseScaleY * 0.85,
           duration: strikeDur,
-          ease: 'Cubic.easeOut',
+          ease: motion === 'slam' ? 'Quad.easeOut' : 'Cubic.easeOut',
           onComplete: () => {
             this.emitHit(skill);
 
@@ -304,6 +351,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
               impactDur = 80;
               shakeForce = 0.002;
               hitStopMs = 20;
+            } else if (motion === 'spin') {
+              impactDur = 140;
+              shakeForce = 0.006;
+              hitStopMs = 60;
+            } else if (motion === 'slam') {
+              // 착지 임팩트가 핵심 — 가장 강한 흔들림/정지감
+              impactDur = 110;
+              shakeForce = 0.01;
+              hitStopMs = 100;
+            } else if (motion === 'flurry') {
+              impactDur = 70;
+              shakeForce = 0.002;
+              hitStopMs = 15;
             }
 
             if (hitStopMs > 0) {
@@ -318,15 +378,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
             this.scene.tweens.add({
               targets: this,
-              angle: dir * (motion === 'heavy' ? 25 : motion === 'thrust' ? 12 : 15),
-              scaleX: this.baseScaleX * 1.25,
-              scaleY: this.baseScaleY * 0.8,
+              angle: dir * (motion === 'heavy' || motion === 'slam' ? 25 : motion === 'thrust' ? 12 : 15),
+              // slam 은 임팩트에서 지면으로 내리꽂힘
+              y: startY,
+              scaleX: this.baseScaleX * (motion === 'slam' ? 1.32 : 1.25),
+              scaleY: this.baseScaleY * (motion === 'slam' ? 0.72 : 0.8),
               duration: impactDur,
+              ease: motion === 'slam' ? 'Quad.easeIn' : 'Linear',
               onComplete: () => {
                 this.setAlpha(0.65);
                 this.scene.tweens.add({
                   targets: this,
-                  x: startX,
+                  x: this.homeX,
                   y: startY,
                   angle: 0,
                   scaleX: this.baseScaleX,
@@ -563,6 +626,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.changeState('HIT');
     this.stateTimer = 300; // 300ms 경직
     this.setTint(0xff8888);
+
+    // 공격 돌진 도중 피격되면 복귀 트윈이 취소되므로 기준 위치로 되돌린다
+    if (Math.abs(this.x - this.homeX) > 1) {
+      this.scene.tweens.add({
+        targets: this,
+        x: this.homeX,
+        duration: 160,
+        ease: 'Quad.easeOut',
+      });
+    }
   }
 
   heal(hpAmount: number, staminaAmount: number): void {
@@ -587,6 +660,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this._stamina = Math.min(this._maxStamina, this._stamina + 3 * (delta / 1000));
     // 체력 소량 패시브 재생 (방치형 생존력) — 초당 maxHp의 0.4%
     this._hp = Math.min(this._maxHp, this._hp + this._maxHp * 0.004 * (delta / 1000));
+
+    // 고정 횡스크롤 기준 위치 유지: 트윈 취소 등으로 어긋난 X를 부드럽게 복귀
+    if ((this.currentState === 'IDLE' || this.currentState === 'RUN') &&
+        Math.abs(this.x - this.homeX) > 0.5) {
+      this.x += (this.homeX - this.x) * Math.min(1, delta / 130);
+    }
 
     switch (this.currentState) {
       case 'ATTACK':

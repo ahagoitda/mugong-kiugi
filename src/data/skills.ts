@@ -140,7 +140,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'STUN',
     effectChance: 0.6,
     effectDuration: 1000,
-    attackMotion: 'heavy',
+    attackMotion: 'spin',
     effectType: 'wave',
     description: '음양의 조화를 담은 절학. 강력한 기절 효과를 부여한다.',
   }],
@@ -166,7 +166,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     effect: 'KNOCKBACK',
     effectChance: 1.0,
     effectDuration: 500,
-    attackMotion: 'heavy',
+    attackMotion: 'slam',
     effectType: 'burst',
     description: '하늘을 가르는 무애의 일검. 모든 것을 베어내는 궁극의 검법.',
   }],
@@ -188,7 +188,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 10, hitFrames: [2, 3],
     hitboxSize: { w: 40, h: 34 }, moveOffset: { x: 0, y: 0 },
     effect: 'KNOCKBACK', effectChance: 0.35, effectDuration: 250,
-    attackMotion: 'heavy', effectType: 'wave',
+    attackMotion: 'spin', effectType: 'wave',
     description: '하늘을 쓸어버리는 횡베기. 적을 밀어낸다.',
   }],
   ['gwangpung', {
@@ -215,7 +215,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 8, hitFrames: [2, 3],
     hitboxSize: { w: 66, h: 50 }, moveOffset: { x: 4, y: 0 },
     effect: 'STUN', effectChance: 0.6, effectDuration: 1000,
-    attackMotion: 'heavy', effectType: 'burst',
+    attackMotion: 'slam', effectType: 'burst',
     description: '패왕의 기세로 적을 짓누르는 절학. 강력한 기절.',
   }],
   ['cheonma', {
@@ -224,7 +224,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 6, hitFrames: [1, 2, 3],
     hitboxSize: { w: 120, h: 84 }, moveOffset: { x: 16, y: 0 },
     effect: 'KNOCKBACK', effectChance: 1.0, effectDuration: 500,
-    attackMotion: 'heavy', effectType: 'burst',
+    attackMotion: 'spin', effectType: 'burst',
     description: '천마가 군림하는 도의 극의. 모든 것을 쓸어버린다.',
   }],
 
@@ -254,7 +254,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 16, hitFrames: [1, 2, 3],
     hitboxSize: { w: 36, h: 30 }, moveOffset: { x: 6, y: 0 },
     effect: 'SLOW', effectChance: 0.4, effectDuration: 1500,
-    attackMotion: 'quick', effectType: 'multi',
+    attackMotion: 'flurry', effectType: 'multi',
     description: '쉴 새 없는 연환 발차기. 다단 히트로 적을 둔화시킨다.',
   }],
   ['baekbo', {
@@ -281,7 +281,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 8, hitFrames: [1, 2, 3],
     hitboxSize: { w: 104, h: 72 }, moveOffset: { x: 14, y: 0 },
     effect: 'KNOCKBACK', effectChance: 1.0, effectDuration: 500,
-    attackMotion: 'heavy', effectType: 'burst',
+    attackMotion: 'slam', effectType: 'burst',
     description: '여래의 신장. 거대한 장력이 전장을 휩쓴다.',
   }],
 
@@ -311,7 +311,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 14, hitFrames: [1, 3],
     hitboxSize: { w: 56, h: 40 }, moveOffset: { x: 6, y: 0 },
     effect: 'KNOCKBACK', effectChance: 0.4, effectDuration: 250,
-    attackMotion: 'quick', effectType: 'wave',
+    attackMotion: 'spin', effectType: 'wave',
     description: '창을 회전시켜 주변을 휩쓰는 광역기. 적을 밀어낸다.',
   }],
   ['gwansan', {
@@ -329,7 +329,7 @@ export const SKILL_DATABASE: ReadonlyMap<string, SkillData> = new Map([
     animKey: 'player_attack', totalFrames: 4, frameRate: 8, hitFrames: [2, 3],
     hitboxSize: { w: 80, h: 46 }, moveOffset: { x: 10, y: 0 },
     effect: 'STUN', effectChance: 0.55, effectDuration: 1000,
-    attackMotion: 'heavy', effectType: 'burst',
+    attackMotion: 'flurry', effectType: 'burst',
     description: '용의 아홉 가지 창식. 긴 사거리에서 적을 제압한다.',
   }],
   ['cheonha', {
@@ -594,7 +594,7 @@ const GRADE_CONFIG: Readonly<Record<SkillGrade, {
   ULTIMATE: { count: 2, range: 105, cooldown: 4200, damage: 4.4, stamina: 34, color: 0xffd740, gold: 700, shard: 3, maxLevel: 40 },
 };
 
-const MOTIONS = ['standard', 'quick', 'heavy', 'thrust'] as const;
+const MOTIONS = ['standard', 'quick', 'heavy', 'thrust', 'spin', 'slam', 'flurry'] as const;
 const EFFECT_TYPES = ['slash', 'multi', 'wave', 'burst'] as const;
 const STATUS_EFFECTS: readonly StatusEffect[] = ['BLEED', 'STUN', 'KNOCKBACK', 'SLOW'];
 const GENERATED_SKILL_IDS: Record<CharacterClass, Record<SkillGrade, string[]>> = {

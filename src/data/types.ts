@@ -86,8 +86,11 @@ export interface SkillData {
    *   heavy  - 묵직한 강타 (느린 예비동작 → 임팩트)
    *   quick  - 빠른 2연타
    *   thrust - 찌르기 (창/도 계열)
+   *   spin   - 회전 베기 (한 바퀴 돌며 휩쓸기)
+   *   slam   - 도약 내려찍기 (점프 → 강착지)
+   *   flurry - 제자리 연속 타격 (잔진동 연타)
    */
-  readonly attackMotion?: 'standard' | 'heavy' | 'quick' | 'thrust';
+  readonly attackMotion?: 'standard' | 'heavy' | 'quick' | 'thrust' | 'spin' | 'slam' | 'flurry';
   /**
    * 이펙트 종류. undefined 이면 'slash' (기존 단일 슬래시).
    *   slash  - 단일 슬래시 (기존)

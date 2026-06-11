@@ -68,6 +68,8 @@ export class CharacterSelectScene extends Phaser.Scene {
     const character = CHARACTER_LIST[this.selected];
     const text = HERO_TEXT[character.id] ?? { name: character.nameEn, desc: character.description };
     this.hero.setTexture(`hero_${character.id}`);
+    // 일러스트 원본 방향이 캐릭터마다 달라, 모두 오른쪽(전투 방향)을 보도록 통일
+    this.hero.setFlipX(character.staticFacesLeft);
     this.nameText.setText(text.name);
     this.descText.setText(text.desc);
     this.statText.setText(`체력 x${character.stats.hpMul.toFixed(1)}   공격 x${character.stats.damageMul.toFixed(1)}   속도 x${character.stats.speedMul.toFixed(1)}`);

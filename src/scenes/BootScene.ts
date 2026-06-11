@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
-import { ALL_RUNTIME_ASSETS, heroSetSkinKey, RUNTIME_ASSET_PATH } from '../data/assets';
+import { ALL_RUNTIME_ASSETS, ENEMY_ASSETS, BOSS_ASSETS, heroSetSkinKey, RUNTIME_ASSET_PATH } from '../data/assets';
 import { CHARACTER_LIST } from '../data/characters';
 import { SET_IDS, SET_TINTS } from '../data/equipment';
+import { HEROIC_CUTIN_STILLS, cutinKey, cutinPath } from '../data/heroicMotions';
+import { addTrimFrame } from '../utils/textureTrim';
 import { bgmSystem } from '../systems/BgmSystem';
 import { soundSystem } from '../systems/SoundSystem';
 import { loadGame } from '../systems/SaveSystem';
@@ -52,6 +54,12 @@ export class BootScene extends Phaser.Scene {
       this.load.spritesheet(`hero_${id}_attack_thrust`,
         `${RUNTIME_ASSET_PATH}/hero_${id}_attack_thrust.png`,
         { frameWidth: 128, frameHeight: 128 });
+    }
+
+    // 무공 컷인 일러스트 (시퀀스가 없는 영웅용, 장당 ~35KB)
+    // heroic 12프레임 시트는 용량이 커서 BattleScene 에서 선택한 캐릭터 것만 지연 로딩한다.
+    for (const cut of HEROIC_CUTIN_STILLS) {
+      this.load.image(cutinKey(cut.characterId, cut.skillId), cutinPath(cut.characterId, cut.skillId));
     }
   }
 
@@ -131,6 +139,12 @@ export class BootScene extends Phaser.Scene {
           repeat: 0
         });
       }
+    }
+
+    // 적/보스 일러스트의 투명 여백을 트리밍한 프레임 등록
+    // (Enemy.activate 가 'trim' 프레임으로 캐릭터 실측 크기를 잡는다)
+    for (const asset of [...ENEMY_ASSETS, ...BOSS_ASSETS]) {
+      addTrimFrame(this, asset.key);
     }
 
     this.createHeroSetSkinTextures();

@@ -4,6 +4,7 @@ import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { BattleScene } from './scenes/BattleScene';
 import { UIScene } from './scenes/UIScene';
 import { GameOverScene } from './scenes/GameOverScene';
+import { RebirthScene } from './scenes/RebirthScene';
 
 // ✅ 기본 디자인 해상도 (기기 비율에 맞춰 세로 해상도 동적 설정)
 const BASE_W = 540;
@@ -31,7 +32,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene, GameOverScene],
+  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene, GameOverScene, RebirthScene],
 };
 
 const game = new Phaser.Game(config);

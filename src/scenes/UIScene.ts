@@ -8,6 +8,7 @@ import {
 } from '../data/equipment';
 import { skillCardKey } from '../data/assets';
 import { claimOfflineReward, loadGame, saveGame, deleteSave } from '../systems/SaveSystem';
+import { trainingAttackCost, trainingCost, rebirthAttackMul } from '../data/combatBalance';
 import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
@@ -144,6 +145,8 @@ export class UIScene extends Phaser.Scene {
   private codexPage = 0;
   private trainingMultiplier: 1 | 10 | 100 | 'MAX' = 1;
   private shopTimerEvent: Phaser.Time.TimerEvent | null = null;
+  private rebirthBtn: Phaser.GameObjects.Rectangle | null = null;
+  private rebirthTxt: Phaser.GameObjects.Text | null = null;
 
   constructor() {
     super({ key: 'UIScene' });
@@ -232,6 +235,24 @@ export class UIScene extends Phaser.Scene {
     this.retreatBtn.on('pointerdown', () => {
       this.scene.get('BattleScene').events.emit('request-retreat');
     });
+
+    this.rebirthBtn = this.add.rectangle(70, 75, 88, 28, 0x1a2848)
+      .setStrokeStyle(1, 0x5f8dff)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(204)
+      .setVisible(false);
+    this.rebirthTxt = this.add.text(70, 75, '환생', this.textStyle(12, '#88bbff'))
+      .setOrigin(0.5)
+      .setDepth(205)
+      .setVisible(false);
+    this.rebirthBtn.on('pointerdown', () => {
+      const save = loadGame();
+      const charId = save.selectedCharacter ?? 'sword_male';
+      this.scene.pause('BattleScene');
+      this.scene.launch('RebirthScene', { characterId: charId });
+    });
+    this.scene.get('BattleScene').events.on('rebirth-unlocked', () => this.refreshRebirthButton(), this);
+    this.refreshRebirthButton();
 
     this.add.rectangle(W / 2, 122, 280, 24, 0x000000, 0.6)
       .setStrokeStyle(1, GOLD, 0.35)
@@ -670,8 +691,8 @@ export class UIScene extends Phaser.Scene {
   private buildTraining(items: Phaser.GameObjects.GameObject[]): void {
     const save = loadGame();
     const TRAIN = [
-      { key: 'attack',  name: '공격 수련', sub: '호신강공(護身剛功)', icon: '剑', eff: '공격력',    pct: 2,   maxLv: 20, base: 100, color: 0xe05555 },
-      { key: 'hp',      name: '체력 수련', sub: '금강불괴(金剛不壞)', icon: '氣', eff: '최대 체력',  pct: 2,   maxLv: 20, base: 100, color: 0xcc3333 },
+      { key: 'attack',  name: '공격 수련', sub: '호신강공(護身剛功)', icon: '剑', eff: '공격력',    pct: 2,   maxLv: 50, base: 100, color: 0xe05555 },
+      { key: 'hp',      name: '체력 수련', sub: '금강불괴(金剛不壞)', icon: '氣', eff: '체력/회피',  pct: 2,   maxLv: 20, base: 100, color: 0xcc3333, evadePct: 2 },
       { key: 'gold',    name: '재물 수련', sub: '취재술(聚財術)',     icon: '財', eff: '금화 획득',  pct: 2,   maxLv: 20, base: 80,  color: 0xd4a74e },
       { key: 'speed',   name: '신법 수련', sub: '경공술(輕功術)',     icon: '步', eff: '이동 속도',  pct: 1.5, maxLv: 15, base: 150, color: 0x5aafff },
       { key: 'stamina', name: '내공 수련', sub: '심기단련(心氣鍛鍊)', icon: '心', eff: '최대 내공',  pct: 3,   maxLv: 20, base: 120, color: 0x50c878 },
@@ -706,6 +727,8 @@ export class UIScene extends Phaser.Scene {
       const isMax = lv >= t.maxLv;
       const ratio = lv / t.maxLv;
       const effPct = (t.pct * lv).toFixed(1);
+      const stepCostAt = (level: number) =>
+        t.key === 'attack' ? trainingAttackCost(level) : trainingCost(t.base, level);
 
       // 다중 강화 연산
       let count = 1;
@@ -715,7 +738,7 @@ export class UIScene extends Phaser.Scene {
       if (this.trainingMultiplier === 'MAX') {
         let currentGold = save.gold;
         while (tempLv < t.maxLv) {
-          const stepCost = t.base * (tempLv + 1);
+          const stepCost = stepCostAt(tempLv);
           if (currentGold >= stepCost) {
             currentGold -= stepCost;
             totalCost += stepCost;
@@ -727,7 +750,7 @@ export class UIScene extends Phaser.Scene {
         count = tempLv - lv;
         if (count <= 0) {
           count = 1;
-          totalCost = t.base * (lv + 1);
+          totalCost = stepCostAt(lv);
         }
       } else {
         count = Number(this.trainingMultiplier);
@@ -736,7 +759,7 @@ export class UIScene extends Phaser.Scene {
         }
         count = Math.max(1, count);
         for (let k = 0; k < count; k++) {
-          totalCost += t.base * (lv + 1 + k);
+          totalCost += stepCostAt(lv + k);
         }
       }
 
@@ -760,8 +783,11 @@ export class UIScene extends Phaser.Scene {
           .setOrigin(1, 0).setDepth(703),
       );
       // 효과 텍스트
+      const effLine = t.key === 'hp'
+        ? `${t.eff}  체력+${effPct}%  회피+${Math.min(20, lv * ((t as { evadePct?: number }).evadePct ?? 0)).toFixed(0)}%`
+        : `${t.eff}  +${effPct}%`;
       items.push(
-        this.add.text(cx - 104, cy - 10, `${t.eff}  +${effPct}%`, this.textStyle(13, '#c8b98a')).setDepth(703),
+        this.add.text(cx - 104, cy - 10, effLine, this.textStyle(12, '#c8b98a')).setDepth(703),
       );
       // 진행 바
       const bw = 200;
@@ -793,7 +819,7 @@ export class UIScene extends Phaser.Scene {
       this.add.rectangle(W / 2, 655, W - 52, 46, 0x0c0a07, 1).setStrokeStyle(1, GOLD, 0.45).setDepth(702),
       this.add.text(W / 2, 647, '현재 총 보너스', this.textStyle(11, '#7a6e58')).setOrigin(0.5).setDepth(703),
       this.add.text(W / 2, 665,
-        `공격 +${(tl.attack ?? 0) * 2}%   체력 +${(tl.hp ?? 0) * 2}%   속도 +${((tl.speed ?? 0) * 1.5).toFixed(1)}%   치명타 +${(tl.crit ?? 0) * 2}%`,
+        `공격 +${(tl.attack ?? 0) * 2}%   체력 +${(tl.hp ?? 0) * 2}%   회피 +${Math.min(20, (tl.hp ?? 0) * 2)}%   속도 +${((tl.speed ?? 0) * 1.5).toFixed(1)}%`,
         this.textStyle(12, '#d4a74e')).setOrigin(0.5).setDepth(703),
     );
 
@@ -1279,6 +1305,7 @@ export class UIScene extends Phaser.Scene {
       this.retreatBtn.setVisible(state.isBossWave);
       this.retreatTxt.setVisible(state.isBossWave);
     }
+    this.refreshRebirthButton();
 
     // 초상화 일러스트 실시간 갱신
     const save = loadGame();
@@ -1289,6 +1316,17 @@ export class UIScene extends Phaser.Scene {
     if (this.portraitImage) {
       this.portraitImage.setTexture(portraitKey);
       this.portraitImage.setFlipX(CHARACTER_MAP.get(charId)?.staticFacesLeft ?? true);
+    }
+  }
+
+  private refreshRebirthButton(): void {
+    const save = loadGame();
+    const unlocked = (save.stageCleared ?? 0) >= 50;
+    if (this.rebirthBtn) this.rebirthBtn.setVisible(unlocked);
+    if (this.rebirthTxt) {
+      const atkPct = Math.round((rebirthAttackMul(save.rebirthCount ?? 0) - 1) * 100);
+      this.rebirthTxt.setVisible(unlocked);
+      this.rebirthTxt.setText(unlocked ? `환생 +${atkPct}%` : '환생');
     }
   }
 

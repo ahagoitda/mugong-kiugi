@@ -21,6 +21,11 @@ import {
   HEROIC_MOTION_SEQUENCES, heroicAnimKey, heroicSheetKey, heroicSheetPath,
   cutinKey, HEROIC_FRAME_W, HEROIC_FRAME_H,
 } from '../data/heroicMotions';
+import {
+  ENEMY_DMG_MUL, ENEMY_HP_MUL, BOSS_DMG_MUL, BOSS_HP_MUL,
+  bossPost50Mul, calculateEvade, minionCycleDmgMul,
+  rebirthAttackMul, rebirthPathBonuses,
+} from '../data/combatBalance';
 
 const BOSS_DIALOGUES: Record<string, string[]> = {
   boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
@@ -53,13 +58,6 @@ const BOSS_DIALOGUES: Record<string, string[]> = {
 const GAME_W = 540;
 const SCROLL_SPEED = 40;
 const MAX_ENEMIES = 8;
-
-// ─── 난이도 조정(하향) 전역 배율 ───
-// 방치형 게임에 맞춰 적 위협을 낮춰 편하게 진행되도록 한다.
-const ENEMY_HP_MUL = 0.45;
-const ENEMY_DMG_MUL = 0.12;
-const BOSS_HP_MUL = 0.38;
-const BOSS_DMG_MUL = 0.14;
 
 /**
  * 보스 등급별 고유 스킬 정의.
@@ -944,7 +942,9 @@ export class BattleScene extends Phaser.Scene {
     const scaledData = {
       ...data,
       hp: Math.max(1, Math.round(data.hp * waveScale * ENEMY_HP_MUL)),
-      damage: Math.max(1, Math.round(data.damage * (1 + (this.waveNumber - 1) * 0.012) * ENEMY_DMG_MUL)),
+      damage: Math.max(1, Math.round(
+        data.damage * (1 + (this.waveNumber - 1) * 0.012) * ENEMY_DMG_MUL * minionCycleDmgMul(this.waveNumber),
+      )),
     };
 
     const spawnX = GAME_W + 60 + Math.random() * 80;
@@ -969,14 +969,9 @@ export class BattleScene extends Phaser.Scene {
     const bossData = ENEMY_DATABASE.get(bossId);
     if (!bossData) return;
 
-    // 50웨이브 이후 순환 시 추가 스케일링
-    let hpMultiplier = 1;
-    let dmgMultiplier = 1;
-    if (this.waveNumber > 50) {
-      const cycles = Math.floor((this.waveNumber - 50) / 40);
-      hpMultiplier = 1 + cycles * 0.8;
-      dmgMultiplier = 1 + cycles * 0.5;
-    }
+    const post50 = bossPost50Mul(this.waveNumber);
+    const hpMultiplier = post50.hpMul;
+    const dmgMultiplier = post50.dmgMul;
 
     const scaledBossData = {
       ...bossData,
@@ -1289,6 +1284,19 @@ export class BattleScene extends Phaser.Scene {
     this.events.emit('boss-clear', this.waveNumber);
     this.events.emit('wave-clear', this.waveNumber);
 
+    if (this.waveNumber === 50) {
+      this.events.emit('rebirth-unlocked');
+      const unlockText = this.add.text(GAME_W / 2, this.battleH / 2 + 40,
+        '환생 해금!\n진행을 초기화하고 영구 공격 +10%를 얻을 수 있습니다', {
+        fontSize: '13px', color: '#88ddff', fontFamily: 'monospace', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 2, align: 'center',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+      this.tweens.add({
+        targets: unlockText, alpha: 0, y: unlockText.y - 24, duration: 3200,
+        onComplete: () => unlockText.destroy(),
+      });
+    }
+
     this.time.delayedCall(2000, () => {
       this.startWave(this.waveNumber + 1);
     });
@@ -1334,7 +1342,8 @@ export class BattleScene extends Phaser.Scene {
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
         const isCrit = Math.random() < bonuses.critChance;
-        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1));
+        const rebirthMul = rebirthAttackMul(save.rebirthCount ?? 0);
+        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * rebirthMul * (isCrit ? 2 : 1));
         const killed = enemy.takeDamage(damage);
 
         // 상태이상 적용
@@ -1525,7 +1534,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.player.currentCharState === 'DEAD') return false;
 
     const save = loadGame();
-    const evadeChance = Math.min(0.7, 0.18 + (save.level - 1) * 0.025);
+    const evadeChance = calculateEvade(save);
     if (Math.random() < evadeChance) {
       this.player.playEvade();
       soundSystem.play('dash');
@@ -2239,10 +2248,11 @@ export class BattleScene extends Phaser.Scene {
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
+    const pathBonuses = rebirthPathBonuses(save.rebirthPaths);
     return {
       attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
-      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
-      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
+      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02) * pathBonuses.hpMul,
+      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02) * pathBonuses.goldMul,
       flatAttack,
       flatHp,
       speedMul: 1 + (training.speed ?? 0) * 0.015,

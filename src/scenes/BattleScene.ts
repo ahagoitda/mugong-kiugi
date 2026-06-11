@@ -17,7 +17,10 @@ import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
-import { heroicAnimKey, cutinKey, HEROIC_FRAME_W, HEROIC_FRAME_H } from '../data/heroicMotions';
+import {
+  HEROIC_MOTION_SEQUENCES, heroicAnimKey, heroicSheetKey, heroicSheetPath,
+  cutinKey, HEROIC_FRAME_W, HEROIC_FRAME_H,
+} from '../data/heroicMotions';
 
 const BOSS_DIALOGUES: Record<string, string[]> = {
   boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
@@ -282,6 +285,8 @@ export class BattleScene extends Phaser.Scene {
       .setVisible(false);
     this.cutinActive = false;
     this.cutinLastShown.clear();
+    // 용량이 큰 heroic 시트는 선택한 캐릭터 것만 백그라운드 로딩
+    this.loadHeroicSequences();
 
     // 보스 HP바 UI 생성 (초기에는 숨김)
     this.createBossHpUI();
@@ -705,6 +710,46 @@ export class BattleScene extends Phaser.Scene {
   // ─── 고품질 heroic 모션 / 컷인 ───
 
   /**
+   * 선택한 캐릭터의 heroic 12프레임 시트만 지연 로딩하고 애니메이션을 등록한다.
+   * (시트당 ~280KB × 무공 수 — 부팅 시 전 캐릭터 분을 로드하면 낭비)
+   * 로딩이 끝나기 전에는 playHeroicVisual 이 anims.exists 검사에서 걸러
+   * 기존 픽셀 모션/컷인으로 자연스럽게 동작한다.
+   */
+  private loadHeroicSequences(): void {
+    const sequences = HEROIC_MOTION_SEQUENCES.filter(s => s.characterId === this.characterId);
+    if (sequences.length === 0) return;
+
+    const registerAnims = () => {
+      for (const seq of sequences) {
+        const sheetKey = heroicSheetKey(seq.characterId, seq.skillId);
+        const animKey = heroicAnimKey(seq.characterId, seq.skillId);
+        if (!this.textures.exists(sheetKey) || this.anims.exists(animKey)) continue;
+        this.anims.create({
+          key: animKey,
+          frames: this.anims.generateFrameNumbers(sheetKey, { start: 0, end: seq.frameCount - 1 }),
+          frameRate: 16,
+          repeat: 0,
+        });
+      }
+    };
+
+    const missing = sequences.filter(s => !this.textures.exists(heroicSheetKey(s.characterId, s.skillId)));
+    if (missing.length === 0) {
+      registerAnims();
+      return;
+    }
+    for (const seq of missing) {
+      this.load.spritesheet(
+        heroicSheetKey(seq.characterId, seq.skillId),
+        heroicSheetPath(seq.characterId, seq.skillId),
+        { frameWidth: seq.frameWidth, frameHeight: seq.frameHeight },
+      );
+    }
+    this.load.once(Phaser.Loader.Events.COMPLETE, registerAnims);
+    this.load.start();
+  }
+
+  /**
    * 무공 시전 시 고품질 일러스트 연출 적용.
    * 1) 12프레임 heroic 시퀀스가 있으면 → 픽셀 캐릭터를 잠시 숨기고 풀모션 재생
    * 2) 시퀀스가 없고 컷인 일러스트가 있으면 → 화면에 컷인 표시
@@ -1074,16 +1119,22 @@ export class BattleScene extends Phaser.Scene {
   private retreatBoss(): void {
     if (!this.isBossWave) return;
 
-    // 보스 제거
+    // 보스/일반 적 제거 — 풀링 대상이므로 destroy 가 아닌 deactivate 후 풀에 반환
+    // (destroy 하면 풀이 영구히 줄어들고 HP바 Graphics 가 누수된다)
     if (this.bossEnemy) {
-      this.bossEnemy.destroy();
+      this.bossEnemy.deactivate();
+      this.enemyPool.push(this.bossEnemy);
       this.bossEnemy = null;
     }
-    // 일반 적들도 모두 제거
     this.enemies.forEach(e => {
-      if (e && e.active) e.destroy();
+      if (e && e.active) {
+        e.deactivate();
+        this.enemyPool.push(e);
+      }
     });
     this.enemies = [];
+    this.statusEffects = [];
+    this.destroyBossAura();
 
     // 보스 HP 바 등 숨김
     if (this.bossHpBg) this.bossHpBg.setVisible(false);
@@ -2333,6 +2384,22 @@ export class BattleScene extends Phaser.Scene {
       .setScrollFactor(0).setDepth(301);
     this.tweens.add({ targets: redFlash, alpha: 0, duration: 600, delay: 200, onComplete: () => redFlash.destroy() });
 
+    // 보스 일러스트 (여백 트리밍 프레임으로 크게 표시, 오른쪽에서 슬라이드 인)
+    let bossImage: Phaser.GameObjects.Image | null = null;
+    const bossArtKey = mappedId.replace('boss_', 'boss_art_');
+    if (this.textures.exists(bossArtKey)) {
+      const hasTrim = this.textures.get(bossArtKey).has('trim');
+      bossImage = this.add.image(GAME_W / 2 + 50, GAME_H / 2 - 230, bossArtKey, hasTrim ? 'trim' : undefined)
+        .setScrollFactor(0).setDepth(301).setAlpha(0);
+      const targetH = 320;
+      bossImage.setDisplaySize(targetH * (bossImage.frame.width / bossImage.frame.height), targetH);
+      this.tweens.add({
+        targets: bossImage,
+        x: GAME_W / 2, alpha: 1,
+        duration: 420, ease: 'Cubic.easeOut',
+      });
+    }
+
     const nameText = this.add.text(GAME_W / 2, GAME_H / 2 - 60, bossName, {
       fontSize: '28px', color: '#e05050', fontFamily: 'serif', fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 4,
@@ -2364,7 +2431,9 @@ export class BattleScene extends Phaser.Scene {
         return;
       }
       overlay.off('pointerdown', dismiss);
-      [overlay, nameText, dialogText, tapHint].forEach(o => {
+      const parts: Phaser.GameObjects.GameObject[] = [overlay, nameText, dialogText, tapHint];
+      if (bossImage) parts.push(bossImage);
+      parts.forEach(o => {
         this.tweens.add({ targets: o, alpha: 0, duration: 300, onComplete: () => o.destroy() });
       });
     };

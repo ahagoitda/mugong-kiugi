@@ -3,13 +3,14 @@
  * 고품질 heroic 크로마키 모션 → 게임용 스프라이트시트 변환 스크립트
  *
  * 입력:
- *  - public/sprites/illustrations/heroic_illustrations/motions/<hero>_<skill>/<hero>_<skill>_fNN.jpg
+ *  - assets_src/illustrations/heroic_illustrations/motions/<hero>_<skill>/<hero>_<skill>_fNN.jpg
  *    (그린 스크린 #00FF00, 12프레임 시퀀스)
- *  - public/sprites/illustrations/heroic_illustrations/motions/<hero>_<skill>.jpg
+ *  - assets_src/illustrations/heroic_illustrations/motions/<hero>_<skill>.jpg
  *    (어두운 배경 단일 컷인 일러스트)
+ *  (원본 일러스트는 앱 번들에 포함되지 않도록 public/ 밖 assets_src/ 에 둔다)
  *
  * 출력 (public/sprites/generated/runtime/):
- *  - heroic_<hero>_<skill>.png  : 가로 12프레임 스프라이트시트 (그린 키아웃 + 투명 알파, 256x384/frame)
+ *  - heroic_<hero>_<skill>.webp : 가로 12프레임 스프라이트시트 (그린 키아웃 + 투명 알파, 256x384/frame)
  *  - cutin_<hero>_<skill>.webp  : 스킬 컷인용 다운스케일 일러스트 (360px 폭)
  *
  * 사용: node scripts/build-heroic-motions.mjs
@@ -25,7 +26,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const MOTIONS_DIR = path.join(ROOT, 'public/sprites/illustrations/heroic_illustrations/motions');
+const MOTIONS_DIR = path.join(ROOT, 'assets_src/illustrations/heroic_illustrations/motions');
 const OUT_DIR = path.join(ROOT, 'public/sprites/generated/runtime');
 
 const FRAME_W = 256;
@@ -114,7 +115,7 @@ async function buildSequence({ char, skill, dir }) {
     });
   }
 
-  const outFile = path.join(OUT_DIR, `heroic_${char}_${skill}.png`);
+  const outFile = path.join(OUT_DIR, `heroic_${char}_${skill}.webp`);
   await sharp({
     create: {
       width: FRAME_W * FRAME_COUNT,
@@ -124,7 +125,7 @@ async function buildSequence({ char, skill, dir }) {
     },
   })
     .composite(composites)
-    .png({ compressionLevel: 9 })
+    .webp({ quality: 88, alphaQuality: 90, effort: 5 })
     .toFile(outFile);
   console.log(`  ✓ ${path.relative(ROOT, outFile)}`);
   return true;

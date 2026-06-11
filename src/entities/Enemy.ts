@@ -204,6 +204,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.speedMultiplier = 1.0;
     this.attacking = false;
     this.setAngle(0);
+    this.setDepth(0); // 보스로 쓰였던 객체가 풀에서 재사용될 때 depth(20) 잔존 방지
     this.scene.tweens.killTweensOf(this);
 
     // 여백이 트리밍된 프레임이 있으면 캐릭터 실측 기준으로 크기를 잡는다.

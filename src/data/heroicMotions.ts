@@ -3,7 +3,7 @@ import { RUNTIME_ASSET_PATH } from './assets';
 /**
  * 고품질 heroic 모션 매니페스트
  *
- * 원본은 public/sprites/illustrations/heroic_illustrations/motions/ 의
+ * 원본은 assets_src/illustrations/heroic_illustrations/motions/ 의
  * 그린스크린 12프레임 시퀀스와 단일 컷인 일러스트.
  * scripts/build-heroic-motions.mjs 가 키아웃/다운스케일하여
  * runtime 폴더에 게임용 에셋으로 변환한다.
@@ -58,7 +58,7 @@ export function heroicSheetKey(characterId: string, skillId: string): string {
 }
 
 export function heroicSheetPath(characterId: string, skillId: string): string {
-  return `${RUNTIME_ASSET_PATH}/heroic_${characterId}_${skillId}.png`;
+  return `${RUNTIME_ASSET_PATH}/heroic_${characterId}_${skillId}.webp`;
 }
 
 export function heroicAnimKey(characterId: string, skillId: string): string {

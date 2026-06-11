@@ -557,6 +557,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setAlpha(0.5);
     this.changeState('DASH');
     this.playAnim('run', true);
+    // 경공 느낌: 몸을 뒤로 기울이고 잔상을 남긴다 (finishDash 에서 복원)
+    this.setAngle(-dir * 12);
+    for (let i = 0; i < 3; i++) {
+      this.scene.time.delayedCall(i * 70, () => {
+        if (this.currentState === 'DASH') this.spawnAfterimage(0x88ccff, 0.3);
+      });
+    }
 
     const halfDur = (dash.totalFrames / dash.frameRate) * 500;
     this.scene.tweens.add({
@@ -570,6 +577,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return true;
   }
 
+  /** 현재 프레임의 잔상을 남긴다 (회피/경공 연출) */
+  private spawnAfterimage(tint: number, alpha: number): void {
+    const ghost = this.scene.add.image(this.x, this.y, this.texture.key, this.frame.name)
+      .setDisplaySize(this.displayWidth, this.displayHeight)
+      .setFlipX(this.flipX)
+      .setAngle(this.angle)
+      .setTint(tint)
+      .setAlpha(alpha)
+      .setDepth(this.depth - 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.scene.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      duration: 240,
+      onComplete: () => ghost.destroy(),
+    });
+  }
+
   /**
    * 자동(확률) 회피 시각 연출.
    * 데미지/쿨다운/기력 소모 없이 짧게 옆으로 비키며 반투명 깜빡임만 준다.
@@ -580,6 +605,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.autoEvading = true;
     const originX = this.x;
     this.setAlpha(0.45);
+    this.spawnAfterimage(0xaaddff, 0.25);
     this.scene.tweens.add({
       targets: this,
       x: originX - 12,
@@ -610,15 +636,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this._hp <= 0) {
       this.changeState('DEAD');
-      // 사망 연출: 캐릭터가 쓰러지는 모션 (각도 트위닝)
+      // 사망 연출: 뒤로 튕겨나며 쓰러지고 바닥에서 살짝 바운스
       this.setTint(0xff5555);
+      const dir = this.facingRight ? 1 : -1;
       this.scene.tweens.add({
         targets: this,
-        angle: this.facingRight ? -90 : 90,
-        alpha: 0.6,
-        y: this.y + 15,
-        duration: 600,
-        ease: 'Cubic.easeOut',
+        angle: -dir * 96,
+        alpha: 0.55,
+        x: this.x - dir * 24,
+        y: this.y + 18,
+        duration: 700,
+        ease: 'Bounce.easeOut',
       });
       return;
     }
@@ -627,15 +655,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer = 300; // 300ms 경직
     this.setTint(0xff8888);
 
+    // 피격 리코일: 뒤로 살짝 젖혀졌다가 경직이 풀리며 복원 (updateHit 에서 리셋)
+    const dir = this.facingRight ? 1 : -1;
+    this.setAngle(-dir * 7);
+    this.setScale(this.baseScaleX * 1.04, this.baseScaleY * 0.94);
+
     // 공격 돌진 도중 피격되면 복귀 트윈이 취소되므로 기준 위치로 되돌린다
-    if (Math.abs(this.x - this.homeX) > 1) {
-      this.scene.tweens.add({
-        targets: this,
-        x: this.homeX,
-        duration: 160,
-        ease: 'Quad.easeOut',
-      });
-    }
+    this.scene.tweens.add({
+      targets: this,
+      x: Math.abs(this.x - this.homeX) > 1 ? this.homeX : this.x - dir * 6,
+      duration: 160,
+      ease: 'Quad.easeOut',
+      yoyo: Math.abs(this.x - this.homeX) <= 1,
+    });
   }
 
   heal(hpAmount: number, staminaAmount: number): void {
@@ -708,6 +740,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private finishDash(): void {
     this.invincible = false;
     this.setAlpha(1);
+    this.setAngle(0);
     this.currentSkill = null;
     this.stateTimer = 0;
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -720,6 +753,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer -= delta;
     if (this.stateTimer <= 0) {
       this.clearTint();
+      // 피격 리코일(기울기/스케일) 복원
+      this.setAngle(0);
+      this.setScale(this.baseScaleX, this.baseScaleY);
       this.playAnim('idle');
       this.changeState('IDLE');
     }

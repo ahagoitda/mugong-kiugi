@@ -1,7 +1,12 @@
 import Phaser from 'phaser';
-import { ALL_RUNTIME_ASSETS, heroSetSkinKey, RUNTIME_ASSET_PATH } from '../data/assets';
+import { ALL_RUNTIME_ASSETS, ENEMY_ASSETS, BOSS_ASSETS, heroSetSkinKey, RUNTIME_ASSET_PATH } from '../data/assets';
 import { CHARACTER_LIST } from '../data/characters';
 import { SET_IDS, SET_TINTS } from '../data/equipment';
+import { HEROIC_CUTIN_STILLS, cutinKey, cutinPath } from '../data/heroicMotions';
+import { addTrimFrame } from '../utils/textureTrim';
+import { bgmSystem } from '../systems/BgmSystem';
+import { soundSystem } from '../systems/SoundSystem';
+import { loadGame } from '../systems/SaveSystem';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -49,6 +54,12 @@ export class BootScene extends Phaser.Scene {
       this.load.spritesheet(`hero_${id}_attack_thrust`,
         `${RUNTIME_ASSET_PATH}/hero_${id}_attack_thrust.png`,
         { frameWidth: 128, frameHeight: 128 });
+    }
+
+    // 무공 컷인 일러스트 (시퀀스가 없는 영웅용, 장당 ~35KB)
+    // heroic 12프레임 시트는 용량이 커서 BattleScene 에서 선택한 캐릭터 것만 지연 로딩한다.
+    for (const cut of HEROIC_CUTIN_STILLS) {
+      this.load.image(cutinKey(cut.characterId, cut.skillId), cutinPath(cut.characterId, cut.skillId));
     }
   }
 
@@ -130,7 +141,52 @@ export class BootScene extends Phaser.Scene {
       }
     }
 
+    // 적/보스 일러스트의 투명 여백을 트리밍한 프레임 등록
+    // (Enemy.activate 가 'trim' 프레임으로 캐릭터 실측 크기를 잡는다)
+    for (const asset of [...ENEMY_ASSETS, ...BOSS_ASSETS]) {
+      addTrimFrame(this, asset.key);
+    }
+
     this.createHeroSetSkinTextures();
+
+    // Load initial volumes
+    const save = loadGame();
+    if (save) {
+      bgmSystem.setVolume(save.bgmVolume ?? 0.5);
+      soundSystem.setVolume(save.sfxVolume ?? 0.8);
+    }
+
+    // Register Android Back Button listener
+    if (typeof (window as any).Capacitor !== 'undefined') {
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('backButton', () => {
+          const game = (window as any).__GAME__;
+          if (game) {
+            const uiScene = game.scene.getScene('UIScene') as any;
+            if (uiScene && typeof uiScene.handleBackButton === 'function') {
+              const handled = uiScene.handleBackButton();
+              if (handled) return;
+            }
+            const activeScenes = game.scene.getScenes(true);
+            const isSelectScene = activeScenes.some((s: any) => s.scene.key === 'CharacterSelectScene');
+            if (isSelectScene) {
+              App.exitApp();
+            } else {
+              if (uiScene && typeof uiScene.showExitConfirm === 'function') {
+                uiScene.showExitConfirm();
+              } else {
+                App.exitApp();
+              }
+            }
+          } else {
+            App.exitApp();
+          }
+        });
+      }).catch(err => {
+        console.error('[BootScene] Failed to load Capacitor App plugin', err);
+      });
+    }
+
     this.scene.start('CharacterSelectScene');
   }
 

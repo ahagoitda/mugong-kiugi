@@ -3,7 +3,7 @@ import { CHARACTER_LIST } from '../data/characters';
 import { loadGame, saveGame } from '../systems/SaveSystem';
 
 const W = 540;
-const H = 960;
+let H = 960;
 const GOLD = 0xd4a74e;
 
 const HERO_TEXT: Record<string, { name: string; desc: string }> = {
@@ -29,6 +29,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   create(): void {
+    H = this.scale.height;
     this.cameras.main.setBackgroundColor('#080706');
     this.add.image(W / 2, H / 2, 'background_main').setDisplaySize(W, H).setAlpha(0.42);
     this.add.rectangle(W / 2, H / 2, W - 28, H - 28, 0x080706, 0.35).setStrokeStyle(2, 0x9b7438);
@@ -78,6 +79,8 @@ export class CharacterSelectScene extends Phaser.Scene {
     const character = CHARACTER_LIST[this.selected];
     const text = HERO_TEXT[character.id] ?? { name: character.nameEn, desc: character.description };
     this.hero.setTexture(`hero_${character.id}`);
+    // 일러스트 원본 방향이 캐릭터마다 달라, 모두 오른쪽(전투 방향)을 보도록 통일
+    this.hero.setFlipX(character.staticFacesLeft);
     this.nameText.setText(text.name);
     this.descText.setText(text.desc);
     this.statText.setText(`체력 x${character.stats.hpMul.toFixed(1)}   공격 x${character.stats.damageMul.toFixed(1)}   속도 x${character.stats.speedMul.toFixed(1)}`);

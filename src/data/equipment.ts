@@ -69,8 +69,34 @@ export function createSetEquipment(region: number, slot?: EquipmentSlot, grade?:
 }
 
 export function equipmentScore(item: EquipmentItem): number {
-  return item.attack * 5 + item.hp + item.bonus * 10;
+  const enhMul = 1 + (item.enhance ?? 0) * 0.12;
+  return (item.attack * 5 + item.hp + item.bonus * 10) * enhMul;
 }
+
+export function enhancedStats(item: EquipmentItem): { attack: number; hp: number; bonus: number } {
+  const mul = 1 + (item.enhance ?? 0) * 0.12;
+  return {
+    attack: Math.round(item.attack * mul),
+    hp:     Math.round(item.hp * mul),
+    bonus:  Math.round(item.bonus * mul),
+  };
+}
+
+export function enhanceCost(item: EquipmentItem): number {
+  const gradeMul: Record<string, number> = { COMMON: 1, RARE: 2.5, EPIC: 6, LEGENDARY: 14 };
+  const lv = item.enhance ?? 0;
+  return Math.round(60 * (gradeMul[item.grade] ?? 1) * Math.pow(lv + 1, 1.6));
+}
+
+export function enhanceStonesCost(item: EquipmentItem): number {
+  const lv = item.enhance ?? 0;
+  if (lv < 6) return 0;
+  return (lv - 5) * 3;
+}
+
+export const SALVAGE_STONES: Readonly<Record<EquipmentGrade, number>> = {
+  COMMON: 1, RARE: 3, EPIC: 8, LEGENDARY: 20,
+};
 
 export interface EquipmentSetBonus {
   attackMul: number;

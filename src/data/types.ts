@@ -86,8 +86,11 @@ export interface SkillData {
    *   heavy  - 묵직한 강타 (느린 예비동작 → 임팩트)
    *   quick  - 빠른 2연타
    *   thrust - 찌르기 (창/도 계열)
+   *   spin   - 회전 베기 (한 바퀴 돌며 휩쓸기)
+   *   slam   - 도약 내려찍기 (점프 → 강착지)
+   *   flurry - 제자리 연속 타격 (잔진동 연타)
    */
-  readonly attackMotion?: 'standard' | 'heavy' | 'quick' | 'thrust';
+  readonly attackMotion?: 'standard' | 'heavy' | 'quick' | 'thrust' | 'spin' | 'slam' | 'flurry';
   /**
    * 이펙트 종류. undefined 이면 'slash' (기존 단일 슬래시).
    *   slash  - 단일 슬래시 (기존)
@@ -122,6 +125,8 @@ export interface EquipmentItem {
   attack: number;
   hp: number;
   bonus: number;
+  /** 강화 등급 (0~10), 강화할수록 스탯 +12%씩 증가 */
+  enhance?: number;
 }
 
 /**
@@ -189,6 +194,17 @@ export interface SaveData {
   tutorialCompleted?: boolean;
   shopLastReset?: string;
   shopDailyPurchased?: string[];
+  bgmVolume?: number;
+  sfxVolume?: number;
+  rebirthCount?: number;
+  /** 환생 시 선택한 특화 경로 (각 환생마다 하나씩 누적) */
+  rebirthPaths?: string[];
+  /** 시간 제한 버프 목록 */
+  activeBuffs?: { type: string; expiresAt: number }[];
+  /** 장비 분해로 획득하는 강화 재료 */
+  enhanceStones?: number;
+  /** 제자 집단 파견 임무 완료 시각 (Unix ms) */
+  discipleMissionEnd?: number;
 }
 
 /**

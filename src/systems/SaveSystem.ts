@@ -16,6 +16,8 @@ import { getExpToNextLevel } from '../data/skills';
 const SAVE_KEY = 'mugong_save_highres_v1';
 const CURRENT_VERSION = 4;
 
+let cachedSaveData: SaveData | null = null;
+
 /**
  * 기본 세이브 데이터를 생성합니다.
  * 새 게임 시작 시 사용됩니다.
@@ -38,9 +40,9 @@ export function createDefaultSave(): SaveData {
     unlockedSkills: ['samjae', 'chosangbi'],
     skillLevels: {},
     stageCleared: 0,
+    totalKills: 0,
     totalPlayTime: 0,
     defeatedBosses: [],
-    totalKills: 0,
     lastSavedAt: Date.now(),
     lastOfflineRewardAt: Date.now(),
     equipmentInventory: [],
@@ -57,6 +59,12 @@ export function createDefaultSave(): SaveData {
     tutorialCompleted: false,
     shopLastReset: '',
     shopDailyPurchased: [],
+    bgmVolume: 0.5,
+    sfxVolume: 0.8,
+    rebirthCount: 0,
+    rebirthPaths: [],
+    activeBuffs: [],
+    enhanceStones: 0,
   };
 }
 
@@ -69,6 +77,7 @@ export function createDefaultSave(): SaveData {
 export function saveGame(data: SaveData): boolean {
   try {
     data.lastSavedAt = Date.now();
+    cachedSaveData = data;
     const serialized = JSON.stringify(data);
     localStorage.setItem(SAVE_KEY, serialized);
     return true;
@@ -88,10 +97,14 @@ export function saveGame(data: SaveData): boolean {
  * @returns 로드된 세이브 데이터 (없으면 기본값)
  */
 export function loadGame(): SaveData {
+  if (cachedSaveData) {
+    return cachedSaveData;
+  }
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw === null) {
-      return createDefaultSave();
+      cachedSaveData = createDefaultSave();
+      return cachedSaveData;
     }
 
     const parsed: unknown = JSON.parse(raw);
@@ -99,27 +112,32 @@ export function loadGame(): SaveData {
     // 타입 검증: parsed가 올바른 SaveData 구조인지 확인
     if (!isValidSaveData(parsed)) {
       console.warn('[SaveSystem] 손상된 세이브 데이터 감지. 기본값으로 초기화합니다.');
-      return createDefaultSave();
+      cachedSaveData = createDefaultSave();
+      return cachedSaveData;
     }
 
     // 버전 마이그레이션 (v1 → v2)
     if (parsed.version < CURRENT_VERSION) {
-      return migrateSave(parsed);
+      cachedSaveData = migrateSave(parsed);
+      return cachedSaveData;
     }
 
-    return parsed;
+    cachedSaveData = parsed;
+    return cachedSaveData;
   } catch {
     console.error('[SaveSystem] 로드 실패: 데이터 파싱 오류');
-    return createDefaultSave();
+    cachedSaveData = createDefaultSave();
+    return cachedSaveData;
   }
 }
 
 /**
- * 세이브 데이터 삭제 (새 게임 시작 시)
+ * 세이브 데이터를 삭제 (새 게임 시작 시)
  */
 export function deleteSave(): void {
   try {
     localStorage.removeItem(SAVE_KEY);
+    cachedSaveData = null;
   } catch {
     console.error('[SaveSystem] 삭제 실패');
   }
@@ -138,22 +156,7 @@ function isValidSaveData(data: unknown): data is SaveData {
 
   const d = data as Record<string, unknown>;
 
-  return (
-    typeof d.version === 'number' &&
-    typeof d.level === 'number' &&
-    typeof d.exp === 'number' &&
-    typeof d.hp === 'number' &&
-    typeof d.maxHp === 'number' &&
-    typeof d.stamina === 'number' &&
-    typeof d.maxStamina === 'number' &&
-    Array.isArray(d.equippedSkills) &&
-    typeof d.equippedDash === 'string' &&
-    typeof d.inventory === 'object' &&
-    d.inventory !== null &&
-    Array.isArray(d.unlockedSkills) &&
-    typeof d.stageCleared === 'number' &&
-    typeof d.totalPlayTime === 'number'
-  );
+  return typeof d.version === 'number';
 }
 
 /**
@@ -161,13 +164,13 @@ function isValidSaveData(data: unknown): data is SaveData {
  *
  * v1 → v2: gold, expToNext, defeatedBosses, totalKills 필드 추가
  */
-function migrateSave(oldData: SaveData): SaveData {
+function migrateSave(oldData: any): SaveData {
   const migrated: SaveData = {
     ...oldData,
     version: CURRENT_VERSION,
     gold: oldData.gold ?? 0,
     gems: oldData.gems ?? 30,
-    expToNext: oldData.expToNext ?? getExpToNextLevel(oldData.level),
+    expToNext: oldData.expToNext ?? getExpToNextLevel(oldData.level ?? 1),
     defeatedBosses: oldData.defeatedBosses ?? [],
     totalKills: oldData.totalKills ?? 0,
     skillLevels: oldData.skillLevels ?? {},
@@ -187,6 +190,12 @@ function migrateSave(oldData: SaveData): SaveData {
     tutorialCompleted: oldData.tutorialCompleted ?? false,
     shopLastReset: oldData.shopLastReset ?? '',
     shopDailyPurchased: oldData.shopDailyPurchased ?? [],
+    bgmVolume: oldData.bgmVolume ?? 0.5,
+    sfxVolume: oldData.sfxVolume ?? 0.8,
+    rebirthCount: oldData.rebirthCount ?? 0,
+    rebirthPaths: oldData.rebirthPaths ?? [],
+    activeBuffs: oldData.activeBuffs ?? [],
+    enhanceStones: oldData.enhanceStones ?? 0,
   };
   // 마이그레이션 후 즉시 저장
   saveGame(migrated);
@@ -206,14 +215,15 @@ export function claimOfflineReward(): { gold: number; exp: number; gems: number;
   }
 
   const waveFactor = Math.max(1, save.stageCleared + 1);
-  // 문파 시설 전체가 오프라인 성장 루프(패시브)에 영향 (작은 기능 단위 마무리)
+  // 문파 시설 + 환생 배율이 오프라인 보상에 복합 적용
   const fac = save.sectFacilities ?? { hall: 1, forge: 1, library: 1 };
   const hall = fac.hall ?? 1;
   const forge = fac.forge ?? 1;
   const library = fac.library ?? 1;
   const facMul = 1 + (hall - 1) * 0.01 + (forge - 1) * 0.008 + (library - 1) * 0.006;
-  const gold = Math.floor(minutes * (2 + waveFactor * 0.35) * facMul);
-  const exp = Math.floor(minutes * (3 + waveFactor * 0.45) * facMul);
+  const rebirthMul = 1 + (save.rebirthCount ?? 0) * 0.15;
+  const gold = Math.floor(minutes * (2 + waveFactor * 0.35) * facMul * rebirthMul);
+  const exp = Math.floor(minutes * (3 + waveFactor * 0.45) * facMul * rebirthMul);
   const gems = Math.min(6, Math.floor(minutes / 60));
 
   save.gold += gold;

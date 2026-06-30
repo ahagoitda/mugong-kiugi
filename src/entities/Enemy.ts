@@ -204,11 +204,30 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.speedMultiplier = 1.0;
     this.attacking = false;
     this.setAngle(0);
+    this.setDepth(0); // 보스로 쓰였던 객체가 풀에서 재사용될 때 depth(20) 잔존 방지
     this.scene.tweens.killTweensOf(this);
 
-    this.setTexture(data.spriteKey);
-    if (data.rank === 'BOSS') this.setDisplaySize(250, 250);
-    else this.setDisplaySize(170, 170);
+    // 여백이 트리밍된 프레임이 있으면 캐릭터 실측 기준으로 크기를 잡는다.
+    // (512x512 원본은 캐릭터가 ~55%만 차지해 졸병이 너무 작게 보였음)
+    const hasTrim = this.scene.textures.exists(data.spriteKey) &&
+      this.scene.textures.get(data.spriteKey).has('trim');
+    this.setTexture(data.spriteKey, hasTrim ? 'trim' : undefined);
+
+    const isBoss = data.rank === 'BOSS';
+    if (hasTrim) {
+      const targetH = isBoss ? 235 : 158;
+      const aspect = this.frame.width / this.frame.height;
+      this.setDisplaySize(targetH * aspect, targetH);
+    } else if (isBoss) {
+      this.setDisplaySize(250, 250);
+    } else {
+      this.setDisplaySize(170, 170);
+    }
+
+    // 물리 바디를 현재 프레임 크기에 맞춤 (월드 경계 충돌용)
+    const physBody = this.body as Phaser.Physics.Arcade.Body;
+    physBody.setSize(this.frame.width * 0.55, this.frame.height * 0.9, true);
+
     this.setPosition(x, y);
     this.setActive(true);
     this.setVisible(true);
@@ -386,7 +405,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const body = this.body as Phaser.Physics.Arcade.Body;
 
-    const stopOffsetX = Math.max(24, Math.min(data.attackRange, 48));
+    // 확대된 표시 크기에 맞춰 플레이어와 겹치지 않는 최소 간격 확보
+    const stopOffsetX = Math.max(42, Math.min(data.attackRange, 64));
     if (this.x <= this.targetX + stopOffsetX) {
       this.x = this.targetX + stopOffsetX;
       body.setVelocity(0, 0);
@@ -425,10 +445,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (!this.active || !data) return;
 
     const isBoss = data.rank === 'BOSS';
-    const width = isBoss ? 86 : 58;
+    const width = isBoss ? 96 : 64;
     const height = isBoss ? 7 : 5;
     const x = this.x - width / 2;
-    const y = this.y - (isBoss ? 108 : 78);
+    // 표시 크기에 따라 머리 위에 정확히 위치 (스케일 변동 대응)
+    const y = this.y - this.displayHeight / 2 - (isBoss ? 18 : 12);
     const ratio = Phaser.Math.Clamp(this._hp / Math.max(1, data.hp), 0, 1);
     const fillColor = ratio < 0.3 ? 0xd9211b : isBoss ? 0xff3b21 : 0xe4432d;
 

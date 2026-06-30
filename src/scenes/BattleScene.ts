@@ -17,6 +17,15 @@ import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
 import { createEquipment, createSetEquipment, dominantSetId, equippedItems, equipmentSetBonus, SET_TINTS } from '../data/equipment';
 import { skillVfxKey } from '../data/assets';
+import {
+  HEROIC_MOTION_SEQUENCES, heroicAnimKey, heroicSheetKey, heroicSheetPath,
+  cutinKey, HEROIC_FRAME_W, HEROIC_FRAME_H,
+} from '../data/heroicMotions';
+import {
+  ENEMY_DMG_MUL, ENEMY_HP_MUL, BOSS_DMG_MUL, BOSS_HP_MUL,
+  bossPost50Mul, calculateEvade, minionCycleDmgMul,
+  rebirthAttackMul, rebirthPathBonuses,
+} from '../data/combatBalance';
 
 const BOSS_DIALOGUES: Record<string, string[]> = {
   boss_daeju:   ['혈교의 기운을 느꼈느냐...', '이곳을 통과하려면 내 시체를 밟고 가라!'],
@@ -52,7 +61,7 @@ const GROUND_Y = BATTLE_H - 130;
 const SCROLL_SPEED = 32;          // 약간 느리게 (플레이어가 직접 움직이는 느낌 강조)
 const MAX_ENEMIES = 8;
 
-// Hollow Knight 스타일 자동 전투를 위한 포지셔닝
+// Hollow Knight 스타일 자동 전투를 위한 포지셔닝 (고품질 모션 적용)
 const PLAYER_MIN_X = 70;
 const PLAYER_MAX_X = 320;
 const IDEAL_MELEE_DIST = 95;
@@ -64,7 +73,6 @@ const ENEMY_HP_MUL = 0.45;
 const ENEMY_DMG_MUL = 0.12;
 const BOSS_HP_MUL = 0.38;
 const BOSS_DMG_MUL = 0.14;
-
 /**
  * 보스 등급별 고유 스킬 정의.
  *
@@ -140,6 +148,9 @@ interface CombatBonuses {
 }
 
 export class BattleScene extends Phaser.Scene {
+  private isGameOverTriggered = false;
+  private battleH = 620;
+  private groundY = 490;
   private player!: Player;
   private characterId: string = 'sword_male';
   private enemies: Enemy[] = [];
@@ -179,6 +190,12 @@ export class BattleScene extends Phaser.Scene {
   // 이펙트 풀
   private slashPool: Phaser.GameObjects.Sprite[] = [];
 
+  // 고품질 heroic 모션 오버레이 (무공 시전 시 픽셀 캐릭터 대신 표시)
+  private heroicSprite: Phaser.GameObjects.Sprite | null = null;
+  // 무공 컷인 일러스트 상태 (중복 표시 방지 + 스킬별 쿨다운)
+  private cutinActive = false;
+  private cutinLastShown: Map<string, number> = new Map();
+
   // 배경 레이어 (패럴랙스)
   private bgLayerBg: Phaser.GameObjects.TileSprite | null = null;
   private bgLayerMg: Phaser.GameObjects.TileSprite | null = null;
@@ -214,20 +231,38 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.isGameOverTriggered = false;
+    this.battleH = this.scale.height - 340;
+    this.groundY = this.battleH - 130;
+
+    // 같은 Scene 인스턴스가 재시작(게임오버 후 재도전 등)될 때
+    // 이전 세션의 파괴된 오브젝트가 배열에 남아 있으면
+    // 즉시 킬 처리되거나 파괴된 적을 풀에서 꺼내 크래시가 난다 — 반드시 초기화
+    this.enemies = [];
+    this.enemyPool = [];
+    this.slashPool = [];
+    this.bossEnemy = null;
+    this.bossAura = null;
+    this.isBossWave = false;
+    this.killCount = 0;
+    this.scrollX = 0;
+    this.worldOffsetX = 0;
+    this.isMoving = true;
+
     // 카메라를 상단 영역으로 제한
-    this.cameras.main.setViewport(0, 0, GAME_W, BATTLE_H);
+    this.cameras.main.setViewport(0, 0, GAME_W, this.battleH);
     this.cameras.main.setBackgroundColor('#1a0a2e');
 
     // 배경 생성 (패럴랙스 스크롤)
     this.createBackground();
 
     // 플레이어 생성 (선택한 캐릭터 ID 전달)
-    this.player = new Player(this, 125, GROUND_Y, this.characterId);
+    this.player = new Player(this, 125, this.groundY, this.characterId);
     this.player.setDepth(10);
     this.player.setOnHitCallback(this.onPlayerHit.bind(this));
 
     // 플레이어 아우라 생성
-    this.playerAuraFeet = this.add.ellipse(125, GROUND_Y + 100, 80, 24, 0xffffff, 0.35)
+    this.playerAuraFeet = this.add.ellipse(125, this.groundY + 100, 80, 24, 0xffffff, 0.35)
       .setVisible(false)
       .setDepth(8);
     
@@ -255,6 +290,16 @@ export class BattleScene extends Phaser.Scene {
       this.slashPool.push(fx);
     }
 
+    // heroic 모션 오버레이 스프라이트 (시퀀스가 있는 캐릭터의 무공 시전 시 사용)
+    this.heroicSprite = this.add.sprite(-200, -200, '__DEFAULT')
+      .setOrigin(0.5, 0.92)
+      .setDepth(11)
+      .setVisible(false);
+    this.cutinActive = false;
+    this.cutinLastShown.clear();
+    // 용량이 큰 heroic 시트는 선택한 캐릭터 것만 백그라운드 로딩
+    this.loadHeroicSequences();
+
     // 보스 HP바 UI 생성 (초기에는 숨김)
     this.createBossHpUI();
 
@@ -271,6 +316,7 @@ export class BattleScene extends Phaser.Scene {
     this.events.on('equip-changed', this.applySaveData, this);
     this.events.on('use-skill', this.onUseSkill, this);
     this.events.on('use-dash', this.onUseDash, this);
+    this.events.on('request-retreat', this.retreatBoss, this);
     this.events.on('player-slash-fx', (x: number, y: number, skill: SkillData) => {
       this.showSlashEffect(x, y, skill);
     }, this);
@@ -291,7 +337,7 @@ export class BattleScene extends Phaser.Scene {
         soundSystem.play('revive');
         this.player.heal(this.player.maxHp * 0.5, this.player.maxStamina);
         this.cameras.main.flash(400, 100, 200, 255);
-        const reviveText = this.add.text(GAME_W / 2, BATTLE_H / 2, '✦ 부활 ✦', {
+        const reviveText = this.add.text(GAME_W / 2, this.battleH / 2, '✦ 부활 ✦', {
           fontSize: '20px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
           stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
@@ -321,8 +367,21 @@ export class BattleScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    // heroic 모션 복귀는 사망 분기보다 먼저 (사망 연출이 가려지지 않도록)
+    this.updateHeroicMotion();
     if (this.player.currentCharState === 'DEAD') {
-      this.player.heal(this.player.maxHp, this.player.maxStamina);
+      if (!this.isGameOverTriggered) {
+        this.isGameOverTriggered = true;
+        soundSystem.play('game_over');
+        this.time.delayedCall(1200, () => {
+          this.scene.start('GameOverScene', {
+            waveNumber: this.waveNumber,
+            killCount: this.killCount,
+            characterId: this.characterId
+          });
+        });
+      }
+      return;
     }
     this.player.update(time, delta);
 
@@ -632,7 +691,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** 지면 충격파: 보스 발밑에서 플레이어 쪽으로 밀려오는 파동 (회피 가능) */
   private spawnGroundWave(fromX: number, color: number, dmg: number): void {
-    const wave = this.add.ellipse(fromX, GROUND_Y + 18, 26, 16, color, 0.7).setDepth(139);
+    const wave = this.add.ellipse(fromX, this.groundY + 18, 26, 16, color, 0.7).setDepth(139);
     wave.setStrokeStyle(2, 0xffffff, 0.5);
     const dir = this.player.x < fromX ? -1 : 1;
     this.tweens.add({
@@ -653,14 +712,14 @@ export class BattleScene extends Phaser.Scene {
     const shard = this.add.circle(targetX, 0, 6, color, 0.95).setDepth(140);
     shard.setStrokeStyle(2, 0xffffff, 0.6);
     // 착탄 지점 텔레그래프
-    const marker = this.add.ellipse(targetX, GROUND_Y + 16, 28, 10, color, 0.3).setDepth(138);
+    const marker = this.add.ellipse(targetX, this.groundY + 16, 28, 10, color, 0.3).setDepth(138);
     this.tweens.add({
       targets: shard,
-      y: GROUND_Y,
+      y: this.groundY,
       duration: 520,
       ease: 'Quad.easeIn',
       onComplete: () => {
-        this.bossSkillImpact(targetX, GROUND_Y, color, dmg, 30);
+        this.bossSkillImpact(targetX, this.groundY, color, dmg, 30);
         shard.destroy();
         marker.destroy();
       },
@@ -722,17 +781,20 @@ export class BattleScene extends Phaser.Scene {
     let closestDist = Infinity;
     let bossThreat = false;
 
-    for (const e of this.enemies) {
-      if (!e.active) continue;
-      const d = Math.abs(e.x - this.player.x);
-      if (d < closestDist) {
-        closestDist = d;
-        closest = e;
+    for (const enemy of this.enemies) {
+      if (!enemy.active || enemy.hp <= 0) continue;
+      // 플레이어 우측에 있는 적만 (등 뒤의 적에게 스킬 낭비 방지)
+      if (enemy.x <= this.player.x) continue;
+
+      const dist = enemy.x - this.player.x;
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = enemy;
       }
-      if (e === this.bossEnemy) bossThreat = true;
+      if (enemy === this.bossEnemy) bossThreat = true;
     }
 
-    // 2. 플레이어 포지셔닝 목표 계산 (Hollow Knight 느낌의 spacing)
+    // 2. 플레이어 포지셔닝 목표 계산 (Hollow Knight 느낌의 spacing + 클래스별 모션)
     let desiredX = this.player.x;
 
     if (!inAction && closest) {
@@ -841,8 +903,152 @@ export class BattleScene extends Phaser.Scene {
     const skill = this.player.skills[slotIndex];
     if (!skill) return false;
     const used = this.player.handleAttack(slotIndex);
-    if (used) this.showSkillCastTell(skill);
+    if (used) {
+      this.showSkillCastTell(skill);
+      this.playHeroicVisual(skill);
+    }
     return used;
+  }
+
+  // ─── 고품질 heroic 모션 / 컷인 ───
+
+  /**
+   * 선택한 캐릭터의 heroic 12프레임 시트만 지연 로딩하고 애니메이션을 등록한다.
+   * (시트당 ~280KB × 무공 수 — 부팅 시 전 캐릭터 분을 로드하면 낭비)
+   * 로딩이 끝나기 전에는 playHeroicVisual 이 anims.exists 검사에서 걸러
+   * 기존 픽셀 모션/컷인으로 자연스럽게 동작한다.
+   */
+  private loadHeroicSequences(): void {
+    const sequences = HEROIC_MOTION_SEQUENCES.filter(s => s.characterId === this.characterId);
+    if (sequences.length === 0) return;
+
+    const registerAnims = () => {
+      for (const seq of sequences) {
+        const sheetKey = heroicSheetKey(seq.characterId, seq.skillId);
+        const animKey = heroicAnimKey(seq.characterId, seq.skillId);
+        if (!this.textures.exists(sheetKey) || this.anims.exists(animKey)) continue;
+        this.anims.create({
+          key: animKey,
+          frames: this.anims.generateFrameNumbers(sheetKey, { start: 0, end: seq.frameCount - 1 }),
+          frameRate: 16,
+          repeat: 0,
+        });
+      }
+    };
+
+    const missing = sequences.filter(s => !this.textures.exists(heroicSheetKey(s.characterId, s.skillId)));
+    if (missing.length === 0) {
+      registerAnims();
+      return;
+    }
+    for (const seq of missing) {
+      this.load.spritesheet(
+        heroicSheetKey(seq.characterId, seq.skillId),
+        heroicSheetPath(seq.characterId, seq.skillId),
+        { frameWidth: seq.frameWidth, frameHeight: seq.frameHeight },
+      );
+    }
+    this.load.once(Phaser.Loader.Events.COMPLETE, registerAnims);
+    this.load.start();
+  }
+
+  /**
+   * 무공 시전 시 고품질 일러스트 연출 적용.
+   * 1) 12프레임 heroic 시퀀스가 있으면 → 픽셀 캐릭터를 잠시 숨기고 풀모션 재생
+   * 2) 시퀀스가 없고 컷인 일러스트가 있으면 → 화면에 컷인 표시
+   * 둘 다 없으면 기존 픽셀 모션 그대로.
+   */
+  private playHeroicVisual(skill: SkillData): void {
+    const animKey = heroicAnimKey(this.characterId, skill.id);
+    if (this.heroicSprite && this.anims.exists(animKey)) {
+      this.playHeroicMotion(animKey);
+      return;
+    }
+    const stillKey = cutinKey(this.characterId, skill.id);
+    if (this.textures.exists(stillKey)) {
+      this.showSkillCutin(stillKey, skill);
+    }
+  }
+
+  private playHeroicMotion(animKey: string): void {
+    if (!this.heroicSprite) return;
+    // 먼저 애니메이션을 재생해 프레임(256x384)이 적용된 뒤 크기를 잡는다
+    // (이전 텍스처 기준으로 setDisplaySize 하면 스케일이 틀어짐)
+    this.heroicSprite.play(animKey, false);
+    const displayH = 330;
+    const displayW = displayH * (HEROIC_FRAME_W / HEROIC_FRAME_H);
+    this.heroicSprite
+      .setDisplaySize(displayW, displayH)
+      .setPosition(this.player.x + 12, this.groundY + 90)
+      .setVisible(true)
+      .setAlpha(1);
+    this.player.setVisible(false);
+  }
+
+  /** heroic 모션 종료 처리 — 공격 상태가 끝나면 픽셀 캐릭터로 복귀 */
+  private updateHeroicMotion(): void {
+    if (!this.heroicSprite || !this.heroicSprite.visible) return;
+    if (this.player.currentCharState !== 'ATTACK') {
+      this.heroicSprite.setVisible(false);
+      this.player.setVisible(true); // 사망 시에도 쓰러지는 연출이 보여야 한다
+    }
+  }
+
+  /** 무공 컷인 일러스트: 시전 순간 화면 왼쪽에 짧게 등장 */
+  private showSkillCutin(texKey: string, skill: SkillData): void {
+    const now = this.time.now;
+    const last = this.cutinLastShown.get(texKey) ?? -999999;
+    // 저등급 무공은 자주 시전되므로 컷인 반복 주기를 길게 둔다
+    const minGap = (skill.grade === 'ULTIMATE' || skill.grade === 'HIGH') ? 4500 : 10000;
+    if (this.cutinActive || now - last < minGap) return;
+    this.cutinActive = true;
+    this.cutinLastShown.set(texKey, now);
+
+    const h = Math.min(310, this.battleH * 0.56);
+    const w = h * (2 / 3);
+    const targetX = 26 + w / 2;
+    const y = this.battleH * 0.44;
+
+    const img = this.add.image(targetX - 46, y, texKey)
+      .setDisplaySize(w, h)
+      .setAlpha(0)
+      .setAngle(-3)
+      .setScrollFactor(0)
+      .setDepth(205);
+    const border = this.add.rectangle(targetX - 46, y, w + 6, h + 6)
+      .setStrokeStyle(2, 0xd6a84b, 0.95)
+      .setFillStyle(0, 0)
+      .setAlpha(0)
+      .setAngle(-3)
+      .setScrollFactor(0)
+      .setDepth(206);
+
+    const slide = (target: Phaser.GameObjects.Components.Transform & Phaser.GameObjects.Components.AlphaSingle) => {
+      this.tweens.add({
+        targets: target,
+        x: targetX,
+        alpha: 0.97,
+        duration: 130,
+        ease: 'Cubic.easeOut',
+      });
+    };
+    slide(img);
+    slide(border);
+
+    this.time.delayedCall(620, () => {
+      this.tweens.add({
+        targets: [img, border],
+        x: targetX + 34,
+        alpha: 0,
+        duration: 190,
+        ease: 'Quad.easeIn',
+        onComplete: () => {
+          img.destroy();
+          border.destroy();
+          this.cutinActive = false;
+        },
+      });
+    });
   }
 
   private onUseDash(): void {
@@ -941,13 +1147,16 @@ export class BattleScene extends Phaser.Scene {
     const scaledData = {
       ...data,
       hp: Math.max(1, Math.round(data.hp * waveScale * ENEMY_HP_MUL)),
-      damage: Math.max(1, Math.round(data.damage * (1 + (this.waveNumber - 1) * 0.012) * ENEMY_DMG_MUL)),
+      damage: Math.max(1, Math.round(
+        data.damage * (1 + (this.waveNumber - 1) * 0.012) * ENEMY_DMG_MUL * minionCycleDmgMul(this.waveNumber),
+      )),
     };
 
     const spawnX = GAME_W + 60 + Math.random() * 80;
-    const spawnY = GROUND_Y + (Math.random() - 0.5) * 16;
 
-    enemy.activate(scaledData, spawnX, spawnY);
+    enemy.activate(scaledData, spawnX, this.groundY);
+    // 트리밍된 프레임 크기에 맞춰 발끝을 플레이어 발 위치(groundY+88)에 정렬
+    enemy.y = this.groundY + 88 - enemy.displayHeight / 2 + (Math.random() - 0.5) * 14;
     if (data.tint !== undefined) {
       enemy.setTint(data.tint);
     } else {
@@ -965,14 +1174,9 @@ export class BattleScene extends Phaser.Scene {
     const bossData = ENEMY_DATABASE.get(bossId);
     if (!bossData) return;
 
-    // 50웨이브 이후 순환 시 추가 스케일링
-    let hpMultiplier = 1;
-    let dmgMultiplier = 1;
-    if (this.waveNumber > 50) {
-      const cycles = Math.floor((this.waveNumber - 50) / 40);
-      hpMultiplier = 1 + cycles * 0.8;
-      dmgMultiplier = 1 + cycles * 0.5;
-    }
+    const post50 = bossPost50Mul(this.waveNumber);
+    const hpMultiplier = post50.hpMul;
+    const dmgMultiplier = post50.dmgMul;
 
     const scaledBossData = {
       ...bossData,
@@ -981,7 +1185,7 @@ export class BattleScene extends Phaser.Scene {
     };
 
     const spawnX = GAME_W + 80;
-    const spawnY = GROUND_Y;
+    const spawnY = this.groundY;
 
     enemy.activate(scaledBossData, spawnX, spawnY);
 
@@ -991,7 +1195,10 @@ export class BattleScene extends Phaser.Scene {
       HOBUP: 1.1, SAJA: 1.15, BUGYOJU: 1.2, HYEOLMA: 1.3,
     };
     const bossScale = rankScales[bossData.bossRank ?? 'DAEJU'] ?? 1.0;
-    enemy.setScale(bossScale);
+    // 표시 크기에 대한 상대 배율 (절대 스케일을 덮어쓰면 원본 512px 기준으로 거대해짐)
+    enemy.setScale(enemy.scaleX * bossScale, enemy.scaleY * bossScale);
+    // 발끝을 지면에 정렬
+    enemy.y = this.groundY + 88 - enemy.displayHeight / 2;
     enemy.setDepth(20); // 오라 위에 보스가 표시되도록
 
     if (bossData.tint !== undefined) {
@@ -1002,7 +1209,7 @@ export class BattleScene extends Phaser.Scene {
 
     // 보스 오라(등급 색상): 발밑에서 맥동하는 글로우로 시각 차별화
     const auraColor = BOSS_RANK_COLORS[bossData.bossRank ?? ''] ?? 0xff2222;
-    this.bossAura = this.add.ellipse(spawnX, spawnY + 26, 90, 28, auraColor, 0.4)
+    this.bossAura = this.add.ellipse(spawnX, this.groundY + 80, 90, 28, auraColor, 0.4)
       .setDepth(19);
     this.tweens.add({
       targets: this.bossAura,
@@ -1024,7 +1231,7 @@ export class BattleScene extends Phaser.Scene {
     const rankColor = BOSS_RANK_COLORS[bossData.bossRank ?? ''] ?? 0xff0000;
     const colorStr = `#${rankColor.toString(16).padStart(6, '0')}`;
 
-    this.bossWarningText = this.add.text(GAME_W / 2, BATTLE_H / 2 - 30,
+    this.bossWarningText = this.add.text(GAME_W / 2, this.battleH / 2 - 30,
       `⚠ 혈교 ${rankName} ⚠`, {
       fontSize: '20px',
       color: colorStr,
@@ -1035,7 +1242,7 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
 
     // 보스 이름 표시
-    const bossNameDisplay = this.add.text(GAME_W / 2, BATTLE_H / 2,
+    const bossNameDisplay = this.add.text(GAME_W / 2, this.battleH / 2,
       scaledBossData.title ?? scaledBossData.name, {
       fontSize: '14px',
       color: '#ffffff',
@@ -1046,8 +1253,8 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
 
     // 보스 경고 프레임(ui_boss_warn_border) 연출 추가
-    const warnBorder = this.add.image(GAME_W / 2, BATTLE_H / 2, 'ui_boss_warn_border')
-      .setDisplaySize(GAME_W, BATTLE_H)
+    const warnBorder = this.add.image(GAME_W / 2, this.battleH / 2, 'ui_boss_warn_border')
+      .setDisplaySize(GAME_W, this.battleH)
       .setScrollFactor(0)
       .setDepth(190)
       .setAlpha(0);
@@ -1109,6 +1316,52 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  private retreatBoss(): void {
+    if (!this.isBossWave) return;
+
+    // 보스/일반 적 제거 — 풀링 대상이므로 destroy 가 아닌 deactivate 후 풀에 반환
+    // (destroy 하면 풀이 영구히 줄어들고 HP바 Graphics 가 누수된다)
+    if (this.bossEnemy) {
+      this.bossEnemy.deactivate();
+      this.enemyPool.push(this.bossEnemy);
+      this.bossEnemy = null;
+    }
+    this.enemies.forEach(e => {
+      if (e && e.active) {
+        e.deactivate();
+        this.enemyPool.push(e);
+      }
+    });
+    this.enemies = [];
+    this.statusEffects = [];
+    this.destroyBossAura();
+
+    // 보스 HP 바 등 숨김
+    if (this.bossHpBg) this.bossHpBg.setVisible(false);
+    if (this.bossHpBar) this.bossHpBar.setVisible(false);
+    if (this.bossNameText) this.bossNameText.setVisible(false);
+    if (this.bossRankText) this.bossRankText.setVisible(false);
+
+    // 보스 공격 타이머 등 초기화
+    this.bossSkillTimer = 0;
+
+    // 플레이어의 사망 방지 처리 (퇴각 시 무조건 생명력과 기력 100% 보정)
+    this.player.heal(this.player.maxHp, this.player.maxStamina);
+
+    // 이전 일반 웨이브로 회귀 (최소 1웨이브)
+    const prevWave = Math.max(1, this.waveNumber - 1);
+    this.isBossWave = false;
+    
+    // BGM 변경
+    bgmSystem.play('battle');
+    
+    // 웨이브 재시작
+    this.startWave(prevWave);
+    
+    // 알림 띄우기
+    this.events.emit('show-notice', '보스 도전을 포기하고 퇴각했습니다.');
+  }
+
   private checkBackgroundChange(): void {
     const theme = getBackgroundForWave(this.waveNumber);
     if (this.currentBgTheme && this.currentBgTheme.id === theme.id) return;
@@ -1123,7 +1376,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.waveNumber > 1) {
       this.cameras.main.flash(200, 255, 255, 255, true);
 
-      const regionText = this.add.text(GAME_W / 2, BATTLE_H / 2, `~ ${theme.nameKo} ~`, {
+      const regionText = this.add.text(GAME_W / 2, this.battleH / 2, `~ ${theme.nameKo} ~`, {
         fontSize: '16px',
         color: '#ffd740',
         fontFamily: 'monospace',
@@ -1211,7 +1464,7 @@ export class BattleScene extends Phaser.Scene {
     const rankName = bossData?.bossRank ? BOSS_RANK_NAMES[bossData.bossRank] : '';
     const bossTitle = bossData?.title ?? bossData?.name ?? 'BOSS';
 
-    const victoryText = this.add.text(GAME_W / 2, BATTLE_H / 2 - 20,
+    const victoryText = this.add.text(GAME_W / 2, this.battleH / 2 - 20,
       `✦ ${rankName} 격파 ✦\n${bossTitle}`, {
       fontSize: '16px',
       color: '#ffd740',
@@ -1235,6 +1488,19 @@ export class BattleScene extends Phaser.Scene {
 
     this.events.emit('boss-clear', this.waveNumber);
     this.events.emit('wave-clear', this.waveNumber);
+
+    if (this.waveNumber === 50) {
+      this.events.emit('rebirth-unlocked');
+      const unlockText = this.add.text(GAME_W / 2, this.battleH / 2 + 40,
+        '환생 해금!\n진행을 초기화하고 영구 공격 +10%를 얻을 수 있습니다', {
+        fontSize: '13px', color: '#88ddff', fontFamily: 'monospace', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 2, align: 'center',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+      this.tweens.add({
+        targets: unlockText, alpha: 0, y: unlockText.y - 24, duration: 3200,
+        onComplete: () => unlockText.destroy(),
+      });
+    }
 
     this.time.delayedCall(2000, () => {
       this.startWave(this.waveNumber + 1);
@@ -1271,8 +1537,9 @@ export class BattleScene extends Phaser.Scene {
       if (!enemy.active) continue;
 
       const isBoss = (enemy === this.bossEnemy);
-      const halfW = isBoss ? 24 : 16;
-      const halfH = isBoss ? 36 : 24;
+      // 확대된 표시 크기에 맞춘 피격 판정 (트리밍 프레임 기준 몸통 영역)
+      const halfW = isBoss ? 40 : 26;
+      const halfH = isBoss ? 80 : 55;
 
       const enemyRect = new Phaser.Geom.Rectangle(
         enemy.x - halfW, enemy.y - halfH, halfW * 2, halfH * 2,
@@ -1280,7 +1547,8 @@ export class BattleScene extends Phaser.Scene {
 
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemyRect)) {
         const isCrit = Math.random() < bonuses.critChance;
-        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1));
+        const rebirthMul = rebirthAttackMul(save.rebirthCount ?? 0);
+        const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * rebirthMul * (isCrit ? 2 : 1));
         const killed = enemy.takeDamage(damage);
 
         // Hollow Knight 스타일 반동: 강한 공격은 적을 밀어냄
@@ -1477,7 +1745,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.player.currentCharState === 'DEAD') return false;
 
     const save = loadGame();
-    const evadeChance = Math.min(0.7, 0.18 + (save.level - 1) * 0.025);
+    const evadeChance = calculateEvade(save);
     if (Math.random() < evadeChance) {
       this.player.playEvade();
       soundSystem.play('dash');
@@ -1543,6 +1811,13 @@ export class BattleScene extends Phaser.Scene {
     save.missionProgress.daily_gold = (save.missionProgress.daily_gold ?? 0) + finalGold;
     this.sessionExp += exp;
 
+    if (finalGold > 0) {
+      this.showRewardText(x - 20, y - 50, `+${finalGold}G`, '#ffd740');
+    }
+    if (exp > 0) {
+      this.showRewardText(x + 20, y - 50, `+${exp} EXP`, '#d580ff');
+    }
+
     // 레벨업 체크
     let leveledUp = false;
     while (save.exp >= save.expToNext) {
@@ -1601,28 +1876,28 @@ export class BattleScene extends Phaser.Scene {
     this.currentBgTheme = theme;
     const id = theme.mountainsKey;
 
-    this.bgLayerBg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_bg`)
+    this.bgLayerBg = this.add.tileSprite(0, 0, GAME_W, this.battleH, `${id}_bg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(1);
     this.bgLayerBg.tileScaleX = 1.5;
-    this.bgLayerBg.tileScaleY = BATTLE_H / 1024;
+    this.bgLayerBg.tileScaleY = this.battleH / 1024;
 
-    this.bgLayerMg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_mg`)
+    this.bgLayerMg = this.add.tileSprite(0, 0, GAME_W, this.battleH, `${id}_mg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(2);
     this.bgLayerMg.tileScaleX = 1.5;
-    this.bgLayerMg.tileScaleY = BATTLE_H / 1024;
+    this.bgLayerMg.tileScaleY = this.battleH / 1024;
 
-    this.bgLayerFg = this.add.tileSprite(0, 0, GAME_W, BATTLE_H, `${id}_fg`)
+    this.bgLayerFg = this.add.tileSprite(0, 0, GAME_W, this.battleH, `${id}_fg`)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(3);
     this.bgLayerFg.tileScaleX = 1.5;
-    this.bgLayerFg.tileScaleY = BATTLE_H / 1024;
+    this.bgLayerFg.tileScaleY = this.battleH / 1024;
 
-    this.groundShadowLayer = this.add.tileSprite(0, GROUND_Y + 34, GAME_W, 106, `${id}_fg`)
+    this.groundShadowLayer = this.add.tileSprite(0, this.groundY + 34, GAME_W, 106, `${id}_fg`)
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(6)
@@ -1631,7 +1906,7 @@ export class BattleScene extends Phaser.Scene {
     this.groundShadowLayer.tileScaleX = 1.5;
     this.groundShadowLayer.tileScaleY = 0.22;
 
-    this.foregroundMistLayer = this.add.tileSprite(0, GROUND_Y + 2, GAME_W, 72, `${id}_mg`)
+    this.foregroundMistLayer = this.add.tileSprite(0, this.groundY + 2, GAME_W, 72, `${id}_mg`)
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(7)
@@ -1644,13 +1919,13 @@ export class BattleScene extends Phaser.Scene {
     this.add.rectangle(GAME_W / 2, 20, GAME_W, 120, 0x000000, 0.28)
       .setDepth(120)
       .setScrollFactor(0);
-    this.add.rectangle(GAME_W / 2, BATTLE_H - 38, GAME_W, 120, 0x000000, 0.46)
+    this.add.rectangle(GAME_W / 2, this.battleH - 38, GAME_W, 120, 0x000000, 0.46)
       .setDepth(120)
       .setScrollFactor(0);
-    this.add.rectangle(10, BATTLE_H / 2, 28, BATTLE_H, 0x000000, 0.28)
+    this.add.rectangle(10, this.battleH / 2, 28, this.battleH, 0x000000, 0.28)
       .setDepth(120)
       .setScrollFactor(0);
-    this.add.rectangle(GAME_W - 10, BATTLE_H / 2, 28, BATTLE_H, 0x000000, 0.28)
+    this.add.rectangle(GAME_W - 10, this.battleH / 2, 28, this.battleH, 0x000000, 0.28)
       .setDepth(120)
       .setScrollFactor(0);
   }
@@ -2063,7 +2338,7 @@ export class BattleScene extends Phaser.Scene {
       });
     }
 
-    const stain = this.add.ellipse(x + 6, GROUND_Y + 30, isBoss ? 28 : 18, isBoss ? 9 : 6, 0x4a0705, 0.46)
+    const stain = this.add.ellipse(x + 6, this.groundY + 30, isBoss ? 28 : 18, isBoss ? 9 : 6, 0x4a0705, 0.46)
       .setDepth(4);
     this.tweens.add({
       targets: stain,
@@ -2075,7 +2350,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showScreenPulse(tint: number, alpha: number, duration: number): void {
-    const pulse = this.add.rectangle(GAME_W / 2, BATTLE_H / 2, GAME_W, BATTLE_H, tint, alpha)
+    const pulse = this.add.rectangle(GAME_W / 2, this.battleH / 2, GAME_W, this.battleH, tint, alpha)
       .setScrollFactor(0)
       .setDepth(180)
       .setBlendMode(Phaser.BlendModes.ADD);
@@ -2126,6 +2401,29 @@ export class BattleScene extends Phaser.Scene {
       scaleX: isCritical ? 1.12 : 1,
       scaleY: isCritical ? 1.12 : 1,
       duration: isCritical ? 760 : 600,
+      ease: 'Cubic.easeOut',
+      onComplete: () => { text.destroy(); },
+    });
+  }
+
+  private showRewardText(x: number, y: number, textStr: string, color: string): void {
+    const text = this.add.text(x, y, textStr, {
+      fontSize: '13px',
+      color,
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(191);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 42,
+      x: x + (Math.random() - 0.5) * 12,
+      alpha: 0,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 850,
       ease: 'Cubic.easeOut',
       onComplete: () => { text.destroy(); },
     });
@@ -2226,10 +2524,11 @@ export class BattleScene extends Phaser.Scene {
     const flatAttack = equipped.reduce((sum, item) => sum + item.attack + item.bonus, 0);
     const flatHp = equipped.reduce((sum, item) => sum + item.hp + item.bonus * 4, 0);
 
+    const pathBonuses = rebirthPathBonuses(save.rebirthPaths);
     return {
       attackMul: sets.attackMul * (1 + (training.attack ?? 0) * 0.02 + classResearch * 0.025 + disciples * 0.01),
-      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02),
-      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02),
+      hpMul: sets.hpMul * (1 + (training.hp ?? 0) * 0.02) * pathBonuses.hpMul,
+      goldMul: sets.goldMul * (1 + (training.gold ?? 0) * 0.02) * pathBonuses.goldMul,
       flatAttack,
       flatHp,
       speedMul: 1 + (training.speed ?? 0) * 0.015,
@@ -2256,9 +2555,7 @@ export class BattleScene extends Phaser.Scene {
     });
     if (valid.length === 0) valid.push(getStarterSkill(cls));
 
-    valid.forEach((skillId, index) => {
-      this.player.equipSkill(skillId, index);
-    });
+    this.player.resetEquippedSkills(valid);
     if (save.equippedDash) {
       this.player.equipDash(save.equippedDash);
     }
@@ -2355,7 +2652,13 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showBossCutscene(bossId: string, bossName: string): void {
-    const lines = BOSS_DIALOGUES[bossId] ?? [`${bossName}이(가) 나타났다!`];
+    let mappedId = bossId;
+    if (bossId.startsWith('boss_stage_')) {
+      const stage = parseInt(bossId.replace('boss_stage_', ''), 10);
+      const index = (stage - 1) % 8;
+      mappedId = 'boss_' + ['daeju', 'danju', 'gakju', 'magun', 'hobup', 'saja', 'bugyoju', 'hyeolma'][index];
+    }
+    const lines = BOSS_DIALOGUES[mappedId] ?? [`${bossName}이(가) 나타났다!`];
     const GAME_W = this.scale.width;
     const GAME_H = this.scale.height;
 
@@ -2366,6 +2669,22 @@ export class BattleScene extends Phaser.Scene {
     const redFlash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x8b0000, 0.3)
       .setScrollFactor(0).setDepth(301);
     this.tweens.add({ targets: redFlash, alpha: 0, duration: 600, delay: 200, onComplete: () => redFlash.destroy() });
+
+    // 보스 일러스트 (여백 트리밍 프레임으로 크게 표시, 오른쪽에서 슬라이드 인)
+    let bossImage: Phaser.GameObjects.Image | null = null;
+    const bossArtKey = mappedId.replace('boss_', 'boss_art_');
+    if (this.textures.exists(bossArtKey)) {
+      const hasTrim = this.textures.get(bossArtKey).has('trim');
+      bossImage = this.add.image(GAME_W / 2 + 50, GAME_H / 2 - 230, bossArtKey, hasTrim ? 'trim' : undefined)
+        .setScrollFactor(0).setDepth(301).setAlpha(0);
+      const targetH = 320;
+      bossImage.setDisplaySize(targetH * (bossImage.frame.width / bossImage.frame.height), targetH);
+      this.tweens.add({
+        targets: bossImage,
+        x: GAME_W / 2, alpha: 1,
+        duration: 420, ease: 'Cubic.easeOut',
+      });
+    }
 
     const nameText = this.add.text(GAME_W / 2, GAME_H / 2 - 60, bossName, {
       fontSize: '28px', color: '#e05050', fontFamily: 'serif', fontStyle: 'bold',
@@ -2398,7 +2717,9 @@ export class BattleScene extends Phaser.Scene {
         return;
       }
       overlay.off('pointerdown', dismiss);
-      [overlay, nameText, dialogText, tapHint].forEach(o => {
+      const parts: Phaser.GameObjects.GameObject[] = [overlay, nameText, dialogText, tapHint];
+      if (bossImage) parts.push(bossImage);
+      parts.forEach(o => {
         this.tweens.add({ targets: o, alpha: 0, duration: 300, onComplete: () => o.destroy() });
       });
     };

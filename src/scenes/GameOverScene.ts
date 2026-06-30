@@ -9,7 +9,7 @@ interface GameOverData {
 }
 
 const W = 540;
-const H = 960;
+let H = 960;
 
 export class GameOverScene extends Phaser.Scene {
   private gameData: GameOverData = { waveNumber: 1, killCount: 0, characterId: 'sword_male' };
@@ -23,6 +23,7 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   create(): void {
+    H = this.scale.height;
     soundSystem.play('game_over');
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.88);
     this.add.rectangle(W / 2, H / 2, W - 42, H - 58, 0x100806, 0.96).setStrokeStyle(3, 0x9b3126);

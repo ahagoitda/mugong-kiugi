@@ -49,8 +49,14 @@ const BOSS_DIALOGUES: Record<string, string[]> = {
 const GAME_W = 540;
 const BATTLE_H = 620;
 const GROUND_Y = BATTLE_H - 130;
-const SCROLL_SPEED = 40;
+const SCROLL_SPEED = 32;          // 약간 느리게 (플레이어가 직접 움직이는 느낌 강조)
 const MAX_ENEMIES = 8;
+
+// Hollow Knight 스타일 자동 전투를 위한 포지셔닝
+const PLAYER_MIN_X = 70;
+const PLAYER_MAX_X = 320;
+const IDEAL_MELEE_DIST = 95;
+const IDEAL_RANGED_DIST = 140;
 
 // ─── 난이도 조정(하향) 전역 배율 ───
 // 방치형 게임에 맞춰 적 위협을 낮춰 편하게 진행되도록 한다.
@@ -275,6 +281,9 @@ export class BattleScene extends Phaser.Scene {
     // 초기 웨이브 시작
     this.startWave(this.waveNumber);
 
+    // 메모리 누수 방지: 씬 종료 시 철저히 정리
+    this.events.once('shutdown', this.handleShutdown, this);
+
     // 부활 시 HP 50% 회복 연출
     if (this._isRevive) {
       this._isRevive = false;
@@ -292,6 +301,23 @@ export class BattleScene extends Phaser.Scene {
         });
       });
     }
+
+    // ─── 데스크톱 / Windows 플레이 지원: 키보드 입력 (1,2,3 스킬 / Space 대시) ───
+    const kb = this.input.keyboard;
+    if (kb) {
+      kb.on('keydown-ONE', () => this.tryUseSkill(0));
+      kb.on('keydown-2', () => this.tryUseSkill(1));
+      kb.on('keydown-3', () => this.tryUseSkill(2));
+      kb.on('keydown-SPACE', () => this.onUseDash());
+      // F: 전체화면 토글 (Windows 플레이 편의)
+      kb.on('keydown-F', () => {
+        if (this.scale.isFullscreen) {
+          this.scale.stopFullscreen();
+        } else {
+          this.scale.startFullscreen();
+        }
+      });
+    }
   }
 
   update(time: number, delta: number): void {
@@ -299,8 +325,16 @@ export class BattleScene extends Phaser.Scene {
       this.player.heal(this.player.maxHp, this.player.maxStamina);
     }
     this.player.update(time, delta);
-    this.updateScroll(delta);
-    this.updateBattleAI(delta);
+
+    // 공격 / 대시 중 고품질 모션 트레일
+    this.updateMotionTrails(delta);
+
+    // 발자국 먼지 (run 상태)
+    this.updateFootDust(delta);
+
+    // Hollow Knight 느낌의 동적 자동 전투 (포지셔닝 + 액션)
+    this.updateAutoCombat(delta);
+
     this.updateEnemies(time, delta);
     this.updateSpawning(delta);
     this.updateBackground();
@@ -309,6 +343,106 @@ export class BattleScene extends Phaser.Scene {
     this.updateStatusEffects(delta);
     this.updatePlayerAuraPosition(delta);
     this.emitState();
+  }
+
+  private trailTimer = 0;
+  private footDustTimer = 0;
+
+  private updateMotionTrails(delta: number): void {
+    const state = this.player.currentCharState;
+    const isFastAction = state === 'ATTACK' || state === 'DASH' || state === 'RUN';
+
+    if (!isFastAction) {
+      this.trailTimer = 0;
+      return;
+    }
+
+    this.trailTimer += delta;
+
+    let interval = 28;
+    if (state === 'RUN') interval = 45;
+    else if (state === 'DASH') interval = 18;
+
+    if (this.trailTimer >= interval) {
+      this.trailTimer = 0;
+      const tKey = this.player.texture.key;
+      let tint: number | undefined;
+      let alpha = 0.25;
+      let life = 140;
+
+      if (state === 'DASH') {
+        tint = 0x88ddff;
+        alpha = 0.35;
+        life = 180;
+      } else if (state === 'RUN') {
+        alpha = 0.15;
+        life = 120;
+      } else if (state === 'ATTACK') {
+        alpha = 0.32;
+        life = 200;
+      }
+
+      this.spawnAfterimage(
+        this.player.x - (this.player.isFacingRight ? 10 : -10),
+        this.player.y - 2,
+        tKey,
+        this.player.flipX,
+        alpha,
+        life,
+        tint,
+        state === 'RUN' ? 0.9 : 0.95
+      );
+
+      // extra for attack
+      if (state === 'ATTACK') {
+        this.spawnAfterimage(
+          this.player.x - (this.player.isFacingRight ? 20 : -20),
+          this.player.y + 3,
+          tKey,
+          this.player.flipX,
+          0.18,
+          130,
+          undefined,
+          0.92
+        );
+      }
+    }
+  }
+
+  /** Hollow Knight 스타일 발자국 먼지 (run 중 주기적 + 공격 착지) */
+  private updateFootDust(delta: number): void {
+    const state = this.player.currentCharState;
+    if (state !== 'RUN' && state !== 'ATTACK') {
+      this.footDustTimer = 0;
+      return;
+    }
+
+    this.footDustTimer += delta;
+    const freq = state === 'RUN' ? 70 : 180;  // run more frequent
+    if (this.footDustTimer > freq) {
+      this.footDustTimer = 0;
+
+      const dir = this.player.isFacingRight ? 1 : -1;
+      const dx = -dir * (state === 'RUN' ? 16 : 8);
+      const dust = this.add.ellipse(
+        this.player.x + dx,
+        GROUND_Y + 16,
+        state === 'RUN' ? 10 : 14, 4,
+        state === 'RUN' ? 0x554433 : 0x886644,
+        0.5
+      ).setDepth(4).setBlendMode(Phaser.BlendModes.ADD);
+
+      this.tweens.add({
+        targets: dust,
+        x: dust.x - dir * (state === 'RUN' ? 10 : 4),
+        scaleX: state === 'RUN' ? 1.7 : 2.2,
+        scaleY: 0.3,
+        alpha: 0,
+        duration: state === 'RUN' ? 220 : 300,
+        ease: 'Quad.easeOut',
+        onComplete: () => dust.destroy()
+      });
+    }
   }
 
   // ─── 보스 HP바 UI ───
@@ -573,63 +707,126 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  // ─── 횡스크롤 ───
+  // ─── Hollow Knight 스타일 자동사냥 전투 (동적 포지셔닝 + 액션) ───
 
-  private updateScroll(delta: number): void {
+  private updateAutoCombat(delta: number): void {
     if (!this.isMoving) return;
 
-    const hasNearbyEnemy = this.enemies.some(e =>
-      e.active && Math.abs(e.x - this.player.x) < 120
-    );
+    const inAction = this.player.currentCharState === 'ATTACK' ||
+                     this.player.currentCharState === 'DASH' ||
+                     this.player.currentCharState === 'HIT' ||
+                     this.player.currentCharState === 'DEAD';
 
-    if (!hasNearbyEnemy && this.player.currentCharState !== 'ATTACK') {
-      this.scrollX += SCROLL_SPEED * (delta / 1000);
-      this.worldOffsetX += SCROLL_SPEED * (delta / 1000);
-      this.player.playRunAnim();
-    } else {
-      this.player.playIdleAnim();
-    }
-  }
-
-  // ─── 전투 AI ───
-
-  private updateBattleAI(_delta: number): void {
-    if (this.battleMode !== 'AUTO') return;
-    if (this.player.currentCharState === 'ATTACK' ||
-        this.player.currentCharState === 'DASH' ||
-        this.player.currentCharState === 'DEAD') return;
-
+    // 1. 위협 분석
     let closest: Enemy | null = null;
     let closestDist = Infinity;
+    let bossThreat = false;
 
-    for (const enemy of this.enemies) {
-      if (!enemy.active) continue;
-      const dist = Math.abs(enemy.x - this.player.x);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = enemy;
+    for (const e of this.enemies) {
+      if (!e.active) continue;
+      const d = Math.abs(e.x - this.player.x);
+      if (d < closestDist) {
+        closestDist = d;
+        closest = e;
+      }
+      if (e === this.bossEnemy) bossThreat = true;
+    }
+
+    // 2. 플레이어 포지셔닝 목표 계산 (Hollow Knight 느낌의 spacing)
+    let desiredX = this.player.x;
+
+    if (!inAction && closest) {
+      const isMelee = this.player.skills.some(s => s.range < 70);
+      let idealDist = isMelee ? IDEAL_MELEE_DIST : IDEAL_RANGED_DIST;
+
+      // 클래스별 모션 강조 (고품질 비디오 참조)
+      // fist: 더 공격적, 가까이
+      // spear: 원거리 유지
+      const charId = this.characterId || 'sword_male';
+      if (charId.includes('fist')) idealDist = Math.max(60, idealDist - 20);
+      else if (charId.includes('spear')) idealDist += 25;
+      else if (charId.includes('dao')) idealDist += 10; // blade heavier feel
+
+      // 적과 이상적인 거리 유지하면서 살짝 움직임
+      if (closestDist > idealDist + 35) {
+        // 앞으로 접근
+        desiredX = closest.x - idealDist * (this.player.isFacingRight ? 0.7 : 1.3);
+      } else if (closestDist < idealDist - 25) {
+        // 살짝 물러남 (무거운 공격 후 리커버리 느낌)
+        desiredX = closest.x - idealDist * 1.1;
+      } else {
+        // 적당히 유지하면서 미세하게 좌우 흔들 (생동감)
+        const micro = Math.sin(this.time.now * 0.002) * 12;
+        desiredX = this.player.x + micro;
+      }
+
+      // 보스 패턴 대응: 위험한 투사체/웨이브 올 때 뒤로 물러나기
+      if (bossThreat && closestDist < 85) {
+        desiredX = Math.min(this.player.x - 25, desiredX);
       }
     }
 
-    if (!closest) return;
-
-    // 자동 회피: HP가 35% 미만이고 적이 매우 가까우면 회피기 사용 (가능할 때)
-    const hpRatio = this.player.hp / this.player.maxHp;
-    if (hpRatio < 0.35 && closestDist < 70) {
-      if (this.player.handleDash()) return;
+    // 월드 진행 (천천히, 플레이어가 움직이는 걸 더 강조)
+    const shouldAdvance = !closest || closestDist > 160;
+    if (shouldAdvance && !inAction) {
+      this.scrollX += SCROLL_SPEED * 0.6 * (delta / 1000);
+      this.worldOffsetX += SCROLL_SPEED * 0.6 * (delta / 1000);
+      desiredX += 18; // 자연스럽게 앞으로 밀어줌
     }
 
-    // 사거리 안의 적에게 "가장 강한" 스킬부터 자동 시전.
-    // handleAttack 내부에서 쿨타임/기력을 검사하므로, 시전 가능한
-    // 첫 스킬이 발동될 때까지 강→약 순으로 시도한다. (방치형 자동 플레이)
-    const skills = this.player.skills;
-    const order = skills
-      .map((_, i) => i)
-      .sort((a, b) => skills[b].damageMultiplier - skills[a].damageMultiplier);
+    // 3. 실제 플레이어 이동 적용 (부드럽게)
+    if (!inAction) {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      const dx = desiredX - this.player.x;
+      const moveSpeed = 108;
 
-    for (const i of order) {
-      if (closestDist <= skills[i].range + 20) {
-        if (this.tryUseSkill(i)) return;
+      if (Math.abs(dx) > 4) {
+        const vx = Phaser.Math.Clamp(dx * 4.0, -moveSpeed, moveSpeed);
+        body.setVelocity(vx, 0);
+        // run anim + 내부 flip 처리를 믿음
+        this.player.playRunAnim();
+      } else {
+        body.setVelocity(0, 0);
+        this.player.playIdleAnim();
+      }
+
+      // 화면 경계 클램프 (전투 공간을 제한해서 Hollow Knight 스타일 arena 느낌)
+      this.player.x = Phaser.Math.Clamp(this.player.x, PLAYER_MIN_X, PLAYER_MAX_X);
+    }
+
+    // 4. 스킬 사용 결정 (기존 로직 + 상황 인식)
+    if (this.battleMode === 'AUTO' && !inAction && closest) {
+      const hpRatio = this.player.hp / this.player.maxHp;
+
+      // Hollow Knight 스타일: 쿨타임 되면 적극적으로 대시로 리포지셔닝 (스타일리시 자동 플레이)
+      const canStyleDash = Math.random() < 0.28 && closestDist > 55 && closestDist < 145;
+      if ((hpRatio < 0.42 && closestDist < 70) || canStyleDash) {
+        if (this.player.handleDash()) return;
+      }
+
+      const skills = this.player.skills;
+      const sorted = skills
+        .map((_, i) => i)
+        .sort((a, b) => skills[b].damageMultiplier - skills[a].damageMultiplier);
+
+      for (const i of sorted) {
+        const sk = skills[i];
+        const effectiveRange = sk.range + (sk.attackMotion === 'thrust' ? 15 : 0);
+
+        if (closestDist <= effectiveRange + 18) {
+          if (this.tryUseSkill(i)) {
+            // 공격 직후 살짝 뒤로 빼는 느낌 (무거운 모션 후)
+            if (sk.grade === 'HIGH' || sk.grade === 'ULTIMATE') {
+              this.time.delayedCall(180, () => {
+                if (this.player.currentCharState === 'IDLE' && closest && closest.active) {
+                  const retreat = this.player.x - (this.player.isFacingRight ? 22 : -22);
+                  this.player.x = Phaser.Math.Clamp(retreat, PLAYER_MIN_X, PLAYER_MAX_X);
+                }
+              });
+            }
+            return;
+          }
+        }
       }
     }
   }
@@ -1086,6 +1283,12 @@ export class BattleScene extends Phaser.Scene {
         const damage = Math.round((skill.damageMultiplier * 10 + bonuses.flatAttack) * charDmgMul * levelBonus * skillUpgradeBonus * bonuses.attackMul * (isCrit ? 2 : 1));
         const killed = enemy.takeDamage(damage);
 
+        // Hollow Knight 스타일 반동: 강한 공격은 적을 밀어냄
+        if (!killed && (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE' || Math.random() < 0.35)) {
+          const knock = (skill.grade === 'ULTIMATE' ? 55 : 32);
+          enemy.applyKnockback(this.player.x, this.player.y, knock);
+        }
+
         // 상태이상 적용
         if (!killed && skill.effect) {
           this.applyStatusEffect(enemy, skill, damage);
@@ -1536,6 +1739,41 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * 범용 고퀄 모션 트레일 / 애프터 이미지 생성기.
+   * 공격, 대시, 빠른 이동 시 "프레임 연결" 느낌을 주어 낮은 프레임 애니도 매끄럽게 보이게 함.
+   * 모든 ghost는 자동 파괴 → 메모리 누수 방지.
+   */
+  private spawnAfterimage(
+    x: number, y: number,
+    textureKey: string,
+    flipX: boolean,
+    startAlpha = 0.35,
+    lifeMs = 180,
+    tint?: number,
+    extraScale = 1.0
+  ): void {
+    const img = this.add.image(x, y, textureKey)
+      .setDisplaySize(this.player.displayWidth * extraScale, this.player.displayHeight * extraScale)
+      .setFlipX(flipX)
+      .setAlpha(startAlpha)
+      .setDepth(this.player.depth - 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    if (tint !== undefined) img.setTint(tint);
+
+    this.tweens.add({
+      targets: img,
+      alpha: 0,
+      x: x + (this.player.isFacingRight ? -6 : 6),
+      scaleX: img.scaleX * 0.96,
+      scaleY: img.scaleY * 0.96,
+      duration: lifeMs,
+      ease: 'Quad.easeOut',
+      onComplete: () => img.destroy(),
+    });
+  }
+
   private showGroundWindup(x: number, y: number, tint: number, scale: number): void {
     const dir = this.player.isFacingRight ? 1 : -1;
     const width = 72 * scale;
@@ -1580,11 +1818,26 @@ export class BattleScene extends Phaser.Scene {
     if (skill.grade === 'HIGH') {
       this.kickCamera(110, 1.012);
       this.cameras.main.shake(80, 0.003);
+      this.focusOnAction(260, 0.97);
     } else if (skill.grade === 'ULTIMATE') {
       this.kickCamera(150, 1.02);
       this.cameras.main.shake(120, 0.006);
       this.cameras.main.flash(100, 255, 255, 255, true);
+      this.focusOnAction(380, 0.94);
     }
+  }
+
+  /** Hollow Knight 스타일: 중요한 액션 순간 카메라가 살짝 액션에 집중 */
+  private focusOnAction(duration: number, zoom: number): void {
+    this.tweens.killTweensOf(this.cameras.main);
+    this.tweens.add({
+      targets: this.cameras.main,
+      zoom,
+      duration: duration * 0.4,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => this.cameras.main.setZoom(1),
+    });
   }
 
   private kickCamera(duration: number, zoom: number): void {
@@ -1629,6 +1882,21 @@ export class BattleScene extends Phaser.Scene {
         this.slashPool.push(fx);
       },
     });
+
+    // 고퀄리티 추가: 강한 스킬일 때 잔상 슬래시
+    if (skill.grade === 'HIGH' || skill.grade === 'ULTIMATE') {
+      const after = this.add.image(x + dir * 8, y + 4, fx.texture.key)
+        .setTint(tint).setAlpha(0.35).setFlipX(this.player.isFacingRight)
+        .setScale(baseScale * 0.85).setAngle(fx.angle + dir * 12)
+        .setDepth(fx.depth - 1);
+      this.tweens.add({
+        targets: after,
+        alpha: 0,
+        x: x + dir * 24,
+        duration: 280,
+        onComplete: () => after.destroy()
+      });
+    }
   }
 
   private showBladeTrail(x: number, y: number, skill: SkillData, tint: number): void {
@@ -2163,5 +2431,46 @@ export class BattleScene extends Phaser.Scene {
       exp: save.exp,
       expToNext: save.expToNext,
     });
+  }
+
+  /**
+   * 씬 종료 시 철저한 정리 (메모리 누수 방지 핵심).
+   * 모든 tween, timer 이벤트, 리스너, 풀, 그래픽 객체를 명시적으로 해제.
+   */
+  private handleShutdown(): void {
+    // 트윈 전체 kill (안전)
+    this.tweens.killAll();
+
+    // 이벤트 리스너 정리
+    this.events.removeAllListeners();
+    // 다른 병렬 씬(UIScene) 리스너는 해당 씬이 스스로 정리하도록 둔다 (교차 참조 금지)
+
+    // 풀 정리
+    this.slashPool.forEach(fx => {
+      if (fx && fx.active) fx.destroy();
+    });
+    this.slashPool = [];
+
+    // 보스 오라 등 특수 오브젝트
+    this.destroyBossAura();
+    if (this.bossHpBar) { this.bossHpBar.destroy(); this.bossHpBar = null; }
+    if (this.bossHpBg) { this.bossHpBg.destroy(); this.bossHpBg = null; }
+    if (this.bossNameText) { this.bossNameText.destroy(); this.bossNameText = null; }
+    if (this.bossRankText) { this.bossRankText.destroy(); this.bossRankText = null; }
+
+    // 배경 타일 정리
+    [this.bgLayerBg, this.bgLayerMg, this.bgLayerFg, this.groundShadowLayer, this.foregroundMistLayer]
+      .forEach(l => l?.destroy());
+
+    // 상태이상 정리
+    this.statusEffects = [];
+
+    // 남은 적 풀 반환
+    this.enemies.forEach(e => { if (e.active) (e as any).deactivate?.(); });
+    this.enemyPool.forEach(e => e.destroy());
+    this.enemies = [];
+    this.enemyPool = [];
+
+    this.bossEnemy = null;
   }
 }

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>무공키우기 - High Quality Motion Showcase</title>
+  <style>
+    body { background: #0a0806; color: #e8d9b5; font-family: system-ui, sans-serif; margin: 0; padding: 20px; line-height: 1.6; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { color: #d4af77; text-align: center; border-bottom: 2px solid #3a2f1f; padding-bottom: 15px; }
+    h2 { color: #c9a46b; margin-top: 40px; }
+    .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 30px; margin-top: 20px; }
+    .video-card { background: #14100c; border: 1px solid #3a2f1f; border-radius: 8px; padding: 15px; }
+    .video-card h3 { margin: 0 0 10px 0; color: #e8d9b5; font-size: 18px; }
+    video { width: 100%; border-radius: 4px; background: #000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
+    .desc { margin-top: 12px; font-size: 14px; color: #a38e6a; }
+    .highlight { color: #d4af77; font-weight: 600; }
+    .note { background: #1f1812; padding: 15px; border-left: 4px solid #d4af77; margin: 30px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>무공키우기 — High Quality Motion Showcase</h1>
+    <p style="text-align:center; max-width:700px; margin: 0 auto 30px;">
+      Hollow Knight 수준의 <span class="highlight">유동적이고 무게감 있는 모션</span>을 목표로 제작된 고퀄리티 애니메이션 데모.<br>
+      기존 저해상도 스프라이트 기반이 아닌, <strong>고퀄리티 이미지 기반의 일관된 캐릭터</strong>로 만든 프리미엄 모션.
+    </p>
+
+    <div class="note">
+      <strong>현재 구현된 개선점</strong><br>
+      • 살아있는 Idle (호흡 + 무게 중심 이동 + 2차 모션)<br>
+      • 동적 자동 포지셔닝 (접근 → 공격 → 후퇴)<br>
+      • 무거운 공격 시퀀스 (긴 윈드업 → 강한 돌진 → 긴 리커버리)<br>
+      • 모션 트레일, 발먼지, 카메라 포커스, 적 반동 등 전투 피드백 대폭 강화
+    </div>
+
+    <div class="video-grid">
+      <div class="video-card">
+        <h3>01. Living Idle — 생동감 있는 대기 모션</h3>
+        <video controls loop>
+          <source src="01_high_quality_living_idle.mp4" type="video/mp4">
+        </video>
+        <div class="desc">
+          미세한 호흡, 무게 이동, 망토와 검의 자연스러운 2차 동작.<br>
+          Hollow Knight 스타일의 "살아있는" idle.
+        </div>
+      </div>
+
+      <div class="video-card">
+        <h3>02. Run with Weight &amp; Flow</h3>
+        <video controls loop>
+          <source src="02_high_quality_run.mp4" type="video/mp4">
+        </video>
+        <div class="desc">
+          강한 발 구름, 옷과 머리의 흐름, 속도감 있는 주행.<br>
+          발먼지 파티클까지 포함된 고퀄리티 런 사이클.
+        </div>
+      </div>
+
+      <div class="video-card">
+        <h3>03. Heavy Attack — 무거운 일격 시퀀스</h3>
+        <video controls>
+          <source src="03_high_quality_heavy_attack.mp4" type="video/mp4">
+        </video>
+        <div class="desc">
+          긴 anticipation → 폭발적인 돌진과 참격 → 강한 임팩트와 긴 회복.<br>
+          완전한 커밋감과 follow-through가 살아있는 공격 모션.
+        </div>
+      </div>
+
+      <div class="video-card">
+        <h3>04. Dynamic Auto Combat Sequence</h3>
+        <video controls>
+          <source src="04_dynamic_combat_sequence.mp4" type="video/mp4">
+        </video>
+        <div class="desc">
+          자동사냥 중 실제로 이동하며 싸우는 모습.<br>
+          접근 → 윈드업 → 강타 → 자연스러운 후퇴까지.
+        </div>
+      </div>
+    </div>
+
+    <p style="text-align:center; margin-top: 50px; opacity: 0.7; font-size: 13px;">
+      이 영상들은 실제 게임 엔진의 비전과 모션 퀄리티 목표를 보여주기 위해 제작되었습니다.<br>
+      게임 내에서는 고퀄리티 모션을 목표로 지속 개선 중.
+    </p>
+  </div>
+</body>
+</html>

@@ -215,6 +215,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(12); // 배경 레이어(1~3) 위에 표시; 보스는 spawnBoss에서 더 높게 재설정됨
     this.clearTint();
     this.setAlpha(1);
+    this.setAngle(0);
+    this.setScale(1);
+    this.idleVisualTimer = 0;
 
     // 적 애니메이션 재생 (idle)
     this.playIdleAnim();
@@ -245,6 +248,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.enemyData = null;
     this.stunned = false;
     this.speedMultiplier = 1.0;
+    this.idleVisualTimer = 0;
+    this.setAngle(0);
+    this.setScale(1);
     this.hpBarBg.clear().setVisible(false);
     this.hpBarLag.clear().setVisible(false);
     this.hpBarFill.clear().setVisible(false);
@@ -275,6 +281,18 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     });
     this.setTint(0xff8888);
     this.updateHpBar();
+
+    // Hollow Knight 느낌의 피격 반응 (작은 flinch)
+    if (!this.attacking) {
+      this.scene.tweens.add({
+        targets: this,
+        angle: (Math.random() - 0.5) * 6,
+        scaleX: this.scaleX * 0.96,
+        duration: 70,
+        yoyo: true,
+        ease: 'Sine.easeOut'
+      });
+    }
 
     // 피격 경직
     this.knockbackTimer = 200;
@@ -323,6 +341,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.targetY = y;
   }
 
+  private idleVisualTimer = 0;
+
   /**
    * 프레임 업데이트 - AI 로직
    */
@@ -351,6 +371,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
+    // 살아있는 idle 느낌 (싱글 스프라이트여도 미세 각도/스케일로 생동감)
+    this.idleVisualTimer += delta;
+    if (!this.attacking && this.knockbackTimer <= 0) {
+      const t = this.idleVisualTimer * 0.0015;
+      const wobble = Math.sin(t * 2.1) * 1.1;
+      const breath = 1 + Math.sin(t * 1.6) * 0.009;
+      this.setAngle(wobble * 0.6);
+      this.setScale(breath, breath);
+    }
+
     const dx = this.targetX - this.x;
     const dy = this.targetY - this.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -375,6 +405,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       const ny = dy / dist;
       const speed = data.speed * this.speedMultiplier;
       body.setVelocity(nx * speed, ny * speed);
+      // 이동 중에는 idle visual 리셋
+      this.setAngle(0);
+      this.setScale(1);
     } else {
       // 공격 범위 내 → 정지 후 공격
       body.setVelocity(0, 0);
@@ -443,6 +476,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.baseY = this.y;
     const m = ATTACK_MOTION[data.spriteKey] ?? ATTACK_MOTION.default;
 
+    this.setAngle(0);
+    this.setScale(1);
+
     // 공격 프레임 애니메이션 재생 (위치 트윈과 함께 연출)
     this.playAttackAnim();
 
@@ -451,6 +487,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       onComplete: () => {
         this.attacking = false;
         this.y = this.baseY;
+        this.setAngle(0);
+        this.setScale(1);
         this.playIdleAnim();
       },
       tweens: [
@@ -460,7 +498,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
           duration: m.windupMs,
           ease: 'Sine.easeOut',
         },
-        // 2) 돌진: 앞으로 + 살짝 떠오르기, 정점에서 타격
+        // 2) 돌진: 앞으로 + 살짝 떠오르기, 정점에서 타격 + 지면 먼지 VFX
         {
           x: startX + dir * m.lunge,
           y: this.baseY - m.hopY,
@@ -469,6 +507,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
           onComplete: () => {
             if (this.active && this.enemyData) {
               this.scene.events.emit('enemy-attack', this, data.damage);
+              this.spawnAttackDust(dir);
             }
           },
         },
@@ -481,6 +520,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         },
       ],
     });
+  }
+
+  /** 공격 착지 시 간단한 먼지/파편 (싱글스프라이트 적에게 생동감 추가) */
+  private spawnAttackDust(dir: number): void {
+    const gx = this.x + dir * 8;
+    const gy = this.baseY + 18;
+    for (let i = 0; i < 3; i++) {
+      const p = this.scene.add.rectangle(
+        gx + (Math.random() - 0.5) * 6,
+        gy + Math.random() * 3,
+        3 + Math.random() * 2, 2,
+        0x665544, 0.6
+      ).setDepth(5);
+      this.scene.tweens.add({
+        targets: p,
+        x: gx + dir * (18 + Math.random() * 12),
+        alpha: 0,
+        duration: 180 + Math.random() * 80,
+        onComplete: () => p.destroy(),
+      });
+    }
   }
 
   /**

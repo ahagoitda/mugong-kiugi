@@ -102,21 +102,21 @@ export class BootScene extends Phaser.Scene {
       this.anims.create({
         key: `${prefix}-idle`,
         frames: this.anims.generateFrameNumbers(`hero_${id}_idle`, { start: 0, end: 11 }),
-        frameRate: 12,
+        frameRate: 9,   // slower for living breathing feel
         repeat: -1
       });
 
       this.anims.create({
         key: `${prefix}-run`,
         frames: this.anims.generateFrameNumbers(`hero_${id}_run`, { start: 0, end: 11 }),
-        frameRate: 14,
+        frameRate: 12,  // weightier run
         repeat: -1
       });
 
       this.anims.create({
         key: `${prefix}-attack`,
         frames: this.anims.generateFrameNumbers(`hero_${id}_attack`, { start: 0, end: 11 }),
-        frameRate: 16,
+        frameRate: 14,
         repeat: 0
       });
 
@@ -124,7 +124,7 @@ export class BootScene extends Phaser.Scene {
         this.anims.create({
           key: `${prefix}-attack-${variant}`,
           frames: this.anims.generateFrameNumbers(`hero_${id}_attack_${variant}`, { start: 0, end: 11 }),
-          frameRate: 16,
+          frameRate: variant === 'heavy' ? 12 : 15,
           repeat: 0
         });
       }

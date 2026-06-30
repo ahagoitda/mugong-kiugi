@@ -59,6 +59,17 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.scene.launch('UIScene', { characterId: character.id });
     });
 
+    // 고품질 모션 갤러리 버튼 (비디오로 제작된 프리미엄 모션 체험)
+    const galleryBtn = this.add.rectangle(W / 2, H - 35, 260, 38, 0x1f1812, 0.9)
+      .setStrokeStyle(1, GOLD).setInteractive();
+    this.add.text(W / 2, H - 35, '✦ 고품질 모션 갤러리 보기', {
+      fontFamily: 'sans-serif', fontSize: '14px', color: '#d4a74e'
+    }).setOrigin(0.5);
+    galleryBtn.on('pointerdown', () => {
+      const character = CHARACTER_LIST[this.selected];
+      this.scene.start('MotionGalleryScene', { characterId: character.id });
+    });
+
     this.select(0);
   }
 

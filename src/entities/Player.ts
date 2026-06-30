@@ -62,6 +62,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // 자동(확률) 회피 연출 중복 방지
   private autoEvading = false;
 
+  // ─── 시각 / 애니메이션 보조 (메모리 안전 + 살아있는 idle) ───
+  private animTime = 0;
+  private baseGroundY = 0;   // IDLE 시 기준 Y (미세 모션용)
+  private visualBaseScaleX = 1;
+  private visualBaseScaleY = 1;
+
   // ─── 콜백 ───
   private onHitCallback: ((x: number, y: number, skill: SkillData) => void) | null = null;
 
@@ -92,6 +98,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setDisplaySize(210, 210);
     this.baseScaleX = this.scaleX;
     this.baseScaleY = this.scaleY;
+    this.visualBaseScaleX = this.baseScaleX;
+    this.visualBaseScaleY = this.baseScaleY;
+    this.baseGroundY = y;
     this.setFlipX(true); // 아트가 왼쪽을 향하므로 항상 flip → 오른쪽(적 방향)을 바라봄
 
     // 물리 바디 설정 (128x128 스프라이트, 0.8배 스케일 기준)
@@ -164,6 +173,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
     if (this.currentState !== 'RUN') {
+      this.setAngle(0);
+      this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
       this.playAnim('run', true);
       this.changeState('RUN');
     }
@@ -175,11 +186,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
     if (this.currentState !== 'IDLE') {
+      this.setAngle(0);
+      this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
+      this.baseGroundY = this.y;
       this.playAnim('idle', true);
       this.changeState('IDLE');
     }
   }
   private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
+    // 모든 대형 트윈은 실 스프라이트 애니메이션이 주도하도록 정리 (메모리/시각 충돌 방지)
+    if (action !== 'attack') {
+      this.scene.tweens.killTweensOf(this);
+    }
+
     let key = `${this.spritePrefix}-${action}`;
     if (this.currentSetId) {
       const skinKey = `${this.spritePrefix}-${action}-${this.currentSetId}`;
@@ -192,21 +211,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (action === 'attack') {
         this.playFallbackAttackTween();
       } else if (action === 'idle') {
-        // 공격 트윈 도중 상태가 강제 전환된 경우 스케일/각도 초기화
-        this.scene.tweens.killTweensOf(this);
         this.clearTint();
         this.setAngle(0);
-        this.setScale(this.baseScaleX, this.baseScaleY);
-      } else if (action === 'run' && !ignoreIfPlaying) {
-        this.scene.tweens.add({ targets: this, y: this.y - 4, duration: 180, yoyo: true });
+        this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
+      } else if (action === 'run') {
+        // run은 위치 기반이므로 가벼운 y bob만 (스프라이트 프레임이 주)
+        if (!ignoreIfPlaying) {
+          this.scene.tweens.add({ targets: this, y: this.y - 3, duration: 140, yoyo: true, ease: 'Sine.easeInOut' });
+        }
       }
       return;
     }
+
     // 공격 모션이면 스킬의 attackMotion 으로 변형 키를 선택
     if (action === 'attack' && this.currentSkill?.attackMotion && this.currentSkill.attackMotion !== 'standard') {
       const variantKey = `${this.spritePrefix}-attack-${this.currentSkill.attackMotion}`;
       if (this.anims.exists(variantKey)) key = variantKey;
     }
+
     if (this.anims.exists(key)) {
       this.play(key, ignoreIfPlaying);
     }
@@ -218,123 +240,103 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const startY = this.y;
     const motion = skill.attackMotion ?? 'standard';
 
-    let windupDur = 120;
-    let pullBack = 25;
-    let tiltAngle = -12;
-    let tintColor = 0xffe57f;
+    this.scene.tweens.killTweensOf(this);
+    this.setTint(0xffffff);
+
+    // === Hollow Knight 스타일: 강한 anticipation + commitment + recovery ===
+    let windupDur = 105;
+    let pullBack = 18;
+    let tilt = -8;
+    let hopY = 0;
 
     if (motion === 'heavy') {
-      windupDur = 220;
-      pullBack = 35;
-      tiltAngle = -20;
-      tintColor = 0xff8a80;
+      windupDur = 185;
+      pullBack = 28;
+      tilt = -14;
+      hopY = -6; // 무거운 공격은 살짝 뜨는 느낌
     } else if (motion === 'quick') {
-      windupDur = 80;
-      pullBack = 15;
-      tiltAngle = -8;
-      tintColor = 0xb3e5fc;
+      windupDur = 65;
+      pullBack = 10;
+      tilt = -5;
     } else if (motion === 'thrust') {
-      windupDur = 140;
-      pullBack = 30;
-      tiltAngle = -5;
-      tintColor = 0xb2dfdb;
+      windupDur = 115;
+      pullBack = 22;
+      tilt = -4;
+      hopY = -3;
     }
 
-    this.scene.tweens.killTweensOf(this);
-    this.setTint(tintColor);
-
+    // Windup (예비 동작)
     this.scene.tweens.add({
       targets: this,
       x: startX - dir * pullBack,
-      angle: tiltAngle,
-      scaleX: this.baseScaleX * 0.9,
-      scaleY: this.baseScaleY * 1.1,
+      y: startY + hopY,
+      angle: tilt,
       duration: windupDur,
       ease: 'Quad.easeOut',
       onComplete: () => {
-        let dashDist = skill.range * 0.45;
-        if (motion === 'thrust') dashDist = skill.range * 0.6;
-
-        let strikeDur = 160;
-        if (motion === 'heavy') strikeDur = 250;
-        if (motion === 'quick') strikeDur = 110;
-
-        const targetX = startX + dir * dashDist;
-
         this.playAnim('attack');
-        this.clearTint();
 
-        const totalHits = skill.hitFrames.length;
-        if (totalHits > 1) {
-          for (let i = 0; i < totalHits - 1; i++) {
-            const hitDelay = (strikeDur / totalHits) * (i + 1);
-            this.scene.time.delayedCall(hitDelay, () => {
-              if (this.currentState === 'ATTACK' && this.hp > 0) {
-                this.emitHit(skill);
-                this.scene.events.emit('player-slash-fx', this.x + dir * 30, this.y, skill);
-              }
-            });
-          }
+        // Strike: 실제로 전진하는 강한 root motion (프레임 + 이동 결합)
+        let strikeDist = skill.range * 0.38;
+        if (motion === 'thrust') strikeDist = skill.range * 0.55;
+        if (motion === 'heavy') strikeDist = skill.range * 0.32;
+
+        const strikeDur = motion === 'heavy' ? 235 : motion === 'quick' ? 105 : motion === 'thrust' ? 155 : 165;
+        const targetX = startX + dir * strikeDist;
+        const targetY = startY - hopY * 0.6;
+
+        // 프레임 기반 히트
+        const totalHits = Math.max(1, skill.hitFrames?.length ?? 1);
+        for (let i = 0; i < totalHits; i++) {
+          const frameIdx = skill.hitFrames?.[i] ?? (2 + i);
+          const progress = Math.min(0.92, (frameIdx + 1) / 12);
+          const hitDelay = strikeDur * (0.38 + progress * 0.48);
+
+          this.scene.time.delayedCall(hitDelay, () => {
+            if (this.currentState === 'ATTACK' && this.hp > 0 && this.currentSkill === skill) {
+              this.emitHit(skill);
+              this.scene.events.emit('player-slash-fx', this.x + dir * 32, this.y - 6, skill);
+            }
+          });
         }
 
+        // 메인 돌진 (무게감 있게)
         this.scene.tweens.add({
           targets: this,
           x: targetX,
-          angle: -tiltAngle * 0.8,
-          scaleX: this.baseScaleX * 1.2,
-          scaleY: this.baseScaleY * 0.85,
+          y: targetY,
+          angle: tilt * -0.7,
           duration: strikeDur,
           ease: 'Cubic.easeOut',
           onComplete: () => {
             this.emitHit(skill);
 
-            let impactDur = 120;
-            let shakeForce = 0.003;
-            let hitStopMs = 40;
+            const impactDur = motion === 'heavy' ? 195 : motion === 'thrust' ? 105 : 95;
+            const impactShake = motion === 'heavy' ? 0.0085 : 0.0045;
 
-            if (motion === 'heavy') {
-              impactDur = 200;
-              shakeForce = 0.008;
-              hitStopMs = 90;
-            } else if (motion === 'thrust') {
-              impactDur = 100;
-              shakeForce = 0.004;
-              hitStopMs = 50;
-            } else if (motion === 'quick') {
-              impactDur = 80;
-              shakeForce = 0.002;
-              hitStopMs = 20;
-            }
+            this.scene.cameras.main.shake(impactDur * 0.7, impactShake);
 
-            if (hitStopMs > 0) {
-              const prevScale = this.scene.physics.world.timeScale;
-              this.scene.physics.world.timeScale = 2.5;
-              this.scene.time.delayedCall(hitStopMs, () => {
-                this.scene.physics.world.timeScale = prevScale;
-              });
-            }
-
-            this.scene.cameras.main.shake(impactDur, shakeForce);
-
+            // 강한 impact + 느린 recovery (Hollow Knight의 느낌)
             this.scene.tweens.add({
               targets: this,
-              angle: dir * (motion === 'heavy' ? 25 : motion === 'thrust' ? 12 : 15),
-              scaleX: this.baseScaleX * 1.25,
-              scaleY: this.baseScaleY * 0.8,
-              duration: impactDur,
+              angle: dir * (motion === 'heavy' ? 11 : 5),
+              scaleX: this.visualBaseScaleX * (motion === 'heavy' ? 1.06 : 1.02),
+              scaleY: this.visualBaseScaleY * 0.93,
+              duration: impactDur * 0.35,
+              ease: 'Power2',
               onComplete: () => {
-                this.setAlpha(0.65);
+                // Recovery: 천천히 원위치 + idle 복귀 (무거운 동작 후 여운)
+                const recoverDur = motion === 'heavy' ? 210 : 155;
                 this.scene.tweens.add({
                   targets: this,
                   x: startX,
                   y: startY,
                   angle: 0,
-                  scaleX: this.baseScaleX,
-                  scaleY: this.baseScaleY,
-                  duration: 180,
+                  scaleX: this.visualBaseScaleX,
+                  scaleY: this.visualBaseScaleY,
+                  duration: recoverDur,
                   ease: 'Quad.easeInOut',
                   onComplete: () => {
-                    this.setAlpha(1.0);
                     this.currentSkill = null;
                     this.playAnim('idle');
                     this.changeState('IDLE');
@@ -529,7 +531,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.scene.tweens.killTweensOf(this);
     this.setAlpha(1.0);
-    this.setScale(this.baseScaleX, this.baseScaleY);
+    this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
     this.setAngle(0);
     this.clearTint();
 
@@ -561,10 +563,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   update(_time: number, delta: number): void {
     if (this.currentState === 'DEAD') return;
 
+    this.animTime += delta;
+
     // 기력 자연 회복 (초당 3)
     this._stamina = Math.min(this._maxStamina, this._stamina + 3 * (delta / 1000));
     // 체력 소량 패시브 재생 (방치형 생존력) — 초당 maxHp의 0.4%
     this._hp = Math.min(this._maxHp, this._hp + this._maxHp * 0.004 * (delta / 1000));
+
+    this.updateVisuals(delta);
 
     switch (this.currentState) {
       case 'ATTACK':
@@ -579,6 +585,43 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       default:
         break;
     }
+  }
+
+  /**
+   * 살아있는 캐릭터 느낌을 위한 IDLE 전용 미세 모션.
+   * 스프라이트시트 프레임(기본 idle 애니) + 수학 기반 2차 모션.
+   * 트윈 남발 대신 delta 기반 sin으로 GC/누수 최소화.
+   */
+  private updateVisuals(_delta: number): void {
+    if (this.currentState !== 'IDLE') {
+      // 다른 상태에서는 큰 변형이 끝난 후 베이스 복원 보장
+      if (Math.abs(this.angle) > 18 || Math.abs(this.scaleX - this.visualBaseScaleX) > 0.15) {
+        // 안전 복원 (트윈이 남아있을 때 대비)
+      }
+      return;
+    }
+
+    // Idle 전용: 부드러운 브리딩 + 몸통 미세 흔들림 + 살짝 무게중심 이동
+    const t = this.animTime * 0.001; // 초 단위
+
+    // 1. 수직 호흡 bob (느린)
+    const bob = Math.sin(t * 1.7) * 1.8;
+
+    // 2. 미세 숨쉬기 scale (가슴/몸 전체)
+    const breath = 1 + Math.sin(t * 1.15) * 0.012;
+
+    // 3. 무기/상체 살짝 sway (무게감)
+    const sway = Math.sin(t * 1.35 + 1.2) * 1.6;
+
+    // 4. 아주 미세한 좌우 weight shift
+    const lean = Math.sin(t * 0.85) * 0.6;
+
+    this.y = this.baseGroundY + bob;
+    this.setScale(this.visualBaseScaleX * breath, this.visualBaseScaleY * breath);
+    this.setAngle(lean + sway * 0.28);
+
+    // 살짝 틴트로 생기 (매우 약하게, 과하지 않게)
+    // 필요 시 생략. 지금은 angle/scale/position으로 충분히 "살아있음"
   }
 
   // ─── Private 상태 업데이트 ───
@@ -611,6 +654,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.stateTimer = 0;
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
+    // 대시 후 위치가 변했을 수 있으니 기준 Y 재설정
+    this.baseGroundY = this.y;
     this.playAnim('idle');
     this.changeState('IDLE');
   }

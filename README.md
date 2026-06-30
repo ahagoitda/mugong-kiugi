@@ -3,6 +3,32 @@
 **무공키우기**는 540x960 세로형 종횡비를 지원하는 Phaser 3 + Capacitor 기반의 **무협 방치형 RPG** 게임입니다.  
 이름 없는 무인이 되어 정파 사대문파의 잃어버린 비급을 습득하고, 중원을 위협하는 혈교(血敎)의 여덟 층위 보스를 토벌하는 강호 여정을 담고 있습니다.
 
+> **모션 퀄리티 목표**: Hollow Knight 수준의 유동적이고 무게감 있는 자동사냥 액션.  
+> 픽셀 스프라이트가 아닌 **고퀄리티 일러스트 기반의 프리미엄 모션** (모든 8개 캐릭터).
+
+## 🎥 All Characters High-Quality Motion Showcase
+
+모든 8명의 영웅(검/도/권/창 × 남녀)에 대해 **고품질 일러스트를 레퍼런스로 한 일관된 모션**을 제작했습니다.
+
+**전체 캐릭터 모션 페이지**: [all-characters-motion-showcase.html](all-characters-motion-showcase.html) 또는 `public/demo-videos/characters-showcase.html`
+
+모든 8개 캐릭터 (검/도/권/창 × 남녀) 완성:
+- 각 캐릭터별 고품질 일러스트 레퍼런스 (base + variation)
+- Living Idle (고품질 breathing + weight + secondary motion)
+- Heavy Attack full sequence (windup → strike → recovery)
+- **Run 영상** (모든 캐릭터, foot dust + flowing fabric)
+- **Dynamic Combat 영상** (reposition + attack + recovery)
+- **Quick / Thrust 특정 모션** (검객 예시, 동일 퀄리티로 모든 캐릭터 적용)
+
+모든 영상은 동일한 고품질 일러스트 레퍼런스 기반 프리미엄 2D wuxia 스타일.
+
+**일관성**: 모든 캐릭터는 동일한 프리미엄 2D wuxia 애니메이션 스타일로 제작. 같은 lighting, silhouette, shading quality 유지.
+
+로컬 데모:
+```bash
+start all-characters-motion-showcase.html
+```
+
 ---
 
 ## 1. 게임 구조 및 기술 스택
@@ -68,7 +94,14 @@
 
 ---
 
-## 4. 그래픽 자산 및 이미지 프로세싱 파이프라인
+## 4. 그래픽 & 모션 비전
+
+**현재 모션 시스템 목표**
+- Hollow Knight 수준의 타이밍, 무게, 2차 모션
+- 자동사냥이어도 캐릭터가 **진짜 싸우는 것처럼** 움직임 (동적 포지셔닝, 커밋감 있는 공격, 자연스러운 리커버리)
+- 고퀄리티 일관된 이미지 기반 모션 데모 → `public/demo-videos/`
+
+### 4.1 그래픽 자산 및 이미지 프로세싱 파이프라인 (기존)
 
 게임의 시각적 완성도 향상을 위해 3단 패럴랙스 배경 및 투명화 이미지 처리 스크립트가 구축되어 있습니다.
 

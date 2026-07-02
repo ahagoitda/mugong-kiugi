@@ -4,6 +4,7 @@ import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { BattleScene } from './scenes/BattleScene';
 import { UIScene } from './scenes/UIScene';
 import { GameOverScene } from './scenes/GameOverScene';
+import { RebirthScene } from './scenes/RebirthScene';
 import { MotionGalleryScene } from './scenes/MotionGalleryScene';
 
 const GAME_W = 540;
@@ -31,8 +32,15 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene, GameOverScene, MotionGalleryScene],
+  scene: [BootScene, CharacterSelectScene, BattleScene, UIScene, GameOverScene, RebirthScene, MotionGalleryScene],
 };
 
 const game = new Phaser.Game(config);
 (window as unknown as Record<string, unknown>).__GAME__ = game;
+
+// 화면 크기 변경(회전, 폴딩, 창 크기 조절 등) 대응
+window.addEventListener('resize', () => {
+  if (game && game.scale) {
+    game.scale.refresh();
+  }
+});

@@ -235,7 +235,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.clearTint();
     this.setAlpha(1);
     this.setAngle(0);
-    this.setScale(1);
+    // setDisplaySize 로 잡은 표시 크기를 기준 스케일로 저장
+    // (setScale(1) 로 되돌리면 원본 512px 텍스처 기준으로 거대해지는 버그 방지)
+    this.captureBaseScale();
     this.idleVisualTimer = 0;
 
     // 적 애니메이션 재생 (idle)
@@ -269,7 +271,6 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.speedMultiplier = 1.0;
     this.idleVisualTimer = 0;
     this.setAngle(0);
-    this.setScale(1);
     this.hpBarBg.clear().setVisible(false);
     this.hpBarLag.clear().setVisible(false);
     this.hpBarFill.clear().setVisible(false);
@@ -361,6 +362,18 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   private idleVisualTimer = 0;
+  // 표시 크기(setDisplaySize) 기준 스케일 — 미세 모션/리셋의 기준값
+  private visualBaseScaleX = 1;
+  private visualBaseScaleY = 1;
+
+  /**
+   * 현재 스케일을 기준 스케일로 저장합니다.
+   * activate() 및 보스 등급 스케일 적용(spawnBoss) 후 호출하세요.
+   */
+  captureBaseScale(): void {
+    this.visualBaseScaleX = this.scaleX;
+    this.visualBaseScaleY = this.scaleY;
+  }
 
   /**
    * 프레임 업데이트 - AI 로직
@@ -397,7 +410,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       const wobble = Math.sin(t * 2.1) * 1.1;
       const breath = 1 + Math.sin(t * 1.6) * 0.009;
       this.setAngle(wobble * 0.6);
-      this.setScale(breath, breath);
+      this.setScale(this.visualBaseScaleX * breath, this.visualBaseScaleY * breath);
     }
 
     const dx = this.targetX - this.x;
@@ -427,7 +440,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       body.setVelocity(nx * speed, ny * speed);
       // 이동 중에는 idle visual 리셋
       this.setAngle(0);
-      this.setScale(1);
+      this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
     } else {
       // 공격 범위 내 → 정지 후 공격
       body.setVelocity(0, 0);
@@ -498,7 +511,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const m = ATTACK_MOTION[data.spriteKey] ?? ATTACK_MOTION.default;
 
     this.setAngle(0);
-    this.setScale(1);
+    this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
 
     // 공격 프레임 애니메이션 재생 (위치 트윈과 함께 연출)
     this.playAttackAnim();
@@ -509,7 +522,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.attacking = false;
         this.y = this.baseY;
         this.setAngle(0);
-        this.setScale(1);
+        this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
         this.playIdleAnim();
       },
       tweens: [

@@ -26,11 +26,9 @@ import { heroSetSkinKey } from '../data/assets';
  */
 export class Player extends Phaser.Physics.Arcade.Sprite {
   // ─── 캐릭터 설정 ───
-  private readonly spritePrefix: string;
   private readonly charClass: CharacterClass;
   private readonly characterId: string;
   private readonly baseTextureKey: string;
-  private currentSetId: string | null = null;
   private readonly baseScaleX: number;
   private readonly baseScaleY: number;
 
@@ -79,14 +77,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    *                       미지정 시 기존 player_idle 사용 (하위 호환)
    */
   constructor(scene: Phaser.Scene, x: number, y: number, characterId?: string) {
-    // 캐릭터 ID로 스프라이트 프리픽스 결정
     const charDef = characterId ? CHARACTER_MAP.get(characterId) ?? null : null;
-    const prefix = charDef ? charDef.spritePrefix : 'player';
     const idleTexture = charDef ? `hero_${charDef.id}` : 'hero_sword_male';
 
     super(scene, x, y, idleTexture);
 
-    this.spritePrefix = prefix;
     this.charClass = charDef?.charClass ?? 'SWORD';
     this.characterId = charDef?.id ?? 'sword_male';
     this.baseTextureKey = idleTexture;
@@ -149,7 +144,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   setEquipmentSetSkin(setId: string | null): void {
-    this.currentSetId = setId;
     if (!setId) {
       this.setTexture(this.baseTextureKey);
       return;
@@ -193,44 +187,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.changeState('IDLE');
     }
   }
-  private playAnim(action: 'idle' | 'run' | 'attack', ignoreIfPlaying = false): void {
-    // 모든 대형 트윈은 실 스프라이트 애니메이션이 주도하도록 정리 (메모리/시각 충돌 방지)
+  private playAnim(action: 'idle' | 'run' | 'attack', _ignoreIfPlaying = false): void {
+    // 고품질 일러스트 + 절차적(수학/트윈) 모션이 기본 연출이다.
+    // 128px 플레이스홀더 스프라이트시트는 프리미엄 룩을 해치므로 사용하지 않는다.
+    // - idle/run: updateVisuals 의 상태별 절차적 모션이 매 프레임 담당
+    // - attack:   startAttackSequence 의 트윈 체인 + heroic 풀모션(BattleScene)이 담당
     if (action !== 'attack') {
       this.scene.tweens.killTweensOf(this);
     }
-
-    let key = `${this.spritePrefix}-${action}`;
-    if (this.currentSetId) {
-      const skinKey = `${this.spritePrefix}-${action}-${this.currentSetId}`;
-      if (this.scene.anims.exists(skinKey)) {
-        key = skinKey;
-      }
-    }
-
-    if (!this.scene.anims.exists(key)) {
-      if (action === 'attack') {
-        this.playFallbackAttackTween();
-      } else if (action === 'idle') {
-        this.clearTint();
-        this.setAngle(0);
-        this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
-      } else if (action === 'run') {
-        // run은 위치 기반이므로 가벼운 y bob만 (스프라이트 프레임이 주)
-        if (!ignoreIfPlaying) {
-          this.scene.tweens.add({ targets: this, y: this.y - 3, duration: 140, yoyo: true, ease: 'Sine.easeInOut' });
-        }
-      }
-      return;
-    }
-
-    // 공격 모션이면 스킬의 attackMotion 으로 변형 키를 선택
-    if (action === 'attack' && this.currentSkill?.attackMotion && this.currentSkill.attackMotion !== 'standard') {
-      const variantKey = `${this.spritePrefix}-attack-${this.currentSkill.attackMotion}`;
-      if (this.anims.exists(variantKey)) key = variantKey;
-    }
-
-    if (this.anims.exists(key)) {
-      this.play(key, ignoreIfPlaying);
+    if (action === 'idle') {
+      this.clearTint();
+      this.setAngle(0);
+      this.setScale(this.visualBaseScaleX, this.visualBaseScaleY);
     }
   }
 
@@ -350,16 +318,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
   }
 
-  private playFallbackAttackTween(): void {
-    this.scene.tweens.add({
-      targets: this,
-      angle: 15,
-      scaleX: 1.1,
-      duration: 150,
-      yoyo: true,
-    });
-  }
-
   /**
    * 히트 콜백 등록
    * BattleScene에서 히트박스 판정을 처리하기 위해 사용합니다.
@@ -384,6 +342,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
     this.equippedSkills[slotIndex] = skill;
     return true;
+  }
+
+  /**
+   * 장착 무공 전체 재설정 (세이브 로드 시 호출)
+   */
+  resetEquippedSkills(skillIds: string[]): void {
+    this.equippedSkills = [];
+    skillIds.forEach((id, idx) => {
+      this.equipSkill(id, idx);
+    });
   }
 
   equipDash(skillId: string): boolean {
@@ -593,11 +561,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    * 트윈 남발 대신 delta 기반 sin으로 GC/누수 최소화.
    */
   private updateVisuals(_delta: number): void {
+    // RUN 전용: 빠른 스쿼시&스트레치 바운스 + 전방 기울임 (달리는 무게감)
+    // y 위치는 물리 이동이 제어하므로 스케일/각도만 사용해 드리프트를 방지한다.
+    if (this.currentState === 'RUN') {
+      const t = this.animTime * 0.001;
+      const bounce = Math.sin(t * 9);
+      this.setScale(
+        this.visualBaseScaleX * (1 - bounce * 0.015),
+        this.visualBaseScaleY * (1 + bounce * 0.03),
+      );
+      this.setAngle((this.facingRight ? 1 : -1) * (2.2 + bounce * 0.6));
+      return;
+    }
+
     if (this.currentState !== 'IDLE') {
-      // 다른 상태에서는 큰 변형이 끝난 후 베이스 복원 보장
-      if (Math.abs(this.angle) > 18 || Math.abs(this.scaleX - this.visualBaseScaleX) > 0.15) {
-        // 안전 복원 (트윈이 남아있을 때 대비)
-      }
       return;
     }
 

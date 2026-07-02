@@ -67,12 +67,6 @@ const PLAYER_MAX_X = 320;
 const IDEAL_MELEE_DIST = 95;
 const IDEAL_RANGED_DIST = 140;
 
-// ─── 난이도 조정(하향) 전역 배율 ───
-// 방치형 게임에 맞춰 적 위협을 낮춰 편하게 진행되도록 한다.
-const ENEMY_HP_MUL = 0.45;
-const ENEMY_DMG_MUL = 0.12;
-const BOSS_HP_MUL = 0.38;
-const BOSS_DMG_MUL = 0.14;
 /**
  * 보스 등급별 고유 스킬 정의.
  *
@@ -1197,6 +1191,8 @@ export class BattleScene extends Phaser.Scene {
     const bossScale = rankScales[bossData.bossRank ?? 'DAEJU'] ?? 1.0;
     // 표시 크기에 대한 상대 배율 (절대 스케일을 덮어쓰면 원본 512px 기준으로 거대해짐)
     enemy.setScale(enemy.scaleX * bossScale, enemy.scaleY * bossScale);
+    enemy.captureBaseScale(); // 이후 idle 호흡/공격 리셋이 보스 스케일을 유지하도록
+
     // 발끝을 지면에 정렬
     enemy.y = this.groundY + 88 - enemy.displayHeight / 2;
     enemy.setDepth(20); // 오라 위에 보스가 표시되도록

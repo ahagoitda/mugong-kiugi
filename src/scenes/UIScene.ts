@@ -12,6 +12,7 @@ import { trainingAttackCost, trainingCost, rebirthAttackMul } from '../data/comb
 import type { EquipmentGrade, EquipmentItem, SkillData } from '../data/types';
 import { soundSystem } from '../systems/SoundSystem';
 import { bgmSystem } from '../systems/BgmSystem';
+import { fmtNum } from '../utils/format';
 
 const W = 540;
 let H = 960;
@@ -208,26 +209,29 @@ export class UIScene extends Phaser.Scene {
     const frameKey = charId.includes('female') ? 'ui_frame_tiger' : 'ui_frame_dragon';
     this.add.image(62, 50, frameKey).setDisplaySize(84, 84).setDepth(203);
     
-    this.add.rectangle(194, 33, 230, 21, 0x070403, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x7d5a2a).setDepth(201);
-    this.add.rectangle(194, 58, 202, 15, 0x050708, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x516b82).setDepth(201);
-    this.hpFill = this.add.rectangle(198, 33, 220, 13, 0xb82922).setOrigin(0, 0.5).setDepth(202);
-    this.spFill = this.add.rectangle(198, 58, 190, 8, 0x218ac4).setOrigin(0, 0.5).setDepth(202);
-    this.add.rectangle(198, 27, 220, 3, 0xff7258, 0.38).setOrigin(0, 0.5).setDepth(203);
-    this.add.rectangle(198, 54, 190, 2, 0x8ce8ff, 0.38).setOrigin(0, 0.5).setDepth(203);
-    this.hpText = this.add.text(308, 33, '100 / 100', this.textStyle(9, '#ffffff')).setOrigin(0.5).setDepth(204).setStroke('#000000', 2);
-    this.spText = this.add.text(293, 58, '50 / 50', this.textStyle(8, '#ffffff')).setOrigin(0.5).setDepth(204).setStroke('#000000', 2);
+    // 재화 스트립(y=8~32) 아래에 HP/SP 바 배치 — 겹침 방지
+    this.add.rectangle(194, 44, 170, 21, 0x070403, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x7d5a2a).setDepth(201);
+    this.add.rectangle(194, 66, 150, 15, 0x050708, 1).setOrigin(0, 0.5).setStrokeStyle(1, 0x516b82).setDepth(201);
+    this.hpFill = this.add.rectangle(198, 44, 162, 13, 0xb82922).setOrigin(0, 0.5).setDepth(202);
+    this.spFill = this.add.rectangle(198, 66, 142, 8, 0x218ac4).setOrigin(0, 0.5).setDepth(202);
+    this.add.rectangle(198, 39, 162, 3, 0xff7258, 0.38).setOrigin(0, 0.5).setDepth(203);
+    this.add.rectangle(198, 62, 142, 2, 0x8ce8ff, 0.38).setOrigin(0, 0.5).setDepth(203);
+    this.hpText = this.add.text(279, 44, '100 / 100', this.textStyle(9, '#ffffff')).setOrigin(0.5).setDepth(204).setStroke('#000000', 2);
+    this.spText = this.add.text(269, 66, '50 / 50', this.textStyle(8, '#ffffff')).setOrigin(0.5).setDepth(204).setStroke('#000000', 2);
     this.add.circle(62, 87, 18, 0x120b04, 1).setStrokeStyle(2, GOLD).setDepth(203);
     this.levelText = this.add.text(62, 87, 'Lv.1', this.textStyle(15, '#f2d27d')).setOrigin(0.5).setDepth(204);
-    this.goldText = this.add.text(430, 36, '0 금화', this.textStyle(14, '#f2d27d')).setOrigin(0.5).setDepth(203);
-    this.waveText = this.add.text(430, 62, '1 웨이브', this.textStyle(13, '#e8dfce')).setOrigin(0.5).setDepth(203);
+    // 우측 정렬 — 큰 숫자/보스 표기가 길어져도 바·메뉴 버튼과 겹치지 않음
+    this.goldText = this.add.text(478, 44, '0 금화', this.textStyle(14, '#f2d27d')).setOrigin(1, 0.5).setDepth(203);
+    this.waveText = this.add.text(478, 66, '1 웨이브', this.textStyle(12, '#e8dfce')).setOrigin(1, 0.5).setDepth(203);
     this.expFill = this.add.rectangle(0, 99, 0, 2, GOLD).setOrigin(0, 0.5).setDepth(203);
 
-    this.retreatBtn = this.add.rectangle(W - 70, 75, 80, 28, 0x5b150c)
+    // 메뉴(우상단)·웨이브 텍스트와 겹치지 않도록 HUD 바로 아래에 배치
+    this.retreatBtn = this.add.rectangle(W - 70, 132, 80, 28, 0x5b150c)
       .setStrokeStyle(1, 0xb92512)
       .setInteractive()
       .setDepth(204)
       .setVisible(false);
-    this.retreatTxt = this.add.text(W - 70, 75, '퇴각 (退却)', this.textStyle(12, '#ff8888'))
+    this.retreatTxt = this.add.text(W - 70, 132, '퇴각 (退却)', this.textStyle(12, '#ff8888'))
       .setOrigin(0.5)
       .setDepth(205)
       .setVisible(false);
@@ -236,12 +240,13 @@ export class UIScene extends Phaser.Scene {
       this.scene.get('BattleScene').events.emit('request-retreat');
     });
 
-    this.rebirthBtn = this.add.rectangle(70, 75, 88, 28, 0x1a2848)
+    // 초상화/레벨 뱃지와 겹치지 않도록 HUD 바로 아래에 배치
+    this.rebirthBtn = this.add.rectangle(70, 132, 88, 28, 0x1a2848)
       .setStrokeStyle(1, 0x5f8dff)
       .setInteractive({ useHandCursor: true })
       .setDepth(204)
       .setVisible(false);
-    this.rebirthTxt = this.add.text(70, 75, '환생', this.textStyle(12, '#88bbff'))
+    this.rebirthTxt = this.add.text(70, 132, '환생', this.textStyle(12, '#88bbff'))
       .setOrigin(0.5)
       .setDepth(205)
       .setVisible(false);
@@ -254,10 +259,11 @@ export class UIScene extends Phaser.Scene {
     this.scene.get('BattleScene').events.on('rebirth-unlocked', () => this.refreshRebirthButton(), this);
     this.refreshRebirthButton();
 
-    this.add.rectangle(W / 2, 122, 280, 24, 0x000000, 0.6)
+    // 보스 엠블럼(魔, y110 부근)에 가리지 않도록 그 아래에 배치
+    this.add.rectangle(W / 2, 156, 280, 24, 0x000000, 0.6)
       .setStrokeStyle(1, GOLD, 0.35)
       .setDepth(200);
-    this.stageInfoText = this.add.text(W / 2, 122, '', this.textStyle(11, '#ffd740'))
+    this.stageInfoText = this.add.text(W / 2, 156, '', this.textStyle(11, '#ffd740'))
       .setOrigin(0.5)
       .setDepth(201);
   }
@@ -347,10 +353,11 @@ export class UIScene extends Phaser.Scene {
 
   private createCombatSkillDockV2(): void {
     const H = this.scale.height;
-    const DOCK_Y = H - 318;
-    const SLOT_Y = H - 280;
+    // 큰 슬롯(반경 46)이 아래 탭 줄과 겹치지 않도록 독 전체를 위로
+    const DOCK_Y = H - 322;
+    const SLOT_Y = H - 322;
 
-    this.add.rectangle(W / 2, DOCK_Y, W, 116, 0x080706, 0.9).setDepth(200).setStrokeStyle(1, 0x60451f);
+    this.add.rectangle(W / 2, DOCK_Y, W, 108, 0x080706, 0.9).setDepth(200).setStrokeStyle(1, 0x60451f);
     const slots = [
       { x: 56, radius: 35, label: UI.dash, action: 'dash' as const, color: 0x2f2a16 },
       { x: 145, radius: 38, label: UI.martial, action: 0 as const, color: 0x163b64 },
@@ -404,11 +411,12 @@ export class UIScene extends Phaser.Scene {
 
   private createQuickMartialBoard(): void {
     const H = this.scale.height;
-    const BOARD_Y = H - 154;
-    const TAB_Y = H - 242;
-    const ROW_BASE_Y = H - 180;
+    // 위: 스킬 독(~H-268) / 아래: 하단 네비(H-70~) 사이에 탭 + 카드 2행이 겹침 없이 들어가도록 배치
+    const BOARD_Y = H - 172;
+    const TAB_Y = H - 268;
+    const ROW_BASE_Y = H - 194;
 
-    this.add.rectangle(W / 2, BOARD_Y, W, 214, 0x0a0806, 0.97).setDepth(190).setStrokeStyle(1, 0x60451f);
+    this.add.rectangle(W / 2, BOARD_Y, W, 196, 0x0a0806, 0.97).setDepth(190).setStrokeStyle(1, 0x60451f);
     const tabs: [MartialTab, string][] = [['SKILLS', UI.martial], ['SYNTH', UI.synth], ['UPGRADE', UI.upgrade], ['BOSS', UI.boss]];
     tabs.forEach(([tab, label], index) => {
       const x = 28 + index * 121;
@@ -528,7 +536,9 @@ export class UIScene extends Phaser.Scene {
     const shade = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.82).setInteractive();
     const bg = this.add.image(W / 2, H / 2, 'ui_dialog_bg').setDisplaySize(W - 24, H - 40).setDepth(701);
     const title = this.add.text(50, 42, PANEL_TITLES[panel], this.titleStyle(28)).setDepth(702);
-    const close = this.add.text(W - 55, 46, 'X', this.titleStyle(30)).setOrigin(0.5).setInteractive().setDepth(702);
+    // HUD 금화 텍스트(우측 정렬, x478 부근)와 겹치지 않는 위치 + 터치 영역 확대
+    const close = this.add.text(W - 34, 46, 'X', this.titleStyle(30)).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(702);
+    close.setPadding(10);
     close.on('pointerdown', () => this.closePanel());
     items.push(shade, bg, title, close);
     if (panel === 'MARTIAL') this.buildMartial(items);
@@ -1244,14 +1254,14 @@ export class UIScene extends Phaser.Scene {
   }
 
   private updateHUD(state: PlayerStatePayload): void {
-    this.hpFill.width = 220 * Phaser.Math.Clamp(state.hp / state.maxHp, 0, 1);
-    this.spFill.width = 190 * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
+    this.hpFill.width = 162 * Phaser.Math.Clamp(state.hp / state.maxHp, 0, 1);
+    this.spFill.width = 142 * Phaser.Math.Clamp(state.stamina / state.maxStamina, 0, 1);
 
     if (this.hpText) this.hpText.setText(`${Math.round(state.hp)} / ${state.maxHp}`);
     if (this.spText) this.spText.setText(`${Math.round(state.stamina)} / ${state.maxStamina}`);
     this.expFill.width = W * Phaser.Math.Clamp(state.exp / state.expToNext, 0, 1);
     this.levelText.setText(`Lv.${state.level}`);
-    this.goldText.setText(`${state.gold} 금화`);
+    this.goldText.setText(`${fmtNum(state.gold)} 금화`);
     this.waveText.setText(`${state.isBossWave ? '보스 · ' : ''}${state.waveNumber} 웨이브`);
 
     const stage = Math.floor((state.waveNumber - 1) / 5) + 1;

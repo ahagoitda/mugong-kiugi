@@ -254,7 +254,8 @@ export class MotionGalleryScene extends Phaser.Scene {
     }
 
     const sheetKey = heroicSheetKey(charId, skillId);
-    const animKey = heroicAnimKey(charId, skillId);
+    // 전투용 키(1회 재생)와 분리된 갤러리 전용 키 (반복 재생)
+    const animKey = `gallery-${heroicAnimKey(charId, skillId)}`;
     const mySeq = ++this.loadingSeq;
 
     const start = () => {

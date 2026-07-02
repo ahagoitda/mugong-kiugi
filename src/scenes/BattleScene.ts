@@ -2758,8 +2758,17 @@ export class BattleScene extends Phaser.Scene {
     // 트윈 전체 kill (안전)
     this.tweens.killAll();
 
-    // 이벤트 리스너 정리
-    this.events.removeAllListeners();
+    // 이벤트 리스너 정리 — 게임 커스텀 이벤트만 제거한다.
+    // removeAllListeners()로 전부 지우면 CameraManager 등 씬 플러그인의
+    // START 리스너까지 사라져 씬 재시작(재도전/부활/환생) 시
+    // cameras.main이 undefined가 되는 크래시가 난다.
+    const customEvents = [
+      'player-state', 'wave-clear', 'boss-clear', 'item-drop', 'level-up',
+      'use-skill', 'use-dash', 'toggle-battle-mode', 'request-retreat',
+      'rebirth-unlocked', 'player-slash-fx', 'enemy-attack', 'equip-changed',
+      'show-notice',
+    ];
+    customEvents.forEach(name => this.events.removeAllListeners(name));
     // 다른 병렬 씬(UIScene) 리스너는 해당 씬이 스스로 정리하도록 둔다 (교차 참조 금지)
 
     // 풀 정리

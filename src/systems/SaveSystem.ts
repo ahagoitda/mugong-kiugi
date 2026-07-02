@@ -116,13 +116,9 @@ export function loadGame(): SaveData {
       return cachedSaveData;
     }
 
-    // 버전 마이그레이션 (v1 → v2)
-    if (parsed.version < CURRENT_VERSION) {
-      cachedSaveData = migrateSave(parsed);
-      return cachedSaveData;
-    }
-
-    cachedSaveData = parsed;
+    // 버전과 무관하게 항상 마이그레이션을 거쳐 필수 필드를 정규화한다.
+    // (같은 버전이라도 필드가 누락된 세이브가 크래시를 일으키지 않도록)
+    cachedSaveData = migrateSave(parsed);
     return cachedSaveData;
   } catch {
     console.error('[SaveSystem] 로드 실패: 데이터 파싱 오류');
@@ -168,6 +164,19 @@ function migrateSave(oldData: any): SaveData {
   const migrated: SaveData = {
     ...oldData,
     version: CURRENT_VERSION,
+    // 필수 필드 — 부분/손상 세이브가 로드돼도 크래시 없이 복구되도록 전부 기본값 보장
+    level: oldData.level ?? 1,
+    exp: oldData.exp ?? 0,
+    hp: oldData.hp ?? 100,
+    maxHp: oldData.maxHp ?? 100,
+    stamina: oldData.stamina ?? 50,
+    maxStamina: oldData.maxStamina ?? 50,
+    equippedSkills: oldData.equippedSkills ?? ['samjae'],
+    equippedDash: oldData.equippedDash ?? 'chosangbi',
+    inventory: oldData.inventory ?? { samjae: 1, chosangbi: 1 },
+    unlockedSkills: oldData.unlockedSkills ?? ['samjae', 'chosangbi'],
+    stageCleared: oldData.stageCleared ?? 0,
+    totalPlayTime: oldData.totalPlayTime ?? 0,
     gold: oldData.gold ?? 0,
     gems: oldData.gems ?? 30,
     expToNext: oldData.expToNext ?? getExpToNextLevel(oldData.level ?? 1),

@@ -77,9 +77,18 @@ export class GameOverScene extends Phaser.Scene {
   private restartBattle(startWave: number, isRevive: boolean): void {
     this.cameras.main.fadeOut(300, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.scene.stop('GameOverScene');
-      this.scene.start('BattleScene', { characterId: this.gameData.characterId, startWave, isRevive });
-      this.scene.start('UIScene', { characterId: this.gameData.characterId });
+      // 주의: 같은 프레임 큐에서 같은 씬을 stop + start 하면 카메라 매니저가
+      // 재부팅되지 않은 채 create가 실행돼 크래시(검은 화면)가 난다.
+      // stop을 먼저 처리시키고, 재시작은 다음 틱에 게임 레벨 매니저로 수행한다.
+      const gameRef = this.game;
+      const characterId = this.gameData.characterId;
+      this.scene.stop('BattleScene');
+      this.scene.stop('UIScene');
+      this.scene.stop();
+      setTimeout(() => {
+        gameRef.scene.start('BattleScene', { characterId, startWave, isRevive });
+        gameRef.scene.start('UIScene', { characterId });
+      }, 80);
     });
   }
 

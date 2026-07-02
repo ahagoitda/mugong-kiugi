@@ -503,14 +503,36 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setAngle(0);
     this.clearTint();
 
-    this._hp = Math.max(1, this._hp - amount);
+    this._hp = Math.max(0, this._hp - amount);
+
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+
+    if (this._hp <= 0) {
+      this.changeState('DEAD');
+      // 사망 연출: 뒤로 튕겨나며 쓰러지고 바닥에서 살짝 바운스
+      this.setTint(0xff5555);
+      const dir = this.facingRight ? 1 : -1;
+      this.scene.tweens.add({
+        targets: this,
+        angle: -dir * 96,
+        alpha: 0.55,
+        x: this.x - dir * 24,
+        y: this.y + 18,
+        duration: 700,
+        ease: 'Bounce.easeOut',
+      });
+      return;
+    }
 
     this.changeState('HIT');
     this.stateTimer = 300; // 300ms 경직
     this.setTint(0xff8888);
 
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setVelocity(0, 0);
+    // 피격 리코일: 뒤로 살짝 젖혀졌다가 경직이 풀리며 복원 (updateHit 에서 리셋)
+    const dir = this.facingRight ? 1 : -1;
+    this.setAngle(-dir * 7);
+    this.setScale(this.visualBaseScaleX * 1.04, this.visualBaseScaleY * 0.94);
   }
 
   heal(hpAmount: number, staminaAmount: number): void {

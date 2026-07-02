@@ -118,11 +118,19 @@ export class RebirthScene extends Phaser.Scene {
   private exitToBattle(startWave = loadGame().stageCleared + 1): void {
     this.cameras.main.fadeOut(250, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.scene.stop('RebirthScene');
+      // 주의: 같은 프레임 큐에서 같은 씬을 stop + start 하면 카메라 매니저가
+      // 재부팅되지 않은 채 create가 실행돼 크래시(검은 화면)가 난다.
+      // stop을 먼저 처리시키고, 재시작은 다음 틱에 게임 레벨 매니저로 수행한다.
+      const gameRef = this.game;
+      const characterId = this.characterId;
+      const wave = Math.max(1, startWave);
       this.scene.stop('BattleScene');
       this.scene.stop('UIScene');
-      this.scene.start('BattleScene', { characterId: this.characterId, startWave: Math.max(1, startWave) });
-      this.scene.start('UIScene', { characterId: this.characterId });
+      this.scene.stop();
+      setTimeout(() => {
+        gameRef.scene.start('BattleScene', { characterId, startWave: wave });
+        gameRef.scene.start('UIScene', { characterId });
+      }, 80);
     });
   }
 
